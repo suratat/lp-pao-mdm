@@ -1,0 +1,32 @@
+flowchart LR
+    U([บุคลากร / ประชาชน])
+    subgraph IDP["Identity layer (มีอยู่แล้ว - sso-server 192.168.0.7)"]
+        CHK["check.lp-pao.go.th<br/>SSO broker + app registry<br/>(audience, allowed_claims)"]
+        SSO["thaid.lp-pao.go.th<br/>ThaID OAuth broker"]
+    end
+    DOPA[("ThaID / DOPA<br/>ไม่มี webhook")]
+    subgraph MDMG["Central Personnel MDM (ใหม่ - mdm-server, private network)"]
+        API["MDM API<br/>field-level ACL + audit"]
+        WK["MDM Worker<br/>outbox / scheduler / import"]
+        PORTAL["MDM Portal<br/>self-service / HR / DPO"]
+        PG[("PostgreSQL<br/>mdm / audit / integration")]
+        VAULT[("Vault Transit<br/>pid_enc, pepper, secrets")]
+    end
+    KC["Keycloak realm lp-pao<br/>token issuer สำหรับ MDM API<br/>(client scopes = field groups)"]
+    APPS["ระบบปลายทาง<br/>e-Office, TeleMed, klang, ..."]
+    HRSYS[("ระบบ HR เดิม / LHR<br/>export เท่านั้น")]
+    U --> APPS
+    APPS -- "1. login?redirect_uri" --> CHK
+    CHK --> SSO --> DOPA
+    CHK -- "2. POST /sync/thaid (scope sync:thaid)" --> API
+    APPS -- "3. client credentials" --> KC
+    APPS -- "4. GET /persons/personId (Bearer)" --> API
+    API --> PG
+    API --> VAULT
+    WK --> PG
+    WK -- "5. webhook + X-MDM-Signature" --> APPS
+    WK -- "revoke session" --> CHK
+    WK -- "logout / roles" --> KC
+    HRSYS -- "batch import (DRY_RUN / APPLY)" --> API
+    U --> PORTAL --> API
+    PORTAL -. "ทางเลือก A: auth code ผ่าน Keycloak (IdP = check)" .-> KC

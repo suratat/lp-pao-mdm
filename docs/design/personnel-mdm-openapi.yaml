@@ -1,0 +1,1675 @@
+openapi: 3.1.0
+info:
+  title: Lampang PAO - Central Personnel Master Data API
+  version: 1.0.0
+  summary: Single Source of Truth for personnel data of Lampang Provincial Administrative Organization (อบจ.ลำปาง)
+  description: |
+    API กลางสำหรับข้อมูลข้าราชการและพนักงาน อบจ.ลำปาง (Central Personnel MDM)
+
+    **หลักการที่ผู้เรียกใช้ต้องทราบ**
+    - ระบบปลายทางอ้างอิงบุคลากรด้วย `personId` (UUID) เท่านั้น เลขบัตรประชาชน (pid) จะไม่ปรากฏใน response ใด ๆ
+      ยกเว้น `GET /persons/{personId}/pid` ซึ่งต้องมี scope `personnel:read:pid` และต้องระบุเหตุผลทุกครั้ง
+    - การเข้าถึงข้อมูลควบคุมแบบ field-level ด้วย OAuth2 scope จาก Keycloak
+      แต่ละกลุ่มฟิลด์ระบุ scope ที่ต้องใช้ไว้ใน `x-required-scope` ของ schema ฟิลด์ที่ไม่มีสิทธิ์จะถูกตัดออกจาก response (ไม่ใช่ null)
+    - ทุกคำขอที่คืนข้อมูลส่วนบุคคลถูกบันทึกใน access log (PDPA audit trail) พร้อม `purpose` ของระบบผู้เรียก
+    - ข้อมูลระบุตัวตน (ชื่อ-สกุล วันเกิด ที่อยู่ตามทะเบียนบ้าน รูปถ่าย) มาจาก ThaID เท่านั้น แก้ไขผ่าน API ไม่ได้
+    - เหตุการณ์เปลี่ยนแปลงข้อมูลส่งถึงระบบปลายทางสองทาง: webhook (push, มีลายเซ็น HMAC) และ `GET /events` (pull ด้วย cursor)
+      payload ของเหตุการณ์ไม่มีค่าข้อมูลส่วนบุคคล มีเพียงชื่อฟิลด์ที่เปลี่ยน ระบบปลายทางต้องดึงข้อมูลจริงผ่าน API ตาม scope ของตน
+    - Error ทุกกรณีใช้รูปแบบ RFC 9457 `application/problem+json`
+
+    **ตำแหน่งในสถาปัตยกรรม**: MDM ไม่ติดต่อ ThaID/DOPA โดยตรง การยืนยันตัวตนทำผ่าน `thaid.lp-pao.go.th` (ThaID OAuth broker)
+    และ `check.lp-pao.go.th` (SSO broker ของ อบจ. สำหรับระบบปลายทาง) โดย `check.lp-pao.go.th` เป็นผู้เรียก `POST /sync/thaid`
+    หลังได้ profile จาก `/api/verify` ของ thaid และก่อนออก token ให้ระบบปลายทาง
+  contact:
+    name: กองยุทธศาสตร์และงบประมาณ องค์การบริหารส่วนจังหวัดลำปาง
+  x-audience: internal
+  x-data-classification: CONFIDENTIAL
+
+servers:
+  - url: https://mdm.lp-pao.go.th/api/v1
+    description: Production (เข้าถึงได้เฉพาะเครือข่ายภายใน / site-to-site VPN, ไม่ผ่าน Cloudflare proxy)
+  - url: https://mdm-uat.lp-pao.go.th/api/v1
+    description: UAT / integration testing
+
+security:
+  - keycloak: []
+
+tags:
+  - name: Persons
+    description: อ่านข้อมูลบุคลากรด้วย internal ID (สำหรับระบบปลายทางและ HR)
+  - name: Me
+    description: ข้อมูลของผู้ใช้ที่ล็อกอินอยู่ (self-service เฉพาะฟิลด์ที่เจ้าของข้อมูลแก้ไขได้)
+  - name: Provisioning
+    description: HR เตรียม record ล่วงหน้า, จัดการ claim request, ระงับ/คืนสถานะ
+  - name: Employment
+    description: ข้อมูลการปฏิบัติงาน (ตำแหน่ง สังกัด วันบรรจุ) แหล่งข้อมูลจาก HR
+  - name: Sync
+    description: endpoint ภายในสำหรับ check.lp-pao.go.th (sync-on-login) และการนำเข้าจากระบบ HR เดิม
+  - name: Events
+    description: ฟีดเหตุการณ์แบบ pull (cursor-based) สำหรับระบบที่รับ webhook ไม่ได้
+  - name: Webhooks
+    description: การสมัครรับเหตุการณ์แบบ push และตรวจสอบสถานะการส่ง
+  - name: Consents
+    description: ความยินยอมตาม PDPA สำหรับวัตถุประสงค์ที่ใช้ฐาน consent
+  - name: Reference
+    description: ข้อมูลอ้างอิง โครงสร้างส่วนราชการและตำแหน่ง
+  - name: Audit
+    description: การตรวจสอบประวัติการเข้าถึงและการเปลี่ยนแปลง (DPO / HR)
+  - name: System
+    description: health และ metadata
+
+paths:
+  # ---------------------------------------------------------------- Persons
+  /persons:
+    get:
+      tags: [Persons]
+      summary: Search personnel
+      description: |
+        ค้นหาบุคลากรด้วยชื่อ สังกัด ตำแหน่ง หรือสถานะ คืนเฉพาะฟิลด์ตาม scope ของผู้เรียก
+        โดยค่าเริ่มต้นคืนเฉพาะ `status = ACTIVE` การดู record ที่ INACTIVE ต้องมี scope `personnel:read:inactive`
+      operationId: searchPersons
+      security:
+        - keycloak: [personnel:read:basic]
+      parameters:
+        - name: q
+          in: query
+          description: ค้นหาจากชื่อ-สกุล (ไทย/อังกฤษ) หรือ employeeNo แบบ prefix match
+          schema: { type: string, minLength: 2, maxLength: 100 }
+        - name: orgUnitId
+          in: query
+          description: กรองตามสังกัด (รวมหน่วยงานย่อยเมื่อ `includeChildUnits=true`)
+          schema: { type: string, format: uuid }
+        - name: includeChildUnits
+          in: query
+          schema: { type: boolean, default: false }
+        - name: positionId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: personnelType
+          in: query
+          schema: { $ref: '#/components/schemas/PersonnelType' }
+        - name: status
+          in: query
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/PersonStatus' }
+            default: [ACTIVE]
+          style: form
+          explode: false
+        - name: updatedSince
+          in: query
+          description: คืนเฉพาะ record ที่ `updatedAt` มากกว่าค่านี้ (ใช้ทำ incremental sync แบบง่าย)
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการบุคลากร (ฟิลด์ตาม scope)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, page]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Person' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Provisioning]
+      summary: Pre-provision a person (HR)
+      description: |
+        HR สร้าง record ล่วงหน้าสำหรับบุคลากรที่ยังไม่เคยเข้าสู่ระบบด้วย ThaID
+        ระบบจะเก็บ pid ในรูป `pid_hash` (HMAC) และ `pid_enc` (เข้ารหัส) เท่านั้น และตั้งสถานะ `PENDING_CLAIM`
+        เมื่อเจ้าตัวเข้าสู่ระบบด้วย ThaID ครั้งแรก record จะถูก claim อัตโนมัติและข้อมูลระบุตัวตนจะถูกเติมจาก ThaID
+
+        - ถ้า `pid` ตรงกับ record ที่มีอยู่แล้ว จะคืน `409` พร้อม `personId` เดิม (ป้องกันข้อมูลซ้ำ)
+        - `pid` ต้องผ่านการตรวจ checksum (mod 11) ก่อน
+      operationId: provisionPerson
+      security:
+        - keycloak: [personnel:provision]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonProvisionRequest' }
+      responses:
+        '201':
+          description: สร้าง record สถานะ PENDING_CLAIM แล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: มี record ของ pid นี้อยู่แล้ว
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Problem'
+                  - type: object
+                    properties:
+                      existingPersonId: { type: string, format: uuid }
+
+  /persons/lookup:
+    post:
+      tags: [Persons]
+      summary: Resolve pid to personId (restricted)
+      description: |
+        ใช้เฉพาะกรณีจำเป็น เช่น การเชื่อมข้อมูลครั้งแรกจากระบบเดิมที่ยังถือ pid อยู่
+        คืนเฉพาะ `personId` และ `status` ไม่คืนข้อมูลอื่น ทุกครั้งถูกบันทึกใน access log พร้อม `justification`
+        มี rate limit เข้มงวด (ค่าเริ่มต้น 30 ครั้ง/นาที/client) และคืน `404` ทั้งกรณีไม่พบและกรณีไม่มีสิทธิ์ดู record นั้น
+        เพื่อป้องกันการใช้ endpoint นี้ตรวจสอบว่าใครเป็นบุคลากรหรือไม่ (enumeration)
+      operationId: lookupPersonByPid
+      security:
+        - keycloak: [personnel:lookup:pid]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pid, justification]
+              properties:
+                pid: { $ref: '#/components/schemas/Pid' }
+                justification:
+                  type: string
+                  minLength: 10
+                  maxLength: 500
+                  description: เหตุผลการค้นหา บันทึกลง access log
+      responses:
+        '200':
+          description: พบ record
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personId, status]
+                properties:
+                  personId: { type: string, format: uuid }
+                  status: { $ref: '#/components/schemas/PersonStatus' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /persons/{personId}:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Persons]
+      summary: Get a person by internal ID
+      description: คืนข้อมูลบุคลากร เฉพาะกลุ่มฟิลด์ที่ผู้เรียกมี scope (ดู `x-required-scope` ใน schema `Person`)
+      operationId: getPerson
+      security:
+        - keycloak: [personnel:read:basic]
+      parameters:
+        - $ref: '#/components/parameters/Fields'
+        - name: If-None-Match
+          in: header
+          description: ETag จากครั้งก่อน (`"<version>"`) เพื่อรับ 304 เมื่อไม่มีการเปลี่ยนแปลง
+          schema: { type: string }
+      responses:
+        '200':
+          description: ข้อมูลบุคลากร
+          headers:
+            ETag:
+              description: ค่า `version` ปัจจุบันของ record ในเครื่องหมายคำพูด
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '304': { description: ไม่มีการเปลี่ยนแปลงตั้งแต่ version ที่ระบุ }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /persons/{personId}/photo:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Persons]
+      summary: Get the ThaID photo
+      description: "คืนรูปถ่ายจากบัตรประชาชน (ThaID) เป็น binary ห้าม cache ที่ proxy (`Cache-Control: private, no-store`)"
+      operationId: getPersonPhoto
+      security:
+        - keycloak: [personnel:read:photo]
+      responses:
+        '200':
+          description: รูปถ่าย
+          headers:
+            X-Photo-SHA256:
+              schema: { type: string }
+              description: hash ของรูป ใช้ตรวจว่ารูปเปลี่ยนหรือไม่
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /persons/{personId}/pid:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Persons]
+      summary: Decrypt and return the national ID number (highly restricted)
+      description: |
+        คืนเลขบัตรประชาชนแบบถอดรหัสแล้ว สำหรับระบบที่มีฐานทางกฎหมายต้องใช้ pid เท่านั้น (เช่น ส่งข้อมูลให้กรมบัญชีกลาง กบข. หรือประกันสังคม)
+        - ต้องมี scope `personnel:read:pid` ซึ่งอนุมัติเป็นราย client โดย DPO
+        - ต้องส่ง `justification` ทุกครั้ง และถูกบันทึกใน access log แบบแยกตรวจสอบได้
+        - response ห้าม cache, ระบบผู้เรียกห้ามเก็บ pid ลง log ของตนเอง
+      operationId: getPersonPid
+      security:
+        - keycloak: [personnel:read:pid]
+      parameters:
+        - name: justification
+          in: query
+          required: true
+          schema: { type: string, minLength: 10, maxLength: 500 }
+      responses:
+        '200':
+          description: เลขบัตรประชาชน
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: ['private, no-store'] }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personId, pid]
+                properties:
+                  personId: { type: string, format: uuid }
+                  pid: { $ref: '#/components/schemas/Pid' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /persons/{personId}/employment:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Employment]
+      summary: Get employment history
+      operationId: getEmployment
+      security:
+        - keycloak: [personnel:read:employment]
+      parameters:
+        - name: currentOnly
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: รายการ employment (ปัจจุบันและประวัติ)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Employment' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Employment]
+      summary: Upsert current employment (HR)
+      description: |
+        HR บันทึกหรือแก้ไขข้อมูลการปฏิบัติงานปัจจุบัน หากมีการเปลี่ยนตำแหน่ง/สังกัด ระบบจะปิด record เดิม (`effectiveTo`)
+        และเปิด record ใหม่โดยอัตโนมัติ (เก็บประวัติ) และส่งเหตุการณ์ `EMPLOYMENT_UPDATED`
+      operationId: upsertEmployment
+      security:
+        - keycloak: [personnel:write:employment]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmploymentUpsert' }
+      responses:
+        '200':
+          description: บันทึกแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /persons/{personId}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    post:
+      tags: [Provisioning]
+      summary: Deactivate on separation (soft delete + immediate revoke)
+      description: |
+        ใช้เมื่อบุคลากรลาออก โอนย้ายออก เกษียณ หรือพ้นจากราชการ ระบบทำใน transaction เดียว:
+        1. ปิด employment ปัจจุบัน (`employmentStatus`, `separationDate`)
+        2. `person.status = INACTIVE`, `deletedAt = now()` (soft delete, ข้อมูลยังเก็บตามระยะเวลาที่กฎหมายกำหนด)
+        3. สร้างเหตุการณ์ `PERSON_DEACTIVATED`
+        4. worker ปิดบัญชี Keycloak ทันที (disable + logout ทุก session + revoke offline token) และส่ง webhook ให้ทุกระบบที่สมัครไว้
+      operationId: deactivatePerson
+      security:
+        - keycloak: [personnel:write:employment]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employmentStatus, separationDate]
+              properties:
+                employmentStatus:
+                  type: string
+                  enum: [TRANSFERRED_OUT, RESIGNED, RETIRED, TERMINATED, DECEASED]
+                separationDate: { type: string, format: date }
+                reason: { type: string, maxLength: 500 }
+                referenceDocument:
+                  type: string
+                  description: เลขที่คำสั่ง/หนังสือ
+      responses:
+        '200':
+          description: ระงับแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /persons/{personId}/reactivate:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    post:
+      tags: [Provisioning]
+      summary: Reactivate a person (e.g. transferred back)
+      operationId: reactivatePerson
+      security:
+        - keycloak: [personnel:write:employment]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmploymentUpsert' }
+      responses:
+        '200':
+          description: คืนสถานะ ACTIVE และสร้างเหตุการณ์ `PERSON_REACTIVATED` (ระบบจะบังคับ re-verify ผ่าน ThaID ในการเข้าสู่ระบบครั้งถัดไป)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /persons/{personId}/reverify:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    post:
+      tags: [Provisioning]
+      summary: Request an immediate ThaID re-verification (HR)
+      description: ตั้งค่า `reverifyRequestedAt` ให้ record เข้ารอบ re-verify ทันที (ตัด session Keycloak และแจ้งเตือนผู้ใช้)
+      operationId: requestReverify
+      security:
+        - keycloak: [personnel:write:employment]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '202': { description: รับคำขอแล้ว }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /persons/{personId}/change-log:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Audit]
+      summary: Field-level change history
+      description: ประวัติการเปลี่ยนแปลงรายฟิลด์ (ฟิลด์ใด เปลี่ยนจากอะไรเป็นอะไร เมื่อไหร่ โดยใคร/แหล่งใด) ค่าของฟิลด์ที่จัดชั้น RESTRICTED จะถูก mask
+      operationId: getPersonChangeLog
+      security:
+        - keycloak: [audit:read]
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการการเปลี่ยนแปลง
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeLogEntry' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  # --------------------------------------------------------------------- Me
+  /me:
+    get:
+      tags: [Me]
+      summary: Current user's own record
+      description: ใช้ token แบบ user context (authorization code) ระบบ map `sub` ของ Keycloak เป็น `personId` เจ้าของข้อมูลเห็นทุกกลุ่มฟิลด์ของตนเองรวมสถานะการยืนยัน ThaID
+      operationId: getMe
+      security:
+        - keycloak: [personnel:self]
+      responses:
+        '200':
+          description: ข้อมูลของตนเอง
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Person' }
+
+  /me/contact:
+    put:
+      tags: [Me]
+      summary: Update own contact information (self-service)
+      description: เจ้าของข้อมูลแก้ไขได้เฉพาะฟิลด์ที่ไม่ได้มาจาก ThaID และไม่ใช่ข้อมูลการปฏิบัติงาน สร้างเหตุการณ์ `CONTACT_UPDATED`
+      operationId: updateMyContact
+      security:
+        - keycloak: [personnel:self]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactUpdate' }
+      responses:
+        '200':
+          description: บันทึกแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Contact' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /me/emergency-contacts:
+    put:
+      tags: [Me]
+      summary: Replace own emergency contacts
+      operationId: replaceMyEmergencyContacts
+      security:
+        - keycloak: [personnel:self]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 3
+              items: { $ref: '#/components/schemas/EmergencyContact' }
+      responses:
+        '200':
+          description: บันทึกแล้ว
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EmergencyContact' }
+
+  /me/report-identity-issue:
+    post:
+      tags: [Me]
+      summary: Report that ThaID-sourced data looks wrong
+      description: |
+        เจ้าของข้อมูลแก้ไขข้อมูลระบุตัวตนในระบบนี้ไม่ได้ ระบบจะรับแจ้งเพื่อให้ HR ทราบ และแนะนำให้ผู้ใช้ไปแก้ไขที่สำนักทะเบียน (อำเภอ/เทศบาล)
+        แล้วเข้าสู่ระบบด้วย ThaID อีกครั้งเพื่อให้ข้อมูลอัปเดตอัตโนมัติ
+      operationId: reportIdentityIssue
+      security:
+        - keycloak: [personnel:self]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fieldKey, description]
+              properties:
+                fieldKey: { type: string, examples: [identity.reg_address_text] }
+                description: { type: string, maxLength: 1000 }
+      responses:
+        '202': { description: รับแจ้งแล้ว }
+
+  /me/consents:
+    get:
+      tags: [Consents]
+      summary: List own consents per purpose
+      operationId: listMyConsents
+      security:
+        - keycloak: [personnel:self]
+      responses:
+        '200':
+          description: รายการวัตถุประสงค์ที่ใช้ฐาน consent พร้อมสถานะ
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Consent' }
+
+  /me/consents/{purposeCode}:
+    parameters:
+      - name: purposeCode
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Consents]
+      summary: Grant or withdraw consent for a purpose
+      description: ใช้ได้เฉพาะวัตถุประสงค์ที่ `legalBasis = CONSENT` วัตถุประสงค์ที่ใช้ฐานหน้าที่ตามกฎหมาย/ภารกิจสาธารณะไม่ต้องขอและถอนไม่ได้
+      operationId: setMyConsent
+      security:
+        - keycloak: [personnel:self]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, policyVersion]
+              properties:
+                status: { type: string, enum: [GRANTED, WITHDRAWN] }
+                policyVersion: { type: string, description: เวอร์ชันข้อความความยินยอมที่ผู้ใช้เห็น }
+      responses:
+        '200':
+          description: บันทึกแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  # ------------------------------------------------------------------- Sync
+  /sync/thaid:
+    post:
+      tags: [Sync]
+      summary: Sync identity data from a ThaID login (check.lp-pao.go.th only)
+      description: |
+        เรียกโดย `check.lp-pao.go.th` ใน handler `/sso-callback` หลังได้ profile จาก `GET thaid.lp-pao.go.th/api/verify?token=...`
+        และ **ก่อน** ออก token ให้ระบบปลายทาง (Keycloak client credentials + scope `sync:thaid`, เรียกผ่านเครือข่ายภายใน NT Cloud ไม่ผ่าน Cloudflare)
+        ระบบทำงานดังนี้ใน transaction เดียว:
+        1. ตรวจ checksum pid → คำนวณ `pid_hash` → ค้นหา record
+        2. ไม่พบ → บันทึก `claim_request` คืน `202 UNMATCHED` (adapter ต้องปฏิเสธการเข้าสู่ระบบ)
+        3. พบ `PENDING_CLAIM` → claim record, เติม identity/photo, บันทึก change log, เหตุการณ์ `PERSON_CLAIMED`
+        4. พบ `ACTIVE` → เทียบ snapshot hash, อัปเดตเฉพาะฟิลด์ที่เปลี่ยน, บันทึก change log, เหตุการณ์ `IDENTITY_UPDATED` / `PHOTO_UPDATED`
+        5. พบ `INACTIVE` → คืน `403 REJECTED_INACTIVE`
+
+        การตัดสินใจอนุญาต/ปฏิเสธการเข้าสู่ระบบเป็นของ `check.lp-pao.go.th` ตาม `audience` ของ app ที่ลงทะเบียนไว้:
+        app สำหรับบุคลากร (PERSONNEL) ต้องปฏิเสธเมื่อผลเป็น `UNMATCHED` / `REJECTED_INACTIVE`, app สำหรับประชาชน (CITIZEN) ให้ผ่านได้โดยไม่มี `personId`
+        `claim_request` จะถูกบันทึกเฉพาะเมื่อ `audience = PERSONNEL` เพื่อไม่ให้การเข้าสู่ระบบของประชาชนทั่วไปสร้างรายการค้างให้ HR
+
+        response ไม่มี pid และ check.lp-pao.go.th ต้องเก็บ `personId` ใน session แทน pid (คง pid ไว้เฉพาะเมื่อ app มีสิทธิ์ claim `pid` ตาม allowed_claims)
+      operationId: syncFromThaid
+      security:
+        - keycloak: [sync:thaid]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ThaidSyncRequest' }
+      responses:
+        '200':
+          description: บุคลากรที่ ACTIVE (รวมกรณีเพิ่ง claim)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThaidSyncResult' }
+        '202':
+          description: ยืนยันตัวตนสำเร็จแต่ไม่ใช่บุคลากรในระบบ (`result = UNMATCHED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThaidSyncResult' }
+        '403':
+          description: บุคลากรสถานะ INACTIVE (`result = REJECTED_INACTIVE`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThaidSyncResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /sync/hr/employment-batch:
+    post:
+      tags: [Sync]
+      summary: Batch import employment data from the legacy HR system
+      description: |
+        นำเข้าข้อมูลการปฏิบัติงานเป็นชุด (ใช้ในการ migrate และการ sync รายสัปดาห์ช่วง dual-run)
+        แต่ละแถวอ้างอิงบุคคลด้วย `pid` (ระบบแปลงเป็น pid_hash ทันที) หรือ `personId` หรือ `externalId`
+        - `mode = DRY_RUN` คืนผลการตรวจสอบโดยไม่บันทึก
+        - แถวที่มีปัญหา (pid checksum ผิด, ตำแหน่งซ้ำ, ไม่พบ org unit) ถูกคืนใน `errors` แถวอื่นบันทึกตามปกติ
+        - ระบบไม่สร้าง person ใหม่ถ้าไม่ได้ระบุ `createIfMissing = true`
+      operationId: importEmploymentBatch
+      security:
+        - keycloak: [personnel:import]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, rows]
+              properties:
+                mode: { type: string, enum: [DRY_RUN, APPLY], default: DRY_RUN }
+                createIfMissing: { type: boolean, default: false }
+                sourceSystem: { type: string, examples: [LHR, LEGACY_HR_XLSX] }
+                rows:
+                  type: array
+                  maxItems: 2000
+                  items: { $ref: '#/components/schemas/EmploymentImportRow' }
+      responses:
+        '200':
+          description: สรุปผล
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportResult' }
+
+  /claim-requests:
+    get:
+      tags: [Provisioning]
+      summary: List ThaID logins that did not match any person (HR)
+      operationId: listClaimRequests
+      security:
+        - keycloak: [personnel:provision]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING_HR, LINKED, REJECTED], default: PENDING_HR }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ClaimRequest' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  /claim-requests/{claimRequestId}/resolve:
+    parameters:
+      - name: claimRequestId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Provisioning]
+      summary: Resolve an unmatched login (link to a new/existing person or reject)
+      description: |
+        `action = PROVISION` สร้าง person ใหม่พร้อม employment (เหมือน `POST /persons` แต่ไม่ต้องกรอก pid ซ้ำ)
+        `action = LINK` เชื่อมกับ person ที่มีอยู่แล้วซึ่งยังไม่มี pid_hash (เช่น record ที่ migrate มาโดยไม่มีเลขบัตร)
+        `action = REJECT` ไม่ใช่บุคลากร
+      operationId: resolveClaimRequest
+      security:
+        - keycloak: [personnel:provision]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [PROVISION, LINK, REJECT] }
+                personId: { type: string, format: uuid, description: ใช้กับ LINK }
+                employment: { $ref: '#/components/schemas/EmploymentUpsert' }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: ดำเนินการแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimRequest' }
+
+  /reverify/stale:
+    get:
+      tags: [Provisioning]
+      summary: Personnel whose ThaID data is stale or expired (HR dashboard)
+      operationId: listStalePersons
+      security:
+        - keycloak: [personnel:provision]
+      parameters:
+        - name: verificationStatus
+          in: query
+          schema:
+            type: array
+            items: { type: string, enum: [STALE, EXPIRED] }
+            default: [STALE, EXPIRED]
+          style: form
+          explode: false
+        - name: orgUnitId
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายชื่อค้างยืนยัน
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Person' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  # ----------------------------------------------------------------- Events
+  /events:
+    get:
+      tags: [Events]
+      summary: Pull event feed (cursor-based)
+      description: |
+        ฟีดเหตุการณ์เรียงตาม `sequence` สำหรับระบบที่รับ webhook ไม่ได้ หรือใช้ตรวจสอบย้อนหลังว่าพลาดเหตุการณ์ใดไป
+        ระบบผู้เรียกควรเก็บ `sequence` ล่าสุดที่ประมวลผลแล้ว และเรียกซ้ำด้วย `after` เหตุการณ์เก็บไว้อย่างน้อย 90 วัน
+        คืนเฉพาะเหตุการณ์ของบุคลากรที่ผู้เรียกมีสิทธิ์อ่าน `personnel:read:basic`
+      operationId: listEvents
+      security:
+        - keycloak: [events:read]
+      parameters:
+        - name: after
+          in: query
+          description: sequence ล่าสุดที่ประมวลผลแล้ว (exclusive)
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+        - name: eventType
+          in: query
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/EventType' }
+          style: form
+          explode: false
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: เหตุการณ์
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, lastSequence, hasMore]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PersonnelEvent' }
+                  lastSequence: { type: integer, format: int64 }
+                  hasMore: { type: boolean }
+
+  # --------------------------------------------------------------- Webhooks
+  /webhooks/subscriptions:
+    get:
+      tags: [Webhooks]
+      summary: List subscriptions of the calling consumer system
+      operationId: listWebhookSubscriptions
+      security:
+        - keycloak: [webhook:manage]
+      responses:
+        '200':
+          description: รายการ
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WebhookSubscription' }
+    post:
+      tags: [Webhooks]
+      summary: Create a webhook subscription
+      description: |
+        URL ต้องเป็น https และอยู่ในรายการ host ที่ผู้ดูแล MDM อนุญาต (ป้องกัน SSRF)
+        ระบบคืน `secret` เพียงครั้งเดียวในการสร้าง ใช้ตรวจ `X-MDM-Signature` (HMAC-SHA256)
+      operationId: createWebhookSubscription
+      security:
+        - keycloak: [webhook:manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, eventTypes]
+              properties:
+                url: { type: string, format: uri, examples: ['https://eoffice.lp-pao.go.th/hooks/mdm'] }
+                eventTypes:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/EventType' }
+      responses:
+        '201':
+          description: สร้างแล้ว (มี `secret` เฉพาะครั้งนี้)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WebhookSubscription'
+                  - type: object
+                    properties:
+                      secret: { type: string, description: แสดงครั้งเดียว }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /webhooks/subscriptions/{subscriptionId}:
+    parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Webhooks]
+      summary: Delete a subscription
+      operationId: deleteWebhookSubscription
+      security:
+        - keycloak: [webhook:manage]
+      responses:
+        '204': { description: ลบแล้ว }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /webhooks/subscriptions/{subscriptionId}/test:
+    parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Webhooks]
+      summary: Send a signed test event
+      operationId: testWebhookSubscription
+      security:
+        - keycloak: [webhook:manage]
+      responses:
+        '200':
+          description: ผลการส่ง
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+
+  /webhooks/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: Delivery attempts for the calling consumer system
+      operationId: listWebhookDeliveries
+      security:
+        - keycloak: [webhook:manage]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: array
+            items: { type: string, enum: [PENDING, DELIVERED, FAILED, DEAD] }
+          style: form
+          explode: false
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WebhookDelivery' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  /webhooks/deliveries/{deliveryId}/retry:
+    parameters:
+      - name: deliveryId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Webhooks]
+      summary: Re-queue a DEAD delivery
+      operationId: retryWebhookDelivery
+      security:
+        - keycloak: [webhook:manage]
+      responses:
+        '202': { description: เข้าคิวใหม่แล้ว }
+
+  # -------------------------------------------------------------- Reference
+  /org-units:
+    get:
+      tags: [Reference]
+      summary: Organization structure (สำนัก/กอง → ฝ่าย → งาน)
+      operationId: listOrgUnits
+      security:
+        - keycloak: [personnel:read:basic]
+      parameters:
+        - name: activeOnly
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: รายการหน่วยงาน (flat list พร้อม parentId)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OrgUnit' }
+
+  /positions:
+    get:
+      tags: [Reference]
+      summary: Position master (เลขที่ตำแหน่ง)
+      operationId: listPositions
+      security:
+        - keycloak: [personnel:read:basic]
+      parameters:
+        - name: orgUnitId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: รายการตำแหน่ง
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Position' }
+
+  # ------------------------------------------------------------------ Audit
+  /audit/access-logs:
+    get:
+      tags: [Audit]
+      summary: Who accessed whose data (DPO / HR)
+      operationId: listAccessLogs
+      security:
+        - keycloak: [audit:read]
+      parameters:
+        - name: personId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: clientId
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: pidAccessOnly
+          in: query
+          description: เฉพาะการเข้าถึง pid / lookup
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AccessLogEntry' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  # ----------------------------------------------------------------- System
+  /health:
+    get:
+      tags: [System]
+      summary: Liveness / readiness
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  db: { type: string }
+                  vault: { type: string }
+                  outboxBacklog: { type: integer }
+
+# =============================================================== Webhooks (push)
+webhooks:
+  personnel.changed:
+    post:
+      summary: Event delivered to a subscribed consumer system
+      description: |
+        MDM ส่ง POST ไปยัง URL ที่สมัครไว้ทุกครั้งที่มีเหตุการณ์ตรงกับ `eventTypes`
+
+        **การตรวจสอบลายเซ็น** (ระบบผู้รับต้องทำ):
+        `X-MDM-Signature: sha256=HEX(HMAC-SHA256(secret, "<X-MDM-Timestamp>.<raw body>"))`
+        ปฏิเสธถ้า timestamp ต่างจากเวลาปัจจุบันเกิน 5 นาที (กัน replay) และเปรียบเทียบลายเซ็นแบบ constant-time
+
+        **สัญญาการส่ง**: at-least-once, ต้องตอบ 2xx ภายใน 10 วินาที, ทำงานแบบ idempotent ด้วย `eventId`,
+        retry ตาม backoff 1m, 5m, 30m, 2h, 12h, 24h, 24h แล้วจึงเป็น DEAD (ดูได้ที่ `GET /webhooks/deliveries`)
+        payload ไม่มีค่าข้อมูลส่วนบุคคล ระบบผู้รับดึงข้อมูลจริงผ่าน `GET /persons/{personId}` ตาม scope ของตน
+
+        **`PERSON_DEACTIVATED`** ระบบผู้รับต้องเพิกถอนสิทธิ์ผู้ใช้ในระบบของตนทันทีที่ได้รับ (SLA ไม่เกิน 15 นาที)
+      parameters:
+        - name: X-MDM-Event-Id
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-MDM-Timestamp
+          in: header
+          required: true
+          schema: { type: string, format: date-time }
+        - name: X-MDM-Signature
+          in: header
+          required: true
+          schema: { type: string, examples: ['sha256=3f1a...'] }
+        - name: X-MDM-Delivery-Attempt
+          in: header
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonnelEvent' }
+      responses:
+        '2XX': { description: ระบบผู้รับยืนยันว่าได้รับแล้ว (idempotent) }
+        default: { description: ถือว่าส่งไม่สำเร็จ จะ retry }
+
+# ================================================================== Components
+components:
+  securitySchemes:
+    keycloak:
+      type: oauth2
+      description: |
+        Keycloak realm `lp-pao` เป็นผู้ออก token สำหรับเรียก MDM API (RS256, ตรวจสอบด้วย JWKS) โดยแยกจากเส้นทางล็อกอินของผู้ใช้
+        ซึ่งยังคงเป็น thaid.lp-pao.go.th → check.lp-pao.go.th ตามเดิม
+        - ระบบ ↔ ระบบ (รวม check.lp-pao.go.th และ backend ของทุกระบบปลายทาง) ใช้ **client credentials**
+          และได้ scope ตาม client scope ที่ผู้ดูแล MDM/DPO อนุมัติเป็นราย client
+        - ผู้ใช้ (self-service portal, HR/DPO console) ใช้ **authorization code + PKCE** กับ Keycloak
+          ซึ่ง broker ไปยัง check.lp-pao.go.th ในฐานะ OIDC Identity Provider (ทางเลือก A ในเอกสารออกแบบ)
+          และได้ scope ตาม realm role (`staff`, `hr_officer`, `dpo`)
+        claim ที่ MDM ใช้: `sub`, `azp` (client id), `scope`, `person_id` (user context), `roles`
+      flows:
+        clientCredentials:
+          tokenUrl: https://iam.lp-pao.go.th/realms/lp-pao/protocol/openid-connect/token
+          scopes: &scopes
+            personnel:read:basic: personId, ชื่อ-สกุล, ตำแหน่ง, สังกัด, ประเภทบุคลากร, สถานะ, version
+            personnel:read:contact: เบอร์โทร, อีเมล, ที่อยู่ปัจจุบัน, ผู้ติดต่อฉุกเฉิน
+            personnel:read:identity: วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน, วันออก/หมดอายุบัตร, สถานะ ThaID
+            personnel:read:employment: วันบรรจุ, ระดับ, ประวัติการดำรงตำแหน่ง, เหตุพ้นจากราชการ
+            personnel:read:photo: รูปถ่ายจาก ThaID
+            personnel:read:inactive: เห็น record สถานะ INACTIVE (ลาออก/โอนย้าย)
+            personnel:read:pid: ถอดรหัสเลขบัตรประชาชน (อนุมัติโดย DPO เป็นราย client)
+            personnel:lookup:pid: ค้นหา personId จาก pid (ใช้ตอน migrate/เชื่อมครั้งแรก)
+            personnel:self: ข้อมูลของตนเอง และแก้ไขข้อมูลติดต่อ/ความยินยอม (user context เท่านั้น)
+            personnel:write:employment: HR บันทึกตำแหน่ง/สังกัด/วันบรรจุ, ระงับ/คืนสถานะ, ขอ re-verify
+            personnel:provision: HR เตรียม record ล่วงหน้าและจัดการ claim request
+            personnel:import: นำเข้าข้อมูลชุดจากระบบ HR เดิม
+            sync:thaid: check.lp-pao.go.th เท่านั้น (client `check-broker`)
+            events:read: อ่านฟีดเหตุการณ์
+            webhook:manage: จัดการ webhook subscription ของ client ตนเอง
+            audit:read: อ่าน access log และ change log (DPO / ผู้ตรวจสอบ)
+        authorizationCode:
+          authorizationUrl: https://iam.lp-pao.go.th/realms/lp-pao/protocol/openid-connect/auth
+          tokenUrl: https://iam.lp-pao.go.th/realms/lp-pao/protocol/openid-connect/token
+          scopes: *scopes
+
+  parameters:
+    PersonId:
+      name: personId
+      in: path
+      required: true
+      description: internal ID (UUID) ของบุคลากร
+      schema: { type: string, format: uuid }
+    Fields:
+      name: fields
+      in: query
+      description: |
+        เลือกกลุ่มฟิลด์ที่ต้องการ (comma-separated) เพื่อลดข้อมูลตาม data minimization
+        ค่าที่ใช้ได้: basic, identity, contact, employment, emergencyContacts, verification
+        ถ้าไม่ระบุ คืนทุกกลุ่มที่ scope อนุญาต
+      schema: { type: string, examples: ['basic,employment'] }
+    Cursor:
+      name: cursor
+      in: query
+      description: cursor จาก `page.nextCursor` ของหน้าก่อน
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: UUID ที่ผู้เรียกสร้าง ระบบจะคืนผลเดิมถ้าเรียกซ้ำภายใน 24 ชั่วโมง
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: คำขอไม่ถูกต้อง
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: ไม่มี token หรือ token ไม่ถูกต้อง
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: scope ไม่พอ หรือ client ถูกระงับ
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: ไม่พบ (หรือไม่มีสิทธิ์เห็น record นั้น)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: ข้อมูลขัดแย้ง (เช่น version ไม่ตรง, ตำแหน่งมีผู้ครองอยู่)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: เกิน rate limit
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Pid:
+      type: string
+      pattern: '^[0-9]{13}$'
+      description: เลขประจำตัวประชาชน 13 หลัก (ต้องผ่าน checksum mod 11) ปรากฏเฉพาะใน request ของ endpoint ที่กำหนด
+      x-data-classification: RESTRICTED
+
+    PersonStatus:
+      type: string
+      enum: [PENDING_CLAIM, ACTIVE, INACTIVE]
+
+    VerificationStatus:
+      type: string
+      enum: [UNVERIFIED, VERIFIED, STALE, EXPIRED]
+      description: |
+        UNVERIFIED = ยังไม่เคยเข้าสู่ระบบด้วย ThaID (record ที่ HR เตรียมไว้)
+        VERIFIED = ข้อมูล ThaID ยืนยันภายในรอบที่กำหนด
+        STALE = เกินรอบ ต้องยืนยันใหม่ (อยู่ใน grace period)
+        EXPIRED = พ้น grace period แล้วยังไม่ยืนยัน
+
+    PersonnelType:
+      type: string
+      enum:
+        - CIVIL_SERVANT            # ข้าราชการองค์การบริหารส่วนจังหวัด
+        - TEACHER                  # ข้าราชการครูและบุคลากรทางการศึกษา
+        - PERMANENT_EMPLOYEE       # ลูกจ้างประจำ
+        - CONTRACT_EMPLOYEE        # พนักงานจ้างตามภารกิจ
+        - GENERAL_EMPLOYEE         # พนักงานจ้างทั่วไป
+        - EXPERT_EMPLOYEE          # พนักงานจ้างผู้เชี่ยวชาญพิเศษ
+        - TRANSFERRED_HEALTH       # บุคลากรถ่ายโอน (รพ.สต.)
+
+    EventType:
+      type: string
+      enum:
+        - PERSON_CLAIMED
+        - IDENTITY_UPDATED
+        - PHOTO_UPDATED
+        - CONTACT_UPDATED
+        - EMPLOYMENT_UPDATED
+        - PERSON_DEACTIVATED
+        - PERSON_REACTIVATED
+        - PERSON_MERGED
+        - VERIFICATION_STALE
+        - VERIFICATION_EXPIRED
+
+    Address:
+      type: object
+      properties:
+        houseNo: { type: string }
+        moo: { type: string }
+        soi: { type: string }
+        road: { type: string }
+        subdistrict: { $ref: '#/components/schemas/AreaCode' }
+        district: { $ref: '#/components/schemas/AreaCode' }
+        province: { $ref: '#/components/schemas/AreaCode' }
+        postcode: { type: string }
+        fullText: { type: string, description: ที่อยู่แบบข้อความเต็ม }
+
+    AreaCode:
+      type: object
+      properties:
+        code: { type: string, description: รหัสตามกรมการปกครอง }
+        nameTh: { type: string }
+
+    Person:
+      type: object
+      description: |
+        ข้อมูลบุคลากร แต่ละกลุ่มฟิลด์ปรากฏก็ต่อเมื่อผู้เรียกมี scope ตาม `x-required-scope`
+        `basic` ปรากฏเสมอ (ต้องมี `personnel:read:basic`)
+      required: [personId, status, version, updatedAt, basic]
+      properties:
+        personId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/PersonStatus' }
+        version: { type: integer, description: เพิ่มขึ้นทุกครั้งที่ข้อมูลเปลี่ยน ใช้กับ ETag และเหตุการณ์ }
+        updatedAt: { type: string, format: date-time }
+        basic:
+          type: object
+          x-required-scope: personnel:read:basic
+          properties:
+            titleTh: { type: string, examples: [นาย] }
+            firstNameTh: { type: string }
+            lastNameTh: { type: string }
+            titleEn: { type: string }
+            firstNameEn: { type: string }
+            lastNameEn: { type: string }
+            employeeNo: { type: string, description: เลขประจำตัวข้าราชการ/พนักงาน }
+            personnelType: { $ref: '#/components/schemas/PersonnelType' }
+            positionTitle: { type: string }
+            positionNo: { type: string }
+            levelCode: { type: string, examples: [ชำนาญการ] }
+            orgUnit: { $ref: '#/components/schemas/OrgUnitRef' }
+            emailWork: { type: string, format: email }
+            photoUrl:
+              type: string
+              format: uri
+              description: ลิงก์ `GET /persons/{personId}/photo` (ต้องมี scope photo จึงเรียกได้)
+        verification:
+          type: object
+          x-required-scope: personnel:read:basic
+          properties:
+            verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+            thaidVerifiedAt: { type: [string, 'null'], format: date-time }
+            claimedAt: { type: [string, 'null'], format: date-time }
+        identity:
+          type: object
+          x-required-scope: personnel:read:identity
+          x-source: THAID
+          description: มาจาก ThaID เท่านั้น อ่านอย่างเดียว
+          properties:
+            middleNameTh: { type: [string, 'null'] }
+            birthDate: { type: string, format: date }
+            gender: { type: string, enum: [M, F, X] }
+            registeredAddress: { $ref: '#/components/schemas/Address' }
+            idCardIssueDate: { type: [string, 'null'], format: date }
+            idCardExpireDate: { type: [string, 'null'], format: date }
+            ial: { type: [string, 'null'], description: Identity Assurance Level จาก ThaID }
+            syncedAt: { type: string, format: date-time }
+        contact:
+          $ref: '#/components/schemas/Contact'
+        emergencyContacts:
+          type: array
+          x-required-scope: personnel:read:contact
+          items: { $ref: '#/components/schemas/EmergencyContact' }
+        employment:
+          allOf:
+            - $ref: '#/components/schemas/Employment'
+          x-required-scope: personnel:read:employment
+          description: employment ปัจจุบัน (ประวัติทั้งหมดดูที่ `GET /persons/{personId}/employment`)
+
+    Contact:
+      type: object
+      x-required-scope: personnel:read:contact
+      x-source: SELF
+      properties:
+        mobilePhone: { type: [string, 'null'] }
+        phoneAlt: { type: [string, 'null'] }
+        emailPersonal: { type: [string, 'null'], format: email }
+        lineId: { type: [string, 'null'] }
+        sameAsRegistered: { type: boolean }
+        currentAddress: { $ref: '#/components/schemas/Address' }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string, enum: [SELF, HR] }
+
+    ContactUpdate:
+      type: object
+      properties:
+        mobilePhone: { type: [string, 'null'], pattern: '^0[0-9]{8,9}$' }
+        phoneAlt: { type: [string, 'null'] }
+        emailPersonal: { type: [string, 'null'], format: email }
+        lineId: { type: [string, 'null'] }
+        sameAsRegistered: { type: boolean }
+        currentAddress: { $ref: '#/components/schemas/Address' }
+
+    EmergencyContact:
+      type: object
+      required: [fullName, relationship, phone]
+      properties:
+        fullName: { type: string }
+        relationship: { type: string, examples: [คู่สมรส] }
+        phone: { type: string }
+        priority: { type: integer, minimum: 1, maximum: 3 }
+
+    OrgUnitRef:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        code: { type: string }
+        nameTh: { type: string }
+        parentNameTh: { type: string, description: สำนัก/กอง ต้นสังกัด }
+
+    OrgUnit:
+      type: object
+      required: [orgUnitId, code, nameTh, unitLevel, isActive]
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        parentId: { type: [string, 'null'], format: uuid }
+        code: { type: string }
+        nameTh: { type: string }
+        nameEn: { type: [string, 'null'] }
+        unitLevel: { type: string, enum: [DIVISION, SECTION, UNIT], description: DIVISION = สำนัก/กอง, SECTION = ฝ่าย, UNIT = งาน }
+        isActive: { type: boolean }
+
+    Position:
+      type: object
+      required: [positionId, positionNo, titleTh, positionType, orgUnitId]
+      properties:
+        positionId: { type: string, format: uuid }
+        positionNo: { type: string, description: เลขที่ตำแหน่ง }
+        titleTh: { type: string }
+        lineOfWork: { type: string, description: สายงาน }
+        positionType:
+          type: string
+          enum: [EXECUTIVE, DIRECTOR, ACADEMIC, GENERAL]
+          description: EXECUTIVE = บริหารท้องถิ่น, DIRECTOR = อำนวยการท้องถิ่น, ACADEMIC = วิชาการ, GENERAL = ทั่วไป
+        orgUnitId: { type: string, format: uuid }
+        isActive: { type: boolean }
+
+    Employment:
+      type: object
+      x-source: HR
+      properties:
+        employmentId: { type: string, format: uuid }
+        employeeNo: { type: string }
+        personnelType: { $ref: '#/components/schemas/PersonnelType' }
+        position: { $ref: '#/components/schemas/Position' }
+        orgUnit: { $ref: '#/components/schemas/OrgUnitRef' }
+        levelCode: { type: string }
+        appointedDate: { type: string, format: date, description: วันบรรจุ }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: [string, 'null'], format: date }
+        isCurrent: { type: boolean }
+        employmentStatus:
+          type: string
+          enum: [ACTIVE, TRANSFERRED_OUT, RESIGNED, RETIRED, TERMINATED, DECEASED]
+        separationDate: { type: [string, 'null'], format: date }
+        emailWork: { type: [string, 'null'], format: email }
+        hrSourceRef: { type: [string, 'null'], description: รหัสอ้างอิงในระบบ HR เดิม }
+        updatedAt: { type: string, format: date-time }
+
+    EmploymentUpsert:
+      type: object
+      required: [employeeNo, personnelType, positionId, orgUnitId, effectiveFrom]
+      properties:
+        employeeNo: { type: string }
+        personnelType: { $ref: '#/components/schemas/PersonnelType' }
+        positionId: { type: string, format: uuid }
+        orgUnitId: { type: string, format: uuid }
+        levelCode: { type: string }
+        appointedDate: { type: string, format: date }
+        effectiveFrom: { type: string, format: date }
+        emailWork: { type: [string, 'null'], format: email }
+        referenceDocument: { type: string, description: เลขที่คำสั่ง }
+        expectedVersion:
+          type: integer
+          description: version ของ person ที่ผู้เรียกเห็นล่าสุด (optimistic locking) ถ้าไม่ตรงคืน 409
+
+    EmploymentImportRow:
+      type: object
+      description: หนึ่งแถวจากระบบ HR เดิม ต้องมี `pid` หรือ `personId` หรือ `externalId` อย่างใดอย่างหนึ่ง
+      properties:
+        rowRef: { type: string, description: อ้างอิงแถวในไฟล์ต้นทาง สำหรับรายงานผล }
+        pid: { $ref: '#/components/schemas/Pid' }
+        personId: { type: string, format: uuid }
+        externalId:
+          type: object
+          properties:
+            systemCode: { type: string, examples: [LHR] }
+            value: { type: string }
+        expectedFirstNameTh: { type: string, description: ใช้ตรวจความสอดคล้องกับ ThaID ตอน claim }
+        expectedLastNameTh: { type: string }
+        employment: { $ref: '#/components/schemas/EmploymentUpsert' }
+
+    ImportResult:
+      type: object
+      properties:
+        mode: { type: string, enum: [DRY_RUN, APPLY] }
+        total: { type: integer }
+        created: { type: integer }
+        updated: { type: integer }
+        unchanged: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              rowRef: { type: string }
+              code: { type: string, examples: [PID_CHECKSUM_INVALID, DUPLICATE_POSITION, ORG_UNIT_NOT_FOUND, PERSON_NOT_FOUND] }
+              message: { type: string }
+
+    PersonProvisionRequest:
+      type: object
+      required: [pid, expectedFirstNameTh, expectedLastNameTh, employment]
+      properties:
+        pid: { $ref: '#/components/schemas/Pid' }
+        expectedFirstNameTh: { type: string }
+        expectedLastNameTh: { type: string }
+        employment: { $ref: '#/components/schemas/EmploymentUpsert' }
+        externalIds:
+          type: array
+          items:
+            type: object
+            required: [systemCode, value]
+            properties:
+              systemCode: { type: string }
+              value: { type: string }
+        notifyEmail:
+          type: string
+          format: email
+          description: อีเมลสำหรับส่งคำเชิญให้เข้าสู่ระบบด้วย ThaID (ไม่เก็บเป็นข้อมูลติดต่อ)
+
+    ThaidSyncRequest:
+      type: object
+      required: [claims, context]
+      properties:
+        trigger:
+          type: string
+          enum: [LOGIN]
+          default: LOGIN
+          description: check.lp-pao.go.th ส่ง LOGIN เสมอ MDM จะบันทึกเป็น REVERIFY เองเมื่อ record อยู่ในสถานะ STALE/EXPIRED
+        claims:
+          type: object
+          description: |
+            profile จาก `thaid.lp-pao.go.th/api/verify` หลัง check แปลงเป็นรูปแบบกลางแล้ว (ชื่อ claim จริงของ DOPA ขึ้นกับ scope ที่ได้รับอนุมัติ
+            ปัจจุบัน: pid, title, given_name, family_name, ชื่ออังกฤษ, gender, birthdate, address; รูปถ่ายต้องขอ scope เพิ่มจาก DOPA)
+            ฟิลด์ที่ไม่ได้ส่งมา (undefined) จะไม่ถูกเขียนทับ ฟิลด์ที่ส่งมาเป็น null ถือว่า "ไม่มีข้อมูล"
+          required: [pid, firstNameTh, lastNameTh]
+          properties:
+            pid: { $ref: '#/components/schemas/Pid' }
+            titleTh: { type: string }
+            firstNameTh: { type: string }
+            middleNameTh: { type: [string, 'null'] }
+            lastNameTh: { type: string }
+            titleEn: { type: string }
+            firstNameEn: { type: string }
+            lastNameEn: { type: string }
+            birthDate: { type: string, format: date }
+            gender: { type: string, enum: [M, F, X] }
+            registeredAddress: { $ref: '#/components/schemas/Address' }
+            idCardIssueDate: { type: string, format: date }
+            idCardExpireDate: { type: string, format: date }
+            photo:
+              type: object
+              properties:
+                mimeType: { type: string, enum: [image/jpeg, image/png] }
+                base64: { type: string, contentEncoding: base64 }
+            ial: { type: string }
+            aal: { type: string }
+        context:
+          type: object
+          required: [appId, audience]
+          properties:
+            appId: { type: string, description: รหัส app ใน ALLOWED_APPS ของ check.lp-pao.go.th ที่ผู้ใช้กำลังเข้าสู่ระบบ, examples: [eoffice] }
+            audience:
+              type: string
+              enum: [PERSONNEL, CITIZEN]
+              description: กลุ่มผู้ใช้ของ app นั้น (จาก app registry ของ check) ใช้ตัดสินว่าจะบันทึก claim_request หรือไม่
+            clientIp: { type: string }
+            userAgent: { type: string }
+            thaidLoginRef: { type: string, description: อ้างอิง login_id ฝั่ง thaid.lp-pao.go.th (ไม่ใช่ token) เพื่อตามรอยข้ามระบบ }
+
+    ThaidSyncResult:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [NO_CHANGE, UPDATED, CLAIMED, UNMATCHED, REJECTED_INACTIVE]
+        personId: { type: [string, 'null'], format: uuid }
+        status: { $ref: '#/components/schemas/PersonStatus' }
+        verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+        changedFields:
+          type: array
+          items: { type: string, examples: [identity.last_name_th] }
+        nameMismatchWithHr:
+          type: boolean
+          description: true เมื่อชื่อจาก ThaID ไม่ตรงกับที่ HR คาดไว้ตอน provision (บันทึกให้ HR ตรวจสอบ ไม่บล็อกการเข้าสู่ระบบ)
+        tokenClaims:
+          type: object
+          description: claims ที่ check.lp-pao.go.th ควรใส่ใน session/profile ที่ส่งให้ app ผ่าน /api/verify (ไม่มี pid)
+          properties:
+            sub: { type: string, format: uuid }
+            name: { type: string }
+            employeeNo: { type: string }
+            orgUnitCode: { type: string }
+            positionTitle: { type: string }
+            roles:
+              type: array
+              items: { type: string, examples: [staff, hr_officer] }
+
+    ClaimRequest:
+      type: object
+      properties:
+        claimRequestId: { type: string, format: uuid }
+        displayName: { type: string, description: ชื่อ-สกุลจาก ThaID เพื่อให้ HR ระบุตัวได้ }
+        status: { type: string, enum: [PENDING_HR, LINKED, REJECTED] }
+        attemptCount: { type: integer }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        resolvedPersonId: { type: [string, 'null'], format: uuid }
+        resolvedBy: { type: [string, 'null'] }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+
+    Consent:
+      type: object
+      properties:
+        purposeCode: { type: string }
+        purposeNameTh: { type: string }
+        legalBasis: { type: string, enum: [PUBLIC_TASK, LEGAL_OBLIGATION, CONTRACT, CONSENT, VITAL_INTEREST] }
+        requiresConsent: { type: boolean }
+        status: { type: [string, 'null'], enum: [GRANTED, WITHDRAWN, null] }
+        policyVersion: { type: [string, 'null'] }
+        grantedAt: { type: [string, 'null'], format: date-time }
+        withdrawnAt: { type: [string, 'null'], format: date-time }
+
+    ChangeLogEntry:
+      type: object
+      properties:
+        logId: { type: integer, format: int64 }
+        changedAt: { type: string, format: date-time }
+        fieldKey: { type: string, examples: [identity.reg_address_text] }
+        oldValue: { description: ค่าเดิม (mask เมื่อฟิลด์เป็น RESTRICTED) }
+        newValue: { description: ค่าใหม่ }
+        changedBy: { type: string, enum: [THAID_SYNC, SELF, HR, HR_IMPORT, ADMIN] }
+        actorSub: { type: [string, 'null'] }
+        syncEventId: { type: [string, 'null'], format: uuid }
+        reason: { type: [string, 'null'] }
+
+    PersonnelEvent:
+      type: object
+      required: [eventId, sequence, eventType, personId, occurredAt, version]
+      description: payload เหตุการณ์ ไม่มีค่าข้อมูลส่วนบุคคล มีเพียงชื่อฟิลด์ที่เปลี่ยน
+      properties:
+        eventId: { type: string, format: uuid }
+        sequence: { type: integer, format: int64 }
+        eventType: { $ref: '#/components/schemas/EventType' }
+        personId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        version: { type: integer, description: person.version หลังการเปลี่ยนแปลง }
+        changedFields:
+          type: array
+          items: { type: string }
+          examples: [[identity.last_name_th, identity.reg_address_text]]
+        data:
+          type: object
+          description: ข้อมูลประกอบขั้นต่ำ
+          properties:
+            status: { $ref: '#/components/schemas/PersonStatus' }
+            verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+            mergedIntoPersonId: { type: [string, 'null'], format: uuid, description: ใช้กับ PERSON_MERGED }
+
+    WebhookSubscription:
+      type: object
+      properties:
+        subscriptionId: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        eventTypes:
+          type: array
+          items: { $ref: '#/components/schemas/EventType' }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    WebhookDelivery:
+      type: object
+      properties:
+        deliveryId: { type: string, format: uuid }
+        subscriptionId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, DELIVERED, FAILED, DEAD] }
+        attemptCount: { type: integer }
+        nextAttemptAt: { type: [string, 'null'], format: date-time }
+        lastResponseCode: { type: [integer, 'null'] }
+        lastError: { type: [string, 'null'] }
+        deliveredAt: { type: [string, 'null'], format: date-time }
+
+    AccessLogEntry:
+      type: object
+      properties:
+        accessedAt: { type: string, format: date-time }
+        subjectPersonId: { type: string, format: uuid }
+        actorType: { type: string, enum: [USER, SERVICE] }
+        actorSub: { type: string }
+        clientId: { type: string }
+        endpoint: { type: string }
+        fieldsReturned:
+          type: array
+          items: { type: string }
+        purposeCode: { type: [string, 'null'] }
+        justification: { type: [string, 'null'] }
+        requestId: { type: string }
+        responseStatus: { type: integer }
+
+    PageInfo:
+      type: object
+      properties:
+        nextCursor: { type: [string, 'null'] }
+        limit: { type: integer }
+
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details
+      properties:
+        type: { type: string, format: uri, examples: ['https://mdm.lp-pao.go.th/problems/insufficient-scope'] }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          description: รายละเอียดรายฟิลด์สำหรับ 400
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }

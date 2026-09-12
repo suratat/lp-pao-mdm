@@ -1,0 +1,137 @@
+erDiagram
+    %% ================================================================
+    %% ER 2/2 : PDPA governance, access audit, consumer systems, events and webhooks
+    %% PERSON is the same table as in ER 1/2 (shown here with key columns only)
+    %% ================================================================
+
+    PERSON ||--o{ CONSENT_RECORD : "gives / withdraws"
+    PROCESSING_PURPOSE ||--o{ CONSENT_RECORD : "for purpose"
+    PROCESSING_PURPOSE ||--o{ CONSUMER_SYSTEM : "registered purpose (ROPA)"
+    CONSUMER_SYSTEM ||--o{ WEBHOOK_SUBSCRIPTION : "subscribes"
+    PERSON ||--o{ OUTBOX_EVENT : "emits (transactional outbox)"
+    OUTBOX_EVENT ||--o{ WEBHOOK_DELIVERY : "delivered as"
+    WEBHOOK_SUBSCRIPTION ||--o{ WEBHOOK_DELIVERY : "target"
+    PERSON ||--o{ ACCESS_LOG : "data subject"
+    CONSUMER_SYSTEM |o--o{ ACCESS_LOG : "calling system"
+    ENCRYPTION_KEY ||--o{ PERSON : "pid_enc key_id"
+    ENCRYPTION_KEY ||--o{ WEBHOOK_SUBSCRIPTION : "secret_enc key_id"
+
+    PERSON {
+        uuid person_id PK
+        varchar pid_hash UK
+        bytea pid_enc
+        varchar key_id FK
+        varchar status
+        varchar verification_status
+        int version
+    }
+
+    PROCESSING_PURPOSE {
+        varchar purpose_code PK "e.g. HR_ADMIN, PAYROLL, DIRECTORY_PUBLISH"
+        varchar name_th
+        varchar legal_basis "PUBLIC_TASK | LEGAL_OBLIGATION | CONTRACT | CONSENT | VITAL_INTEREST"
+        bool requires_consent "true only when legal_basis = CONSENT"
+        varchar retention_period "e.g. P10Y, PERMANENT"
+        text description
+        varchar ropa_ref "reference to record of processing activities"
+        bool is_active
+    }
+
+    CONSENT_RECORD {
+        uuid consent_id PK
+        uuid person_id FK
+        varchar purpose_code FK
+        varchar policy_version "version of consent text shown"
+        varchar status "GRANTED | WITHDRAWN"
+        timestamptz granted_at
+        timestamptz withdrawn_at
+        varchar channel "SELF_SERVICE_PORTAL | HR_FORM"
+        jsonb evidence "ip, user agent, text hash"
+    }
+
+    CONSUMER_SYSTEM {
+        uuid consumer_system_id PK
+        varchar keycloak_client_id UK "Keycloak client used to call the API"
+        varchar name
+        uuid owner_org_unit_id "responsible unit"
+        varchar purpose_code FK
+        jsonb allowed_scopes "mirror of Keycloak client scopes, for ROPA reporting"
+        varchar contact_email
+        varchar status "ACTIVE | SUSPENDED"
+        timestamptz created_at
+    }
+
+    WEBHOOK_SUBSCRIPTION {
+        uuid subscription_id PK
+        uuid consumer_system_id FK
+        varchar url "https only, allow-listed host"
+        bytea secret_enc "HMAC secret for X-MDM-Signature"
+        varchar key_id FK
+        jsonb event_types "subscribed event types"
+        bool is_active
+        timestamptz created_at
+    }
+
+    OUTBOX_EVENT {
+        uuid event_id PK
+        bigint sequence UK "monotonic cursor for GET /events"
+        uuid person_id FK
+        varchar event_type "PERSON_CLAIMED | IDENTITY_UPDATED | PHOTO_UPDATED | CONTACT_UPDATED | EMPLOYMENT_UPDATED | PERSON_DEACTIVATED | PERSON_REACTIVATED | PERSON_MERGED | VERIFICATION_EXPIRED"
+        jsonb changed_fields "field keys only, no personal data values"
+        jsonb payload "person_id, version, status"
+        int version "PERSON.version after the change"
+        timestamptz occurred_at
+        timestamptz published_at "null until dispatcher picked it up"
+    }
+
+    WEBHOOK_DELIVERY {
+        uuid delivery_id PK
+        uuid subscription_id FK
+        uuid event_id FK
+        varchar status "PENDING | DELIVERED | FAILED | DEAD"
+        int attempt_count
+        timestamptz next_attempt_at "exponential backoff"
+        int last_response_code
+        text last_error
+        timestamptz delivered_at
+    }
+
+    ACCESS_LOG {
+        bigint access_id PK "partitioned by month, append-only"
+        timestamptz accessed_at
+        uuid subject_person_id FK
+        varchar actor_type "USER | SERVICE"
+        varchar actor_sub "Keycloak sub"
+        uuid consumer_system_id FK "null for user context"
+        varchar keycloak_client_id
+        varchar endpoint
+        varchar http_method
+        jsonb fields_returned "field keys actually returned"
+        varchar purpose_code
+        text justification "mandatory for pid access"
+        varchar request_id
+        inet client_ip
+        int response_status
+    }
+
+    ENCRYPTION_KEY {
+        varchar key_id PK "e.g. vault:transit:mdm-pid:v3"
+        varchar purpose "PID_ENC | PID_HMAC_PEPPER | WEBHOOK_SECRET | PHOTO_ENC"
+        varchar provider "VAULT_TRANSIT | LOCAL_KEK"
+        int key_version
+        varchar status "ACTIVE | ROTATING | RETIRED"
+        timestamptz created_at
+        timestamptz retired_at
+    }
+
+    FIELD_POLICY {
+        varchar field_key PK "e.g. identity.birth_date"
+        varchar table_name
+        varchar column_name
+        varchar source "THAID | SELF | HR | SYSTEM"
+        varchar classification "INTERNAL | CONFIDENTIAL | SENSITIVE | RESTRICTED"
+        varchar required_scope "Keycloak scope needed to read"
+        varchar editable_by "NONE | SELF | HR"
+        bool log_values_in_audit "false = log field name only"
+        varchar mask_pattern "e.g. 08x-xxx-1234"
+    }

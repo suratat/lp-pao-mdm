@@ -1,0 +1,54 @@
+sequenceDiagram
+    autonumber
+    title Flow 2 - Periodic re-verify (DOPA ไม่มี push API จึงต้องให้ผู้ใช้เข้าสู่ระบบด้วย ThaID อีกครั้ง)
+
+    participant CRON as Scheduler (mdm-worker, ทุกวัน 02:00)
+    participant MDM as MDM Service
+    participant DB as PostgreSQL (mdm)
+    participant CHK as check.lp-pao.go.th
+    participant KC as Keycloak (เฉพาะผู้ใช้ HR/DPO console)
+    participant NT as Notification (อีเมล / LINE OA)
+    actor U as ผู้ใช้
+    participant SSO as thaid.lp-pao.go.th
+    participant DOPA as ThaID / DOPA
+    participant HR as ฝ่ายบุคคล (HR Console)
+
+    rect rgb(235, 245, 255)
+    Note over CRON,NT: Phase A - หา record ที่ต้องยืนยันใหม่ และตัด session เพื่อบังคับผ่าน ThaID ใหม่
+    CRON->>MDM: run job reverify-scan
+    MDM->>DB: SELECT person WHERE status=ACTIVE AND verification_status=VERIFIED AND (thaid_verified_at < now() - REVERIFY_MAX_AGE (180 วัน) OR id_card_expire_date < now() + 60 วัน OR reverify_requested_at IS NOT NULL)
+    DB-->>MDM: รายชื่อที่ครบกำหนด
+    loop แต่ละ person
+        MDM->>DB: UPDATE person SET verification_status=STALE, reverify_due_at = now() + GRACE (30 วัน)
+        MDM->>CHK: POST /internal/sessions/revoke person_id (HMAC, private network) - ลบ session ใน Redis ของ check
+        MDM->>KC: POST users/keycloak_id/logout (ถ้าผู้ใช้มีบัญชี Keycloak สำหรับ console)
+        MDM->>NT: แจ้ง "กรุณาเข้าสู่ระบบด้วย ThaID เพื่อยืนยันข้อมูลล่าสุดภายใน 30 วัน"
+        MDM->>DB: INSERT outbox_event VERIFICATION_STALE (ให้ระบบปลายทางแสดงป้าย "รอยืนยัน" ได้)
+    end
+    end
+
+    rect rgb(235, 255, 240)
+    Note over U,DB: Phase B - ผู้ใช้เข้าสู่ระบบครั้งถัดไป (ไม่มี session เดิม จึงต้องผ่าน ThaID ทุกกรณี)
+    U->>CHK: เข้าสู่ระบบผ่านแอปใดก็ได้ที่ใช้ check.lp-pao.go.th
+    CHK->>SSO: redirect /login
+    SSO->>DOPA: ThaID authentication (scope เดิม)
+    DOPA-->>SSO: id_token claims ชุดล่าสุด
+    SSO-->>CHK: handoff token → CHK เรียก /api/verify ได้ profile ล่าสุด
+    CHK->>MDM: POST /sync/thaid (claims ล่าสุด)
+    MDM->>MDM: record อยู่ในสถานะ STALE/EXPIRED จึงบันทึก trigger=REVERIFY
+    MDM->>DB: เทียบ snapshot_hash → อัปเดต identity, data_change_log, outbox (ตาม Flow 1)
+    MDM->>DB: UPDATE person SET verification_status=VERIFIED, thaid_verified_at=now(), reverify_requested_at=NULL, reverify_due_at=NULL
+    MDM-->>CHK: 200 person_id, status=ACTIVE, verification_status=VERIFIED
+    CHK-->>U: ออก token ให้แอป เข้าใช้งานได้ตามปกติ
+    end
+
+    rect rgb(255, 245, 235)
+    Note over CRON,HR: Phase C - พ้น grace period แล้วยังไม่ยืนยัน
+    CRON->>MDM: run job reverify-escalate
+    MDM->>DB: UPDATE person SET verification_status=EXPIRED WHERE verification_status=STALE AND reverify_due_at < now()
+    MDM->>DB: INSERT outbox_event VERIFICATION_EXPIRED (ระบบปลายทางปฏิบัติต่อ identity fields ในฐานะ "ยังไม่ยืนยัน")
+    MDM->>HR: รายงานรายชื่อค้างยืนยัน แยกตามสังกัด (dashboard / อีเมล)
+    HR->>HR: ติดตามให้บุคลากรเข้าสู่ระบบ หรือขอตรวจข้อมูลผ่าน DOPA Linkage Center (ทางเลือกในอนาคต ต้องมี MOU)
+    HR->>MDM: POST /persons/{id}/reverify (ขอให้ยืนยันใหม่ทันที เช่น ทราบว่าเปลี่ยนชื่อ)
+    MDM->>DB: UPDATE person SET reverify_requested_at=now() (เข้ารอบ Phase A รอบถัดไป)
+    end

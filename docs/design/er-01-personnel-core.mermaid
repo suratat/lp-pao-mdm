@@ -1,0 +1,199 @@
+erDiagram
+    %% ================================================================
+    %% ER 1/2 : Personnel core data, ThaID sync and field-level audit
+    %% Source of each table  THAID = ThaID only | SELF = owner edits | HR = HR/legacy HR system
+    %% ================================================================
+
+    PERSON ||--o| PERSON_IDENTITY : "identity (THAID, read-only)"
+    PERSON ||--o{ PERSON_PHOTO : "photo (THAID)"
+    PERSON ||--o| PERSON_CONTACT : "contact (SELF)"
+    PERSON ||--o{ EMERGENCY_CONTACT : "emergency (SELF)"
+    PERSON ||--o{ EMPLOYMENT : "employment history (HR)"
+    ORG_UNIT ||--o{ EMPLOYMENT : "assigned to"
+    ORG_UNIT |o--o{ ORG_UNIT : "parent of"
+    POSITION ||--o{ EMPLOYMENT : "holds position"
+    ORG_UNIT ||--o{ POSITION : "position belongs to"
+    PERSON ||--o{ EXTERNAL_IDENTIFIER : "id in other systems"
+    PERSON |o--o{ THAID_SYNC_EVENT : "sync history"
+    PERSON ||--o{ DATA_CHANGE_LOG : "field-level audit"
+    THAID_SYNC_EVENT |o--o{ DATA_CHANGE_LOG : "produced by"
+    PERSON |o--o{ CLAIM_REQUEST : "resolved to"
+
+    PERSON {
+        uuid person_id PK "internal ID used by all other systems"
+        varchar pid_hash UK "HMAC-SHA256(pepper, pid) for lookup and dedup"
+        bytea pid_enc "AES-256-GCM via Vault Transit, decrypt only with scope personnel:read:pid"
+        varchar key_id FK "encryption key version"
+        varchar status "PENDING_CLAIM | ACTIVE | INACTIVE"
+        varchar verification_status "UNVERIFIED | VERIFIED | STALE | EXPIRED"
+        timestamptz thaid_verified_at "last successful ThaID login"
+        timestamptz claimed_at "first ThaID login that claimed the record"
+        timestamptz reverify_requested_at "HR-triggered re-verify"
+        timestamptz reverify_due_at "STALE becomes EXPIRED after this"
+        varchar expected_first_name_th "name given by HR at provision, checked at claim"
+        varchar expected_last_name_th
+        timestamptz deleted_at "soft delete on separation"
+        int version "increments on every change, sent in events"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    PERSON_IDENTITY {
+        uuid person_id PK "FK to PERSON, 1:1"
+        varchar title_th
+        varchar first_name_th
+        varchar middle_name_th
+        varchar last_name_th
+        varchar title_en
+        varchar first_name_en
+        varchar last_name_en
+        date birth_date
+        varchar gender
+        varchar reg_house_no "registered address (ที่อยู่ตามทะเบียนบ้าน)"
+        varchar reg_moo
+        varchar reg_soi
+        varchar reg_road
+        varchar reg_subdistrict_code
+        varchar reg_district_code
+        varchar reg_province_code
+        text reg_address_text "as received from ThaID"
+        date id_card_issue_date
+        date id_card_expire_date
+        varchar ial "Identity Assurance Level from ThaID"
+        varchar source_snapshot_hash "SHA-256 of canonical ThaID payload"
+        uuid last_sync_event_id FK
+        timestamptz synced_at
+    }
+
+    PERSON_PHOTO {
+        uuid photo_id PK
+        uuid person_id FK
+        bytea image_enc "encrypted at rest (or MinIO object key with SSE)"
+        varchar sha256 "change detection"
+        varchar mime_type
+        varchar source "THAID"
+        bool is_current
+        timestamptz synced_at
+    }
+
+    PERSON_CONTACT {
+        uuid person_id PK "FK to PERSON, 1:1"
+        varchar mobile_phone
+        varchar phone_alt
+        varchar email_personal
+        varchar line_id
+        bool same_as_registered
+        text cur_address_text "current address"
+        varchar cur_subdistrict_code
+        varchar cur_district_code
+        varchar cur_province_code
+        varchar cur_postcode
+        varchar updated_by "SELF | HR"
+        timestamptz updated_at
+    }
+
+    EMERGENCY_CONTACT {
+        uuid emergency_contact_id PK
+        uuid person_id FK
+        varchar full_name
+        varchar relationship
+        varchar phone
+        int priority
+        timestamptz updated_at
+    }
+
+    EMPLOYMENT {
+        uuid employment_id PK
+        uuid person_id FK
+        varchar employee_no "เลขประจำตัวข้าราชการ/พนักงาน"
+        varchar personnel_type "ข้าราชการ อบจ. | ลูกจ้างประจำ | พนักงานจ้าง | ถ่ายโอน"
+        uuid position_id FK
+        uuid org_unit_id FK
+        varchar level_code "ปฏิบัติการ | ชำนาญการ | ..."
+        date appointed_date "วันบรรจุ"
+        date effective_from
+        date effective_to "null = current"
+        bool is_current
+        varchar employment_status "ACTIVE | TRANSFERRED_OUT | RESIGNED | RETIRED | TERMINATED | DECEASED"
+        date separation_date
+        varchar separation_reason
+        varchar email_work "provisioned by IT"
+        varchar hr_source_ref "record id in legacy HR / LHR"
+        varchar updated_by "HR user or HR_IMPORT"
+        timestamptz updated_at
+    }
+
+    ORG_UNIT {
+        uuid org_unit_id PK
+        uuid parent_id FK
+        varchar code UK
+        varchar name_th
+        varchar name_en
+        varchar unit_level "สำนัก/กอง | ฝ่าย | งาน"
+        bool is_active
+        date valid_from
+        date valid_to
+    }
+
+    POSITION {
+        uuid position_id PK
+        varchar position_no UK "เลขที่ตำแหน่ง"
+        varchar title_th "ชื่อตำแหน่ง"
+        varchar line_of_work "สายงาน"
+        varchar position_type "บริหารท้องถิ่น | อำนวยการท้องถิ่น | วิชาการ | ทั่วไป"
+        uuid org_unit_id FK
+        bool is_active
+    }
+
+    EXTERNAL_IDENTIFIER {
+        uuid ext_id PK
+        uuid person_id FK
+        varchar system_code "LEGACY_HR | LHR | KEYCLOAK | PAYROLL | EOFFICE"
+        varchar external_value "unique per system_code"
+        bool is_primary
+        timestamptz created_at
+    }
+
+    THAID_SYNC_EVENT {
+        uuid sync_event_id PK
+        uuid person_id FK "null when UNMATCHED"
+        varchar trigger "LOGIN | REVERIFY | CLAIM"
+        varchar result "NO_CHANGE | UPDATED | CLAIMED | UNMATCHED | REJECTED_INACTIVE"
+        varchar app_id "app ที่ผู้ใช้ล็อกอินผ่าน check.lp-pao.go.th"
+        varchar audience "PERSONNEL | CITIZEN (จาก app registry ของ check)"
+        varchar snapshot_hash_before
+        varchar snapshot_hash_after
+        jsonb changed_fields "field keys only"
+        varchar ial
+        varchar aal
+        inet client_ip
+        varchar user_agent
+        timestamptz occurred_at
+    }
+
+    DATA_CHANGE_LOG {
+        bigint log_id PK
+        uuid person_id FK
+        uuid sync_event_id FK "null if not from ThaID"
+        varchar table_name
+        varchar field_name
+        jsonb old_value "encrypted when field classification is RESTRICTED"
+        jsonb new_value
+        varchar changed_by "THAID_SYNC | SELF | HR | HR_IMPORT | ADMIN"
+        varchar actor_sub "Keycloak sub / client id"
+        varchar reason
+        timestamptz changed_at
+    }
+
+    CLAIM_REQUEST {
+        uuid claim_request_id PK
+        varchar pid_hash "no plaintext pid stored"
+        varchar display_name "from ThaID, for HR to identify"
+        varchar status "PENDING_HR | LINKED | REJECTED"
+        uuid resolved_person_id FK
+        varchar resolved_by
+        timestamptz resolved_at
+        int attempt_count
+        timestamptz first_seen_at
+        timestamptz last_seen_at
+    }

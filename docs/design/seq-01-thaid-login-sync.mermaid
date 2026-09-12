@@ -1,0 +1,98 @@
+sequenceDiagram
+    autonumber
+    title Flow 1 - Login ผ่าน check.lp-pao.go.th, sync-on-login, claim และการส่งเหตุการณ์
+
+    actor U as ผู้ใช้ (Browser)
+    participant APP as ระบบปลายทาง (Client App)
+    participant CHK as check.lp-pao.go.th (SSO broker ของ อบจ.)
+    participant SSO as thaid.lp-pao.go.th (ThaID OAuth broker)
+    participant DOPA as ThaID / DOPA
+    participant KC as Keycloak (ออก token สำหรับเรียก MDM API)
+    participant MDM as MDM API
+    participant DB as PostgreSQL (mdm)
+    participant WK as MDM Worker (outbox dispatcher)
+    participant SUB as ระบบผู้รับ Webhook
+
+    U->>APP: เปิดใช้งานระบบ
+    APP->>CHK: redirect /login?redirect_uri=... (app ต้องอยู่ใน ALLOWED_APPS)
+    CHK->>SSO: redirect /login (เก็บ state ใน cookie ฝั่ง check, ไม่ส่งให้ DOPA)
+    SSO->>DOPA: Authorization Request (client_id, scope, redirect_uri) + login_id cookie binding
+    DOPA-->>U: หน้ายืนยันตัวตน ThaID (สแกน QR / แอป ThaID)
+    U->>DOPA: ยืนยันตัวตน และยินยอมเปิดเผยข้อมูลตาม scope
+    DOPA-->>SSO: redirect กลับพร้อม authorization code
+    SSO->>DOPA: Token Request (code, client_id + client_secret)
+    DOPA-->>SSO: access_token + id_token (pid, ชื่อ-สกุล, วันเกิด, เพศ, ที่อยู่, ial)
+    SSO->>SSO: ตรวจลายเซ็น id_token ด้วย JWKS (jose), สร้าง handoff token ใช้ครั้งเดียว อายุ 60 วินาที
+    SSO-->>CHK: redirect /sso-callback?token=handoff
+    CHK->>SSO: GET /api/verify?token=handoff (server-to-server)
+    SSO-->>CHK: profile (pid, title, given_name, family_name, ชื่ออังกฤษ, birthdate, gender, address)
+
+    Note over CHK,MDM: จุดเชื่อม MDM (ใหม่) - ทำก่อนออก token ให้ app, ผ่านเครือข่ายภายใน NT Cloud ไม่ผ่าน Cloudflare
+    CHK->>KC: client_credentials (client=check-broker, scope sync:thaid) - cache token ไว้
+    KC-->>CHK: access_token
+    CHK->>MDM: POST /sync/thaid (Bearer, claims จาก profile, context app_id + audience + ip)
+
+    MDM->>MDM: ตรวจ checksum pid, pid_hash = HMAC-SHA256(pepper, pid)
+    MDM->>MDM: canonicalize claims, snapshot_hash = SHA-256(canonical JSON)
+    MDM->>DB: BEGIN, SELECT person + person_identity WHERE pid_hash = ?
+
+    alt ไม่พบ pid_hash (ThaID ยืนยันได้ว่าเป็นพลเมือง แต่ไม่ใช่บุคลากรที่ HR เตรียมไว้)
+        MDM->>DB: UPSERT claim_request (pid_hash, display_name, status=PENDING_HR) เฉพาะเมื่อ audience=PERSONNEL
+        MDM->>DB: INSERT thaid_sync_event (result=UNMATCHED), COMMIT
+        MDM-->>CHK: 202 result=UNMATCHED
+    else พบ status = PENDING_CLAIM (HR provision ล่วงหน้า)
+        MDM->>MDM: เทียบชื่อที่ HR คาดไว้ กับชื่อจาก ThaID (ต่างกัน = flag ให้ HR ตรวจ แต่ ThaID เป็นหลัก)
+        MDM->>DB: INSERT person_identity (+ person_photo ถ้ามี), pid_enc = Vault Transit encrypt(pid)
+        MDM->>DB: UPDATE person SET status=ACTIVE, claimed_at=now(), thaid_verified_at=now(), verification_status=VERIFIED
+        MDM->>DB: INSERT data_change_log (ทุกฟิลด์ identity null → ค่าใหม่, changed_by=THAID_SYNC)
+        MDM->>DB: INSERT thaid_sync_event (result=CLAIMED), INSERT outbox_event PERSON_CLAIMED
+    else พบ status = ACTIVE
+        MDM->>MDM: เทียบ source_snapshot_hash เดิม กับ snapshot_hash ใหม่
+        alt snapshot เท่ากัน (ข้อมูลไม่เปลี่ยน)
+            MDM->>DB: UPDATE person SET thaid_verified_at=now(), verification_status=VERIFIED
+            MDM->>DB: INSERT thaid_sync_event (result=NO_CHANGE, trigger=LOGIN หรือ REVERIFY ถ้าเดิมเป็น STALE/EXPIRED)
+        else snapshot ต่างกัน (มีฟิลด์เปลี่ยน)
+            MDM->>MDM: diff รายฟิลด์ เฉพาะฟิลด์ที่ ThaID ส่งมา (ไม่เขียนทับด้วยค่าที่ไม่ได้ส่ง)
+            MDM->>DB: UPDATE person_identity (+ person_photo ถ้า sha256 ต่าง)
+            MDM->>DB: INSERT data_change_log (field, old_value, new_value, changed_at, changed_by=THAID_SYNC)
+            MDM->>DB: UPDATE person SET version=version+1, thaid_verified_at=now(), verification_status=VERIFIED
+            MDM->>DB: INSERT thaid_sync_event (result=UPDATED), INSERT outbox_event IDENTITY_UPDATED / PHOTO_UPDATED
+        end
+    else พบ status = INACTIVE (ลาออก / โอนย้าย)
+        MDM->>DB: INSERT thaid_sync_event (result=REJECTED_INACTIVE), COMMIT
+        MDM-->>CHK: 403 result=REJECTED_INACTIVE
+    end
+
+    MDM->>DB: COMMIT (identity + audit + outbox ใน transaction เดียว)
+    MDM-->>CHK: 200 person_id, status, verification_status, employment summary, roles (ไม่มี pid)
+
+    alt app.audience = PERSONNEL และผล = UNMATCHED / REJECTED_INACTIVE
+        CHK-->>U: หน้าแจ้ง "ไม่พบข้อมูลบุคลากร กรุณาติดต่อฝ่ายบุคคล" (ไม่ออก token)
+    else ผ่าน (หรือ app สำหรับประชาชนทั่วไป)
+        CHK->>CHK: สร้าง session/token ของ check โดยเก็บ person_id, ทิ้ง pid ทันทีเว้นแต่ app มีสิทธิ์ claim pid
+        CHK-->>APP: redirect callback?token=app_token
+        APP->>CHK: GET /api/verify?token=app_token
+        CHK-->>APP: profile ตาม allowed_claims ของ app (person_id, title, given_name, family_name, roles ...)
+    end
+
+    Note over APP,DB: ดึงข้อมูลบุคลากรเพิ่มเติมจาก MDM ด้วย person_id (field-level ตาม Keycloak scope ของ app)
+    APP->>KC: client_credentials (scope เช่น personnel:read:basic personnel:read:employment)
+    KC-->>APP: access_token
+    APP->>MDM: GET /persons/person_id (Bearer)
+    MDM->>MDM: ตรวจ JWT (JWKS), เลือกฟิลด์ตาม scope, ตัดฟิลด์ที่ไม่มีสิทธิ์ออก
+    MDM->>DB: INSERT access_log (client, fields_returned, purpose)
+    MDM-->>APP: ข้อมูลเฉพาะฟิลด์ที่ client มีสิทธิ์
+
+    Note over WK,SUB: ส่งเหตุการณ์แบบ asynchronous (transactional outbox, at-least-once)
+    loop ทุก 5 วินาที หรือเมื่อมี NOTIFY
+        WK->>DB: SELECT outbox_event WHERE published_at IS NULL FOR UPDATE SKIP LOCKED
+        WK->>SUB: POST webhook_url (event_id, event_type, person_id, changed_fields, version) + X-MDM-Signature
+        alt ตอบ 2xx
+            SUB-->>WK: 200 OK (idempotent ด้วย event_id)
+            WK->>DB: UPDATE webhook_delivery status=DELIVERED, outbox_event.published_at=now()
+        else ตอบ error / timeout
+            SUB-->>WK: 5xx หรือ timeout
+            WK->>DB: UPDATE webhook_delivery attempt_count+1, next_attempt_at=backoff (1m, 5m, 30m, 2h, 12h, 24h → DEAD)
+        end
+    end
+    SUB->>MDM: GET /persons/person_id หรือ GET /events?after=sequence (ดึงข้อมูลจริงตาม scope ของตน)
