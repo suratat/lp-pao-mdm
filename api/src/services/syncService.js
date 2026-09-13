@@ -97,11 +97,19 @@ function buildIdentityInsertColumns(canonical) {
   return { names, values };
 }
 
-async function insertOutboxEvent(client, { personId, eventType, changedFields, version, status }) {
+// payload.data ต้องมี verificationStatus ด้วยตาม §2.3 (webhook data{status, verificationStatus,
+// mergedIntoPersonId?}) - ไม่ใช่แค่ status เฉยๆ
+async function insertOutboxEvent(client, { personId, eventType, changedFields, version, status, verificationStatus }) {
   await client.query(
     `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
      VALUES ($1, $2, $3, $4, $5)`,
-    [personId, eventType, JSON.stringify(changedFields), JSON.stringify({ personId, version, status }), version]
+    [
+      personId,
+      eventType,
+      JSON.stringify(changedFields),
+      JSON.stringify({ personId, version, status, verificationStatus }),
+      version,
+    ]
   );
 }
 
@@ -241,6 +249,7 @@ async function handleClaim(client, vault, { person, claims, context, trigger, ca
     changedFields: changedFieldKeys,
     version: newVersion,
     status: 'ACTIVE',
+    verificationStatus: 'VERIFIED',
   });
   if (photo) {
     await insertOutboxEvent(client, {
@@ -249,6 +258,7 @@ async function handleClaim(client, vault, { person, claims, context, trigger, ca
       changedFields: ['photo'],
       version: newVersion,
       status: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
     });
   }
 
@@ -392,6 +402,7 @@ async function handleActiveSync(client, vault, { person, claims, context, trigge
       changedFields: changedFieldKeys,
       version: newVersion,
       status: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
     });
   }
   if (photoChanged) {
@@ -401,6 +412,7 @@ async function handleActiveSync(client, vault, { person, claims, context, trigge
       changedFields: ['photo'],
       version: newVersion,
       status: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
     });
   }
 

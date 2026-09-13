@@ -16,7 +16,7 @@ const meRouter = require('./routes/me');
 const provisioningRouter = require('./routes/provisioning');
 const employmentRouter = require('./routes/employment');
 const createSyncRouter = require('./routes/sync');
-const eventsRouter = require('./routes/events');
+const createEventsRouter = require('./routes/events');
 const webhooksRouter = require('./routes/webhooks');
 const referenceRouter = require('./routes/reference');
 const auditRouter = require('./routes/audit');
@@ -60,7 +60,7 @@ async function createApp({ pool, authConfig, vault }) {
   v1.use(provisioningRouter);
   v1.use(employmentRouter);
   v1.use(createSyncRouter({ pool, vault, pepper }));
-  v1.use(eventsRouter);
+  v1.use(createEventsRouter(pool));
   v1.use(webhooksRouter);
   v1.use(referenceRouter);
   v1.use(auditRouter);

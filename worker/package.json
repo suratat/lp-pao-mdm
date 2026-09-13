@@ -1,0 +1,19 @@
+{
+  "name": "lp-pao-mdm-worker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MDM Worker (outbox dispatcher, webhook sender, reverify jobs) - อบจ.ลำปาง",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "pg-boss": "^10.1.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
