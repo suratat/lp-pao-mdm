@@ -1,0 +1,22 @@
+{
+  "_comment": "ตัวอย่าง/ค่าเริ่มต้นสำหรับ dev และ test เท่านั้น - รูปแบบไฟล์ export จริงจาก LHR/Excel ฝ่ายบุคคลยังไม่ได้ยืนยัน (ภาคผนวก ง ข้อ 2 ของเอกสารออกแบบ) เมื่อยืนยันแล้วให้แก้เฉพาะไฟล์นี้ (ชื่อคอลัมน์ฝั่งขวา = หัวคอลัมน์จริงในไฟล์ CSV) โดยไม่ต้องแก้โค้ด",
+  "sourceSystem": "LHR",
+  "columns": {
+    "rowRef": "ลำดับ",
+    "pid": "เลขประจำตัวประชาชน",
+    "expectedFirstNameTh": "ชื่อ",
+    "expectedLastNameTh": "นามสกุล",
+    "employeeNo": "เลขประจำตัวข้าราชการ",
+    "personnelTypeRaw": "ประเภทบุคลากร",
+    "positionNo": "เลขที่ตำแหน่ง",
+    "orgUnitCode": "รหัสสังกัด",
+    "levelCode": "ระดับ",
+    "appointedDateRaw": "วันบรรจุ",
+    "effectiveFromRaw": "วันที่ดำรงตำแหน่งปัจจุบัน",
+    "employmentStatusRaw": "สถานะ",
+    "emailWork": "อีเมลหน่วยงาน",
+    "externalValue": "รหัสในระบบเดิม",
+    "phoneRaw": "เบอร์โทรศัพท์",
+    "emailPersonalRaw": "อีเมลส่วนตัว"
+  }
+}
