@@ -1,0 +1,142 @@
+{
+  "realm": "lp-pao",
+  "enabled": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 0,
+  "revokeRefreshToken": true,
+
+  "roles": {
+    "realm": [
+      { "name": "staff", "description": "บุคลากรทั่วไป (self-service)" },
+      { "name": "hr_officer", "description": "เจ้าหน้าที่ฝ่ายบุคคล - personnel:provision, personnel:write:employment, personnel:import" },
+      { "name": "dpo", "description": "เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล - audit:read" },
+      { "name": "auditor", "description": "ผู้ตรวจสอบ - audit:read" },
+      { "name": "mdm_admin", "description": "break-glass account ตามภาคผนวก ก ข้อ 7" }
+    ]
+  },
+
+  "clientScopes": [
+    {
+      "name": "mdm-api-audience",
+      "description": "ใส่ aud=mdm-api ให้ทุก client ที่เรียก MDM API (ภาคผนวก ก ข้อ 2)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "mdm-api-audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "mdm-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    { "name": "personnel:read:basic", "description": "ชื่อ-สกุล, employeeNo, ตำแหน่ง, สังกัด, สถานะ - scope ขั้นต่ำของทุก consumer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:contact", "description": "มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, ผู้ติดต่อฉุกเฉิน", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:identity", "description": "วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน, IAL, syncedAt (จาก ThaID)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:employment", "description": "วันบรรจุ, ประวัติการดำรงตำแหน่ง, เหตุ/วันพ้นสภาพ", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:photo", "description": "รูปถ่าย", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:inactive", "description": "เห็น record ที่ INACTIVE ด้วย", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:pid", "description": "ถอดรหัส pid - อนุมัติเป็นราย client โดย DPO เท่านั้น", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:lookup:pid", "description": "ค้นหา personId จาก pid - อนุมัติเป็นราย client โดย DPO เท่านั้น", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:self", "description": "user context - ข้อมูลของตนเอง + แก้ไขข้อมูลติดต่อ/ความยินยอม", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:provision", "description": "งาน HR: pre-provision, claim-request, deactivate/reactivate - เฉพาะ hr_officer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:write:employment", "description": "แก้ไขข้อมูลการปฏิบัติงาน - เฉพาะ hr_officer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:import", "description": "HR batch import - เฉพาะ hr_officer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "sync:thaid", "description": "POST /sync/thaid - client check-broker เท่านั้น", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "events:read", "description": "GET /events feed", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "webhook:manage", "description": "จัดการ webhook subscription/delivery ของตนเอง", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "audit:read", "description": "change log, access log - เฉพาะ dpo/auditor", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } }
+  ],
+
+  "users": [
+    {
+      "username": "service-account-mdm-worker",
+      "enabled": true,
+      "serviceAccountClientId": "mdm-worker",
+      "clientRoles": {
+        "realm-management": ["view-users", "manage-users"]
+      }
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "check-broker",
+      "description": "check.lp-pao.go.th - เรียก POST /sync/thaid หลังยืนยันตัวตนผ่าน ThaID (§0.3, §3.1)",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "check-broker-staging-secret-CHANGE-ME",
+      "attributes": {
+        "access.token.lifespan": "300",
+        "use.refresh.tokens": "false"
+      },
+      "defaultClientScopes": ["mdm-api-audience", "sync:thaid"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "mdm-worker",
+      "description": "MDM Worker - เรียก Keycloak Admin REST API เท่านั้น (disable/logout ผู้ใช้ตอน deactivate) ไม่เรียก MDM API เลย จึงไม่ต้องมี mdm-api-audience หรือ personnel:* scope ใดๆ (ภาคผนวก ก ข้อ 3)",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "mdm-worker-staging-secret-CHANGE-ME",
+      "attributes": {
+        "access.token.lifespan": "300",
+        "use.refresh.tokens": "false"
+      },
+      "defaultClientScopes": [],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "mdm-portal",
+      "description": "MDM Portal (ทางเลือก B, T9 - ยังไม่ implement) - backend ถือ client นี้เพื่อส่ง signed assertion X-Acting-Person ตาม §0.3",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "mdm-portal-staging-secret-CHANGE-ME",
+      "attributes": {
+        "access.token.lifespan": "300",
+        "use.refresh.tokens": "false"
+      },
+      "defaultClientScopes": ["mdm-api-audience", "personnel:self"],
+      "optionalClientScopes": ["personnel:read:basic", "personnel:read:contact", "audit:read"]
+    },
+    {
+      "clientId": "eoffice",
+      "description": "ตัวอย่างระบบปลายทางระบบแรก (e-Office) ตามภาคผนวก ก ข้อ 3 - ห้ามใช้ client ร่วมกันหลายระบบ สร้างใหม่ต่อระบบปลายทางจริง",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "eoffice-staging-secret-CHANGE-ME",
+      "attributes": {
+        "access.token.lifespan": "300",
+        "use.refresh.tokens": "false"
+      },
+      "defaultClientScopes": ["mdm-api-audience", "personnel:read:basic"],
+      "optionalClientScopes": ["personnel:read:contact", "events:read", "webhook:manage"]
+    }
+  ]
+}

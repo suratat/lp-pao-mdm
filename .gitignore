@@ -2,7 +2,15 @@ node_modules/
 .env
 .env.*
 !.env.example
+!infra/.env.staging.example
 dist/
 coverage/
 *.log
 .DS_Store
+
+# T6 (infra/): output ของ vault/init.sh (unseal keys, root token, service token) และ raft/postgres data
+# volume ห้าม commit เด็ดขาด - เป็นความลับจริงที่สร้างตอน deploy ไม่ใช่ค่า placeholder แบบไฟล์ .example
+infra/vault/secrets/*
+!infra/vault/secrets/.gitkeep
+infra/vault/data/
+infra/postgres/data/
