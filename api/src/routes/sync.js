@@ -1,36 +1,32 @@
 const express = require('express');
 const { requireScope } = require('../middleware/auth');
 const { exampleImportResult } = require('../exampleData');
-const { FIXTURE_PERSON_ID } = require('../constants');
+const { syncFromThaid } = require('../services/syncService');
 
-const router = express.Router();
+// ต้องเป็น factory รับ pool/vault/pepper เข้ามา (ไม่ใช้ global) เพราะ pepper ต้องอ่านจาก Vault ครั้งเดียว
+// ตอน boot (ภาคผนวก ข) และ test ต้อง inject fake vault client แทนของจริงได้
+function createSyncRouter({ pool, vault, pepper }) {
+  const router = express.Router();
 
-// สเกลตัน T2 เท่านั้น - change detection ครบ 5 branch (UNMATCHED/CLAIMED/NO_CHANGE/UPDATED/REJECTED_INACTIVE)
-// ตาม §3.3 ของเอกสารออกแบบ เป็นงานของ T3
-router.post('/sync/thaid', requireScope('sync:thaid'), (req, res) => {
-  res.status(200).json({
-    result: 'NO_CHANGE',
-    personId: FIXTURE_PERSON_ID,
-    status: 'ACTIVE',
-    verificationStatus: 'VERIFIED',
-    changedFields: [],
-    nameMismatchWithHr: false,
-    tokenClaims: {
-      sub: FIXTURE_PERSON_ID,
-      name: 'ทดสอบ ระบบ',
-      employeeNo: 'EMP-0001',
-      orgUnitCode: 'PERSONNEL-ADMIN',
-      positionTitle: 'นักทรัพยากรบุคคลชำนาญการ',
-      roles: ['staff'],
-    },
+  // T3: implement ครบ 5 branch (UNMATCHED/CLAIMED/NO_CHANGE/UPDATED/REJECTED_INACTIVE) ตาม §3.1, §3.3
+  router.post('/sync/thaid', requireScope('sync:thaid'), async (req, res, next) => {
+    try {
+      const { httpStatus, body } = await syncFromThaid({ pool, vault, pepper }, req.body);
+      res.status(httpStatus).json(body);
+    } catch (err) {
+      next(err);
+    }
   });
-});
 
-router.post('/sync/hr/employment-batch', requireScope('personnel:import'), (req, res) => {
-  const result = exampleImportResult();
-  result.mode = req.body?.mode || 'DRY_RUN';
-  result.total = req.body?.rows?.length || 0;
-  res.json(result);
-});
+  // T3 ยังไม่ implement (HR batch import เป็นงานของ T4/T8) - คง stub ของ T2 ไว้
+  router.post('/sync/hr/employment-batch', requireScope('personnel:import'), (req, res) => {
+    const result = exampleImportResult();
+    result.mode = req.body?.mode || 'DRY_RUN';
+    result.total = req.body?.rows?.length || 0;
+    res.json(result);
+  });
 
-module.exports = router;
+  return router;
+}
+
+module.exports = createSyncRouter;

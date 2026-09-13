@@ -1,6 +1,10 @@
 const express = require('express');
 const { middleware: OpenApiValidator } = require('express-openapi-validator');
 
+// side effect เท่านั้น: ตั้ง pg type parser ของคอลัมน์ DATE ก่อนที่ Pool ใดๆ จะถูกสร้าง (ดูคอมเมนต์ใน
+// db/pool.js) - createApp คือจุดร่วมของทั้ง server.js และทุก test จึงเป็นที่ที่เหมาะกับการรับประกันลำดับนี้
+require('./db/pool');
+
 const { SPEC_PATH, loadSpec } = require('./openapiSpec');
 const { requestId, problemJsonErrorHandler, notFoundHandler } = require('./middleware/problemJson');
 const { createAuthMiddleware } = require('./middleware/auth');
@@ -11,7 +15,7 @@ const personsRouter = require('./routes/persons');
 const meRouter = require('./routes/me');
 const provisioningRouter = require('./routes/provisioning');
 const employmentRouter = require('./routes/employment');
-const syncRouter = require('./routes/sync');
+const createSyncRouter = require('./routes/sync');
 const eventsRouter = require('./routes/events');
 const webhooksRouter = require('./routes/webhooks');
 const referenceRouter = require('./routes/reference');
@@ -19,7 +23,10 @@ const auditRouter = require('./routes/audit');
 
 // authConfig: { jwks, issuer, audience } - jwks เป็น URL string (production, createRemoteJWKSet)
 // หรือ jose GetKeyFunction (test, createLocalJWKSet) ดู security/jwt.js
-async function createApp({ pool, authConfig }) {
+// vault: { encrypt, decrypt, getPepper } - createVaultHttpClient (production) หรือ createFakeVaultClient (test)
+// pepper อ่านจาก Vault ครั้งเดียวตอน boot (ภาคผนวก ข) เก็บใน memory ตลอดอายุ process ไม่อ่านซ้ำต่อ request
+async function createApp({ pool, authConfig, vault }) {
+  const pepper = await vault.getPepper();
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json());
@@ -52,7 +59,7 @@ async function createApp({ pool, authConfig }) {
   v1.use(meRouter);
   v1.use(provisioningRouter);
   v1.use(employmentRouter);
-  v1.use(syncRouter);
+  v1.use(createSyncRouter({ pool, vault, pepper }));
   v1.use(eventsRouter);
   v1.use(webhooksRouter);
   v1.use(referenceRouter);
