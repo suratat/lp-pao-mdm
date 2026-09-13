@@ -1,0 +1,64 @@
+# T6: overlay สำหรับ smoke test เท่านั้น - เพิ่ม Keycloak ชั่วคราว (import realm-export.json) และ
+# ตัวรัน smoke-test.sh เพื่อพิสูจน์ว่า realm import ได้จริง + client check-broker ขอ token แล้วเรียก
+# POST /sync/thaid ผ่านจริง (เกณฑ์ผ่านของ T6) - Keycloak ตัวนี้ "ไม่ใช่" ของ staging จริง (staging จริงชี้
+# JWT_JWKS_URI/JWT_ISSUER ไปที่ iam.lp-pao.go.th ที่มีอยู่แล้วตาม infra/.env.staging.example)
+#
+# รัน: docker compose --env-file .env.staging.example \
+#        -f docker-compose.staging.yml -f docker-compose.smoketest.yml \
+#        up -d --build
+#      docker compose -f docker-compose.staging.yml -f docker-compose.smoketest.yml \
+#        run --rm smoke-test
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_staging_only
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_staging_only
+      KC_HEALTH_ENABLED: "true"
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks: [mdm-internal]
+
+  # ชี้ api1/api2 ให้ตรวจ token กับ Keycloak ตัวนี้แทนค่า production ใน .env.staging (override เฉพาะตอน
+  # smoke test) - ไม่ใส่ healthcheck ของ keycloak เพราะ image นี้ไม่มีเครื่องมือตรวจ HTTP ในตัวที่เรียกจาก
+  # CMD-SHELL ได้ง่าย (ไม่มี curl/wget) - ให้ smoke-test.sh เป็นคนรอ/retry แทน (depends_on แค่ service_started)
+  api1:
+    environment:
+      JWT_JWKS_URI: http://keycloak:8080/realms/lp-pao/protocol/openid-connect/certs
+      JWT_ISSUER: http://keycloak:8080/realms/lp-pao
+      JWT_AUDIENCE: mdm-api
+    depends_on:
+      keycloak:
+        condition: service_started
+
+  api2:
+    environment:
+      JWT_JWKS_URI: http://keycloak:8080/realms/lp-pao/protocol/openid-connect/certs
+      JWT_ISSUER: http://keycloak:8080/realms/lp-pao
+      JWT_AUDIENCE: mdm-api
+    depends_on:
+      keycloak:
+        condition: service_started
+
+  smoke-test:
+    image: curlimages/curl:8.10.1
+    entrypoint: ["/bin/sh", "/smoke-test.sh"]
+    volumes:
+      - ./smoke-test.sh:/smoke-test.sh:ro
+    environment:
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      MDM_API_BASE_URL: http://nginx:80
+      CHECK_BROKER_CLIENT_SECRET: check-broker-staging-secret-CHANGE-ME
+    networks: [mdm-internal]
+    profiles: ["tools"] # ไม่ start อัตโนมัติตอน `up` - เรียกผ่าน `run --rm smoke-test` เท่านั้น
+
+networks:
+  mdm-internal:
+    driver: bridge

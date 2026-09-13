@@ -1,0 +1,157 @@
+# T6: docker-compose staging ตามภาคผนวก ค + CLAUDE.md แถว T6 (api x2, worker, postgres, vault dev/raft,
+# nginx) - Keycloak ไม่ได้อยู่ในนี้เพราะเป็นระบบที่ "มีอยู่แล้ว" ตาม §0.3 ของเอกสารออกแบบ (แชร์กับ
+# thaid/check ไม่ใช่ของ MDM) ดู docker-compose.smoketest.yml สำหรับ Keycloak ชั่วคราวที่ใช้พิสูจน์
+# realm-export.json + flow client-credentials เท่านั้น (ไม่ใช่ topology ของ staging จริง)
+#
+# รัน: docker compose --env-file .env.staging -f docker-compose.staging.yml up -d
+# (คัดลอก .env.staging.example เป็น .env.staging ก่อน แก้ค่า CHANGE_ME ทั้งหมด)
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [mdm-internal]
+
+  # one-shot: node-pg-migrate up (ดู infra/migrate/Dockerfile) - restart: "no" เพราะต้องรันแค่ตอน deploy
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/migrate/Dockerfile
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [mdm-internal]
+
+  # one-shot: สร้าง/อัปเดต LOGIN role mdm_api_svc/mdm_worker_svc (ดู infra/postgres/bootstrap-roles.sql)
+  roles-bootstrap:
+    image: postgres:16
+    restart: "no"
+    environment:
+      MIGRATOR_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MDM_API_DB_PASSWORD: ${MDM_API_DB_PASSWORD}
+      MDM_WORKER_DB_PASSWORD: ${MDM_WORKER_DB_PASSWORD}
+    volumes:
+      - ./postgres/bootstrap-roles.sql:/bootstrap-roles.sql:ro
+      - ./postgres/bootstrap-roles.sh:/bootstrap-roles.sh:ro
+    entrypoint: ["/bin/sh", "/bootstrap-roles.sh"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [mdm-internal]
+
+  vault:
+    image: hashicorp/vault:1.17
+    restart: unless-stopped
+    cap_add: [IPC_LOCK]
+    volumes:
+      - ./vault/config/vault.hcl:/vault/config/vault.hcl:ro
+      - ./vault/data:/vault/data
+    # หมายเหตุ: ห้ามใส่ -config=/vault/config/vault.hcl เอง - entrypoint ของ image นี้เติม
+    # -config=/vault/config (ทั้งโฟลเดอร์) ให้อัตโนมัติเมื่อ command ขึ้นต้นด้วย server อยู่แล้ว
+    # ถ้าใส่ -config ของไฟล์ซ้ำเข้าไปอีก vault จะโหลด listener block ซ้ำ 2 รอบ แล้ว bind 0.0.0.0:8200
+    # ชนกันเอง (address already in use) ปล่อยให้ entrypoint ชี้ไปที่โฟลเดอร์ /vault/config เท่านั้นพอ
+    command: ["server"]
+    ports:
+      - "127.0.0.1:8200:8200" # debug เท่านั้น - production ไม่เปิดออก host เลย (เครือข่ายภายในของ VM)
+    networks: [mdm-internal]
+
+  # one-shot (idempotent, รันได้ทุกครั้งที่ compose ขึ้นใหม่ - ดูเหตุผลใน infra/vault/init.sh)
+  vault-init:
+    image: hashicorp/vault:1.17
+    restart: "no"
+    user: "0:0" # ต้องเป็น root เพื่อ apk add jq ใน init.sh
+    volumes:
+      - ./vault/init.sh:/vault-init/init.sh:ro
+      - ./vault/policies:/vault/policies:ro
+      - ./vault/secrets:/vault/secrets
+    entrypoint: ["/bin/sh", "/vault-init/init.sh"]
+    depends_on:
+      - vault
+    networks: [mdm-internal]
+
+  api1: &api
+    build:
+      context: ..
+      dockerfile: infra/api/Dockerfile
+    restart: unless-stopped
+    environment: &api-env
+      PORT: 3000
+      DATABASE_URL: postgres://mdm_api_svc:${MDM_API_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_JWKS_URI: ${JWT_JWKS_URI}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      VAULT_ADDR: http://vault:8200
+      WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+    volumes:
+      - ./vault/secrets:/vault/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      roles-bootstrap:
+        condition: service_completed_successfully
+      vault-init:
+        condition: service_completed_successfully
+    networks: [mdm-internal]
+
+  api2:
+    <<: *api
+    environment: *api-env
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://mdm_worker_svc:${MDM_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      VAULT_ADDR: http://vault:8200
+      CHECK_BASE_URL: ${CHECK_BASE_URL}
+      CHECK_SHARED_SECRET: ${CHECK_SHARED_SECRET}
+      KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+      REVERIFY_MAX_AGE_DAYS: ${REVERIFY_MAX_AGE_DAYS}
+      REVERIFY_ON_CARD_EXPIRY_DAYS: ${REVERIFY_ON_CARD_EXPIRY_DAYS}
+      GRACE_DAYS: ${GRACE_DAYS}
+    volumes:
+      - ./vault/secrets:/vault/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      roles-bootstrap:
+        condition: service_completed_successfully
+      vault-init:
+        condition: service_completed_successfully
+    networks: [mdm-internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80" # production: ไม่ตั้ง ingress ผ่าน Cloudflare Tunnel สำหรับ /api ดูภาคผนวก ค
+    depends_on:
+      - api1
+      - api2
+    networks: [mdm-internal]
+
+networks:
+  mdm-internal:
+    driver: bridge
