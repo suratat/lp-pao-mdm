@@ -32,12 +32,12 @@ async function insertFixturePerson(pool) {
     [FIXTURE_PERSON_ID]
   );
 
-  // หมายเหตุ: personnel_type ใช้ค่าภาษาไทยตาม CHECK constraint ของ mdm.employment (T1) ซึ่งยังไม่ตรงกับ
-  // enum ภาษาอังกฤษ (CIVIL_SERVANT ฯลฯ) ใน OpenAPI PersonnelType - ต้องทำ mapping ตอน implement service จริง (T3+)
+  // personnel_type เก็บเป็น English code เดียวกับ OpenAPI PersonnelType ตั้งแต่ migration
+  // 1700000000019_english_enum_codes.js (FK ไป mdm.personnel_type) ไม่ต้อง mapping อีกต่อไป
   await pool.query(
     `INSERT INTO mdm.employment
       (person_id, employee_no, personnel_type, position_id, org_unit_id, level_code, appointed_date, effective_from, is_current, employment_status, updated_by)
-     VALUES ($1, 'EMP-0001', 'ข้าราชการ อบจ.', $2, $3, 'ชำนาญการ', '2015-10-01', '2015-10-01', true, 'ACTIVE', 'test')
+     VALUES ($1, 'EMP-0001', 'CIVIL_SERVANT', $2, $3, 'ชำนาญการ', '2015-10-01', '2015-10-01', true, 'ACTIVE', 'test')
      ON CONFLICT DO NOTHING`,
     [FIXTURE_PERSON_ID, FIXTURE_POSITION_ID, FIXTURE_ORG_UNIT_ID]
   );
