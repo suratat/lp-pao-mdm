@@ -14,3 +14,7 @@ infra/vault/secrets/*
 !infra/vault/secrets/.gitkeep
 infra/vault/data/
 infra/postgres/data/
+
+# T8 (migrate/): รายงานที่ runner สร้างระหว่างรัน (quality/DRY_RUN/APPLY/reconciliation) - artifact ของการรัน
+# แต่ละครั้ง ไม่ใช่ source ที่ต้อง commit
+migrate/reports/
