@@ -53,7 +53,7 @@ describe('partial UNIQUE (employee_no) WHERE is_current ของ mdm.employment
     return pool.query(
       `INSERT INTO mdm.employment
         (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, is_current, employment_status, updated_by)
-       VALUES ($1, $2, 'ข้าราชการ อบจ.', $3, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
+       VALUES ($1, $2, 'CIVIL_SERVANT', $3, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
       [personId, employeeNo, positionId, ORG_UNIT_ID]
     );
   }
@@ -78,7 +78,7 @@ describe('EXCLUDE ตำแหน่งซ้อนทับ (position_id + ช�
     return pool.query(
       `INSERT INTO mdm.employment
         (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, effective_to, is_current, employment_status, updated_by)
-       VALUES ($1, $2, 'พนักงานจ้าง', $3, $4, $5, $6, false, 'ACTIVE', 'test')`,
+       VALUES ($1, $2, 'GENERAL_EMPLOYEE', $3, $4, $5, $6, false, 'ACTIVE', 'test')`,
       [personId, employeeNo, POSITION_ID, ORG_UNIT_ID, from, to]
     );
   }
