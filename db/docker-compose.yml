@@ -1,0 +1,19 @@
+# ใช้สำหรับ dev/test migrations ในเครื่อง (T1) เท่านั้น
+# docker-compose.staging.yml ตัวเต็ม (api/worker/vault/nginx) อยู่ใน infra/ (T6)
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mdm_migrator
+      POSTGRES_PASSWORD: mdm_migrator_dev_only
+      POSTGRES_DB: mdm_test
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mdm_migrator -d mdm_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

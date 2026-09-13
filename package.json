@@ -1,0 +1,20 @@
+{
+  "name": "lp-pao-mdm",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Central Personnel MDM - อบจ.ลำปาง",
+  "type": "commonjs",
+  "scripts": {
+    "db:up": "docker compose -f db/docker-compose.yml up -d",
+    "db:down": "docker compose -f db/docker-compose.yml down -v",
+    "migrate:up": "node-pg-migrate up -m db/migrations -j js",
+    "migrate:down": "node-pg-migrate down -m db/migrations -j js",
+    "migrate:redo": "node-pg-migrate redo -m db/migrations -j js",
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "node-pg-migrate": "^7.6.1",
+    "pg": "^8.13.1"
+  }
+}
