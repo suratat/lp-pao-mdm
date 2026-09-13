@@ -1,5 +1,6 @@
 const { maskBySchema } = require('../security/fieldMask');
 const { getResponseSchemaForOperation } = require('../openapiSpec');
+const { resolvePurposeCode } = require('../services/purposeCode');
 
 // เฉพาะ operation ที่ในสเกลตันนี้คืนข้อมูลของบุคคลจริงที่มีอยู่ใน DB (ไม่ใช่ stub ที่ยังไม่ได้ต่อ service จริง)
 // endpoint ที่เหลือ (provision/deactivate/sync ฯลฯ) เป็น business logic ของ T3-T5 ซึ่งต้องเขียน access_log
@@ -16,6 +17,9 @@ const PERSONAL_DATA_OPERATIONS = new Set([
   'listStalePersons',
   'getPersonChangeLog',
   'listAccessLogs',
+  'provisionPerson',
+  'deactivatePerson',
+  'reactivatePerson',
 ]);
 
 // ไม่ระบุ index ของ array (เช่น emergencyContacts[0].phone) เพื่อไม่ให้ path ยาวเกินจำเป็นและกันข้อมูลระเบิด
@@ -66,6 +70,7 @@ function personalDataResponseMiddleware(spec, pool) {
         ) {
           const subjectPersonId = extractSubjectPersonId(req, finalBody);
           if (subjectPersonId) {
+            const purposeCode = await resolvePurposeCode(pool, req.auth.azp);
             await pool.query(
               `INSERT INTO audit.access_log
                 (subject_person_id, actor_type, actor_sub, keycloak_client_id, endpoint, http_method,
@@ -79,7 +84,7 @@ function personalDataResponseMiddleware(spec, pool) {
                 req.originalUrl,
                 req.method,
                 JSON.stringify(flattenFieldPaths(finalBody)),
-                req.query.purposeCode || null,
+                purposeCode,
                 req.query.justification || null,
                 req.id || null,
                 req.ip,
