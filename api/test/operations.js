@@ -156,11 +156,13 @@ const operations = [
     method: 'post',
     path: '/sync/thaid',
     scope: 'sync:thaid',
+    // T3: /sync/thaid ทำงานจริงแล้ว (ดู sync.test.js สำหรับทั้ง 5 branch) - pid นี้สุ่มใหม่ทุกครั้งและไม่มี
+    // person ใน DB ตรงกับมันมาก่อน จึงตกไปที่ branch UNMATCHED (202) เสมอ ไม่ใช่ 200
     body: {
       claims: { pid: fakeChecksumPid(), firstNameTh: 'ทดสอบ', lastNameTh: 'ระบบ' },
       context: { appId: 'eoffice', audience: 'PERSONNEL' },
     },
-    expectStatus: 200,
+    expectStatus: 202,
   },
   {
     name: 'importEmploymentBatch',

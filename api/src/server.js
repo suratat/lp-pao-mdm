@@ -1,5 +1,6 @@
 const { createApp } = require('./app');
 const { getPool } = require('./db/pool');
+const { createVaultHttpClient } = require('./security/vault');
 
 const PORT = process.env.PORT || 3000;
 
@@ -11,6 +12,10 @@ async function main() {
       issuer: process.env.JWT_ISSUER || 'https://iam.lp-pao.go.th/realms/lp-pao',
       audience: process.env.JWT_AUDIENCE || 'mdm-api',
     },
+    vault: createVaultHttpClient({
+      addr: process.env.VAULT_ADDR,
+      token: process.env.VAULT_TOKEN,
+    }),
   });
 
   app.listen(PORT, () => {
