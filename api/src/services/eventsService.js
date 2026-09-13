@@ -33,8 +33,11 @@ async function listEvents({ pool }, { after = 0, eventTypes, limit = 50 }) {
     version: row.version,
     changedFields: row.changed_fields || [],
     data: {
-      status: row.payload?.status ?? null,
-      verificationStatus: row.payload?.verificationStatus ?? null,
+      // status/verificationStatus อ้าง enum ตรงๆ (ไม่ nullable) - เหตุการณ์บางประเภท (เช่น
+      // PERSON_DEACTIVATED) ใส่ null ไว้ใน payload jsonb เพราะไม่เกี่ยวข้อง ต้องตัดฟิลด์ออกแทนที่จะส่ง null
+      // ต่อ (mergedIntoPersonId ประกาศ nullable ไว้ตรงๆ ใน schema จึงส่ง null ต่อได้)
+      status: row.payload?.status ?? undefined,
+      verificationStatus: row.payload?.verificationStatus ?? undefined,
       mergedIntoPersonId: row.payload?.mergedIntoPersonId ?? null,
     },
   }));

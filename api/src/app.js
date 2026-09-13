@@ -11,15 +11,15 @@ const { createAuthMiddleware } = require('./middleware/auth');
 const { personalDataResponseMiddleware } = require('./middleware/accessLog');
 
 const createSystemRouter = require('./routes/system');
-const personsRouter = require('./routes/persons');
-const meRouter = require('./routes/me');
-const provisioningRouter = require('./routes/provisioning');
-const employmentRouter = require('./routes/employment');
+const createPersonsRouter = require('./routes/persons');
+const createMeRouter = require('./routes/me');
+const createProvisioningRouter = require('./routes/provisioning');
+const createEmploymentRouter = require('./routes/employment');
 const createSyncRouter = require('./routes/sync');
 const createEventsRouter = require('./routes/events');
-const webhooksRouter = require('./routes/webhooks');
-const referenceRouter = require('./routes/reference');
-const auditRouter = require('./routes/audit');
+const createWebhooksRouter = require('./routes/webhooks');
+const createReferenceRouter = require('./routes/reference');
+const createAuditRouter = require('./routes/audit');
 
 // authConfig: { jwks, issuer, audience } - jwks เป็น URL string (production, createRemoteJWKSet)
 // หรือ jose GetKeyFunction (test, createLocalJWKSet) ดู security/jwt.js
@@ -55,15 +55,15 @@ async function createApp({ pool, authConfig, vault }) {
   // (ดูคอมเมนต์ใน middleware/accessLog.js เรื่องลำดับการห่อ res.json)
   v1.use(personalDataResponseMiddleware(spec, pool));
 
-  v1.use(personsRouter);
-  v1.use(meRouter);
-  v1.use(provisioningRouter);
-  v1.use(employmentRouter);
+  v1.use(createPersonsRouter({ pool, vault, pepper }));
+  v1.use(createMeRouter(pool));
+  v1.use(createProvisioningRouter({ pool, vault, pepper }));
+  v1.use(createEmploymentRouter(pool));
   v1.use(createSyncRouter({ pool, vault, pepper }));
   v1.use(createEventsRouter(pool));
-  v1.use(webhooksRouter);
-  v1.use(referenceRouter);
-  v1.use(auditRouter);
+  v1.use(createWebhooksRouter({ pool, vault }));
+  v1.use(createReferenceRouter(pool));
+  v1.use(createAuditRouter(pool));
 
   app.use('/api/v1', v1);
 

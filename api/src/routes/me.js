@@ -1,39 +1,81 @@
 const express = require('express');
 const { requireScope } = require('../middleware/auth');
-const { examplePerson, exampleConsent } = require('../exampleData');
-const { FIXTURE_PERSON_ID } = require('../constants');
+const { HttpProblem } = require('../security/httpProblem');
+const { getPerson } = require('../services/personService');
+const { updateMyContact, replaceMyEmergencyContacts, reportIdentityIssue } = require('../services/meService');
+const { listMyConsents, setMyConsent } = require('../services/consentService');
 
-const router = express.Router();
+function requireOwnPersonId(req) {
+  if (!req.auth.personId) {
+    throw new HttpProblem(403, 'user-context-required', 'ต้องใช้ token แบบ user context (มี person_id)');
+  }
+  return req.auth.personId;
+}
 
-router.get('/me', requireScope('personnel:self'), (req, res) => {
-  res.json(examplePerson(req.auth.personId || FIXTURE_PERSON_ID));
-});
+function createMeRouter(pool) {
+  const router = express.Router();
 
-router.put('/me/contact', requireScope('personnel:self'), (req, res) => {
-  const person = examplePerson(req.auth.personId || FIXTURE_PERSON_ID);
-  res.json({ ...person.contact, ...req.body });
-});
+  router.get('/me', requireScope('personnel:self'), async (req, res, next) => {
+    try {
+      const personId = requireOwnPersonId(req);
+      const person = await getPerson(pool, personId);
+      res.json(person);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-router.put('/me/emergency-contacts', requireScope('personnel:self'), (req, res) => {
-  res.json(req.body);
-});
+  router.put('/me/contact', requireScope('personnel:self'), async (req, res, next) => {
+    try {
+      const personId = requireOwnPersonId(req);
+      const contact = await updateMyContact(pool, personId, req.body);
+      res.json(contact);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-router.post('/me/report-identity-issue', requireScope('personnel:self'), (req, res) => {
-  res.status(202).end();
-});
+  router.put('/me/emergency-contacts', requireScope('personnel:self'), async (req, res, next) => {
+    try {
+      const personId = requireOwnPersonId(req);
+      const contacts = await replaceMyEmergencyContacts(pool, personId, req.body);
+      res.json(contacts);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-router.get('/me/consents', requireScope('personnel:self'), (req, res) => {
-  res.json([exampleConsent()]);
-});
+  router.post('/me/report-identity-issue', requireScope('personnel:self'), async (req, res, next) => {
+    try {
+      const personId = requireOwnPersonId(req);
+      await reportIdentityIssue(pool, personId, req.body);
+      res.status(202).end();
+    } catch (err) {
+      next(err);
+    }
+  });
 
-router.put('/me/consents/:purposeCode', requireScope('personnel:self'), (req, res) => {
-  const consent = exampleConsent();
-  consent.purposeCode = req.params.purposeCode;
-  consent.status = req.body.status;
-  consent.policyVersion = req.body.policyVersion;
-  if (req.body.status === 'GRANTED') consent.grantedAt = new Date().toISOString();
-  if (req.body.status === 'WITHDRAWN') consent.withdrawnAt = new Date().toISOString();
-  res.json(consent);
-});
+  router.get('/me/consents', requireScope('personnel:self'), async (req, res, next) => {
+    try {
+      const personId = requireOwnPersonId(req);
+      const consents = await listMyConsents(pool, personId);
+      res.json(consents);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-module.exports = router;
+  router.put('/me/consents/:purposeCode', requireScope('personnel:self'), async (req, res, next) => {
+    try {
+      const personId = requireOwnPersonId(req);
+      const consent = await setMyConsent(pool, personId, req.params.purposeCode, req.body);
+      res.json(consent);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  return router;
+}
+
+module.exports = createMeRouter;

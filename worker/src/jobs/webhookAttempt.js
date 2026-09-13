@@ -70,6 +70,7 @@ async function attemptOneDelivery({ pool, vault, fetchImpl, now, deliveryId }) {
           'X-MDM-Delivery-Attempt': String(attemptNumber),
         },
         body,
+        redirect: 'error', // §2.3 "ห้าม redirect" - fetch ของ Node ทำตาม redirect โดยปริยาย ต้องปิดเอง
       });
       responseStatus = res.status;
       success = res.status >= 200 && res.status < 300;

@@ -1,15 +1,30 @@
 const express = require('express');
 const { requireScope } = require('../middleware/auth');
-const { exampleEmployment } = require('../exampleData');
+const { getEmploymentHistory, upsertEmployment } = require('../services/employmentService');
 
-const router = express.Router();
+function createEmploymentRouter(pool) {
+  const router = express.Router();
 
-router.get('/persons/:personId/employment', requireScope('personnel:read:employment'), (req, res) => {
-  res.json([exampleEmployment()]);
-});
+  router.get('/persons/:personId/employment', requireScope('personnel:read:employment'), async (req, res, next) => {
+    try {
+      const currentOnly = req.query.currentOnly === 'true' || req.query.currentOnly === true;
+      const history = await getEmploymentHistory(pool, req.params.personId, currentOnly);
+      res.json(history);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-router.put('/persons/:personId/employment', requireScope('personnel:write:employment'), (req, res) => {
-  res.json(exampleEmployment());
-});
+  router.put('/persons/:personId/employment', requireScope('personnel:write:employment'), async (req, res, next) => {
+    try {
+      const result = await upsertEmployment(pool, req.params.personId, req.body);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-module.exports = router;
+  return router;
+}
+
+module.exports = createEmploymentRouter;
