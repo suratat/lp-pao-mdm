@@ -13,15 +13,34 @@ Express app แยกจาก `api/` และ `worker/` คุยกับ MDM
   อยู่ใน allowlist (`mdm-portal`) และ scope มี `personnel:self` เท่านั้น - client อื่นที่ถือ Bearer token
   ปกติ (ไม่มี `X-Acting-Person`) ไม่ได้รับผลกระทบ และถ้า deployment ไหนไม่ตั้ง secret ไว้ กลไกนี้ปิดเงียบ
 
+## การล็อกอินจริงผ่าน check.lp-pao.go.th
+
+`src/routes/authRoutes.js` + `src/security/checkAuthClient.js` implement flow เต็ม (ยืนยันกับโค้ดจริง
+ของ check-app ที่เพิ่มไว้ตอน T7):
+
+1. `GET /auth/login` → redirect ไป `check/login?client_id=&redirect_uri=` (`redirect_uri` ต้อง
+   exact-match กับที่ลงทะเบียนไว้ใน check ของ Portal เป๊ะ ๆ)
+2. `GET /auth/callback?token=` → เรียก `POST check/api/verify` (Basic auth ด้วย
+   `CHECK_CLIENT_ID`/`CHECK_CLIENT_SECRET`, body `{token}`) แล้วอ่าน `person_id` จาก claims ที่ตอบกลับ
+   (field ที่ไม่มีสิทธิ์ตาม `allowed_claims` จะหายไปเฉย ๆ ไม่ใช่ `null` - เช็คด้วย `!claims.person_id`)
+3. ถ้ามี `person_id` → สร้าง session cookie เดิมของ Portal; ถ้าไม่มี หรือ verify ล้มเหลว
+   (token หมดอายุ/ใช้ซ้ำ, client credential ผิด, เชื่อมต่อ check ไม่ได้) → แสดงหน้า error ภาษาไทยที่
+   เหมาะกับสาเหตุ ไม่ crash และไม่ log token/secret/response body
+
+ไม่ทำ CSRF `state` ของ Portal เอง เพราะ check ไม่ส่ง state กลับมาที่ app (เก็บไว้ฝั่ง check เอง ตาม
+seq-01/R02) อาศัย `redirect_uri` exact-match + handoff token single-use อายุ 60 วิ ของ check แทน
+
+ต้องตั้งค่า `CHECK_BASE_URL`, `CHECK_CLIENT_ID`, `CHECK_CLIENT_SECRET`, `PORTAL_AUTH_CALLBACK_URL`
+ให้ครบทั้ง 4 ตัว (ดู `.env.example`) — **ยังไม่ได้ลงทะเบียน Portal ใน `ALLOWED_APPS` ของ check จริง**
+(ต้องทำผ่าน `/admin/apps/new` ของ check เหมือนตอนสร้าง `mdm-test-personnel` ทดสอบ T7 — เป็นงาน ops
+แยกจากรอบนี้) ถ้าไม่ตั้งค่าให้ครบ (dev/test) จะ fallback ไปใช้ `dev-login` stub เดิมทุกประการ ซึ่ง
+**ปิดใช้งานอัตโนมัติเมื่อ `NODE_ENV=production`** (ตอบ 404) เพื่อกันไม่ให้กลายเป็นช่องโหว่จริง
+
 ## ยังไม่ครอบคลุมในรอบนี้ (ตั้งใจ ไม่ใช่ลืม)
 
-1. **การล็อกอินจริงผ่าน check.lp-pao.go.th** — เอกสารออกแบบไม่ได้ระบุ wire format ของ session/handoff
-   ที่ check ออกให้ "app" ทั่วไป (ต่างจาก ThaID→check ที่มีรายละเอียดครบใน seq-01) และเป็นงานฝั่งรีโป check
-   (ใกล้เคียง T7) ในรอบนี้ทำได้แค่ `session/devLogin.js` ซึ่ง**ปิดใช้งานอัตโนมัติเมื่อ `NODE_ENV=production`**
-   (ตอบ 404/501) ใช้ได้เฉพาะ dev/test เพื่อทดสอบ self-service flow ทั้งหมดแบบ end-to-end
-2. HR console และ DPO console (รอ scope ของ `mdm-portal` เพิ่มใน Keycloak และการตัดสินใจเรื่อง
+1. HR console และ DPO console (รอ scope ของ `mdm-portal` เพิ่มใน Keycloak และการตัดสินใจเรื่อง
    `hr_scope_org_units` ตาม §2.2 ข้อ 5)
-3. Reference lookups (org-unit/position picker, area code picker สำหรับที่อยู่) - ฟอร์มที่อยู่ปัจจุบัน
+2. Reference lookups (org-unit/position picker, area code picker สำหรับที่อยู่) - ฟอร์มที่อยู่ปัจจุบัน
    รับเป็นข้อความอิสระ (`fullText`) และบ้านเลขที่เท่านั้น
 
 ## รันแบบ dev

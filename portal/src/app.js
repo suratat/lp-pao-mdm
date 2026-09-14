@@ -4,14 +4,15 @@ const { createAuthRoutes } = require('./routes/authRoutes');
 const { createMeRoutes } = require('./routes/meRoutes');
 const { layout } = require('./views/html');
 
-// config: { mdmClient, sessionSecret, isProduction }
+// config: { mdmClient, sessionSecret, isProduction, checkAuthClient }
 // mdmClient สร้างด้วย ./mdmClient.js createMdmClient(...) - server.js ประกอบ getServiceToken/secret จริง
 // จาก env, ส่วน test ใช้ instance ของ MDM API จริง (api/src/app.js) ที่รันในเทสเพื่อไม่ต้อง mock HTTP
-function createApp({ mdmClient, sessionSecret, isProduction = false }) {
+// checkAuthClient (optional) สร้างด้วย ./security/checkAuthClient.js - ไม่ตั้งค่า = fallback ไป dev-login
+function createApp({ mdmClient, sessionSecret, isProduction = false, checkAuthClient = null }) {
   const app = express();
   app.disable('x-powered-by');
 
-  app.use(createAuthRoutes({ sessionSecret, isProduction }));
+  app.use(createAuthRoutes({ sessionSecret, isProduction, checkAuthClient }));
 
   // ใช้เงื่อนไข path เองแทนการพึ่ง Express path routing กับ prefix (กันปัญหาความเข้ากันได้ของ
   // path-to-regexp ข้าม version) - ผ่านเฉพาะ path ที่ขึ้นต้นด้วย /portal เท่านั้น
