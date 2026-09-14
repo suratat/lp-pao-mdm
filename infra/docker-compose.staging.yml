@@ -98,6 +98,9 @@ services:
       VAULT_ADDR: http://vault:8200
       WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS}
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+      # ต้องเป็นค่าเดียวกับ PORTAL_ACTING_ASSERTION_SECRET ของ service portal ด้านล่าง (§0.3 ทางเลือก B,
+      # portal/README.md) - ไม่ตั้งค่านี้ = middleware ตรวจ X-Acting-Person ปิดเงียบ (ดู api/src/server.js)
+      PORTAL_ACTING_ASSERTION_SECRET: ${PORTAL_ACTING_ASSERTION_SECRET}
     volumes:
       - ./vault/secrets:/vault/secrets:ro
     depends_on:
@@ -151,6 +154,34 @@ services:
     depends_on:
       - api1
       - api2
+    networks: [mdm-internal]
+
+  # T9: MDM Portal (self-service) - คุยกับ MDM API ผ่าน HTTP เท่านั้น ไม่แตะ Postgres/Vault ตรง จึงไม่ผ่าน
+  # nginx (ซึ่งทำหน้าที่ load-balance หน้า api1/api2 เท่านั้น ดู comment ใน nginx service ด้านบน) แต่ยิงตรง
+  # ไปที่ service name "nginx" ในเครือข่ายภายใน (ห้าม localhost/IP ข้าง VM - รันข้าม container กัน)
+  portal:
+    build:
+      context: ..
+      dockerfile: infra/portal/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${PORTAL_PORT}
+      NODE_ENV: production
+      MDM_API_BASE_URL: http://nginx # ชี้เข้า service nginx ใน mdm-internal network (mount /api/v1 ที่ api)
+      KEYCLOAK_TOKEN_URL: ${KEYCLOAK_TOKEN_URL}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      # ต้องเป็นค่าเดียวกับ PORTAL_ACTING_ASSERTION_SECRET ของ api1/api2 ด้านบน
+      PORTAL_ACTING_ASSERTION_SECRET: ${PORTAL_ACTING_ASSERTION_SECRET}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET}
+      CHECK_BASE_URL: ${CHECK_BASE_URL}
+      CHECK_CLIENT_ID: ${CHECK_CLIENT_ID}
+      CHECK_CLIENT_SECRET: ${CHECK_CLIENT_SECRET}
+      PORTAL_AUTH_CALLBACK_URL: ${PORTAL_AUTH_CALLBACK_URL}
+    ports:
+      - "${PORTAL_PORT}:${PORTAL_PORT}"
+    depends_on:
+      - nginx
     networks: [mdm-internal]
 
 networks:
