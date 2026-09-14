@@ -1,0 +1,30 @@
+# Keycloak แบบ persistent (production mode) - เชื่อมต่อ Postgres database "keycloak"
+# ที่ roles-bootstrap สร้างให้ (ดู postgres/bootstrap-roles.sql)
+# ใช้แทน docker-compose.smoketest.yml ซึ่งเป็น start-dev ชั่วคราวเท่านั้น (ข้อมูลหายเมื่อ restart)
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak_svc
+      KC_DB_PASSWORD: ${KEYCLOAK_SVC_DB_PASSWORD}
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_HOSTNAME}
+      KC_HOSTNAME_PORT: ${KEYCLOAK_PUBLIC_PORT}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "${KEYCLOAK_PUBLIC_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      roles-bootstrap:
+        condition: service_completed_successfully
+    networks: [mdm-internal]

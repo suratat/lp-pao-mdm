@@ -19,11 +19,15 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin_staging_only
       KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: 192.168.0.5
+      KC_HOSTNAME_PORT: "8081"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
     command: ["start-dev", "--import-realm"]
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     ports:
-      - "127.0.0.1:8081:8080"
+      - "8081:8080"
     networks: [mdm-internal]
 
   # ชี้ api1/api2 ให้ตรวจ token กับ Keycloak ตัวนี้แทนค่า production ใน .env.staging (override เฉพาะตอน
@@ -31,8 +35,8 @@ services:
   # CMD-SHELL ได้ง่าย (ไม่มี curl/wget) - ให้ smoke-test.sh เป็นคนรอ/retry แทน (depends_on แค่ service_started)
   api1:
     environment:
-      JWT_JWKS_URI: http://keycloak:8080/realms/lp-pao/protocol/openid-connect/certs
-      JWT_ISSUER: http://keycloak:8080/realms/lp-pao
+      JWT_JWKS_URI: http://192.168.0.5:8081/realms/lp-pao/protocol/openid-connect/certs
+      JWT_ISSUER: http://192.168.0.5:8081/realms/lp-pao
       JWT_AUDIENCE: mdm-api
     depends_on:
       keycloak:
@@ -40,8 +44,8 @@ services:
 
   api2:
     environment:
-      JWT_JWKS_URI: http://keycloak:8080/realms/lp-pao/protocol/openid-connect/certs
-      JWT_ISSUER: http://keycloak:8080/realms/lp-pao
+      JWT_JWKS_URI: http://192.168.0.5:8081/realms/lp-pao/protocol/openid-connect/certs
+      JWT_ISSUER: http://192.168.0.5:8081/realms/lp-pao
       JWT_AUDIENCE: mdm-api
     depends_on:
       keycloak:

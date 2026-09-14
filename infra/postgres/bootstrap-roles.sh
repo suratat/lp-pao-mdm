@@ -7,4 +7,5 @@ psql "$MIGRATOR_DATABASE_URL" \
   -v ON_ERROR_STOP=1 \
   -v mdm_api_svc_password="$MDM_API_DB_PASSWORD" \
   -v mdm_worker_svc_password="$MDM_WORKER_DB_PASSWORD" \
+  -v keycloak_svc_password="$KEYCLOAK_SVC_DB_PASSWORD" \
   -f /bootstrap-roles.sql

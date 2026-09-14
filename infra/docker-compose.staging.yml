@@ -44,6 +44,7 @@ services:
       MIGRATOR_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       MDM_API_DB_PASSWORD: ${MDM_API_DB_PASSWORD}
       MDM_WORKER_DB_PASSWORD: ${MDM_WORKER_DB_PASSWORD}
+      KEYCLOAK_SVC_DB_PASSWORD: ${KEYCLOAK_SVC_DB_PASSWORD}
     volumes:
       - ./postgres/bootstrap-roles.sql:/bootstrap-roles.sql:ro
       - ./postgres/bootstrap-roles.sh:/bootstrap-roles.sh:ro

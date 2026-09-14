@@ -24,3 +24,15 @@ SELECT format('CREATE ROLE mdm_worker_svc LOGIN PASSWORD %L', :'mdm_worker_svc_p
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mdm_worker_svc')
 \gexec
 GRANT mdm_worker TO mdm_worker_svc;
+
+-- Keycloak persistent storage: database + role แยกจาก mdm (ไม่ปนกับ schema ของ MDM API)
+SELECT format('ALTER ROLE keycloak_svc PASSWORD %L', :'keycloak_svc_password')
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'keycloak_svc')
+UNION ALL
+SELECT format('CREATE ROLE keycloak_svc LOGIN PASSWORD %L', :'keycloak_svc_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'keycloak_svc')
+\gexec
+
+SELECT 'CREATE DATABASE keycloak OWNER keycloak_svc'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak')
+\gexec
