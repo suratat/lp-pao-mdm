@@ -11,6 +11,13 @@ async function main() {
       jwks: process.env.JWT_JWKS_URI || 'https://iam.lp-pao.go.th/realms/lp-pao/protocol/openid-connect/certs',
       issuer: process.env.JWT_ISSUER || 'https://iam.lp-pao.go.th/realms/lp-pao',
       audience: process.env.JWT_AUDIENCE || 'mdm-api',
+      // ทางเลือก B (§0.3, T9): ตรวจ X-Acting-Person จาก mdm-portal - ไม่ตั้ง secret แล้วปิดเงียบ (opt-in)
+      actingAssertion: process.env.PORTAL_ACTING_ASSERTION_SECRET
+        ? {
+            secret: process.env.PORTAL_ACTING_ASSERTION_SECRET,
+            allowedAzp: (process.env.PORTAL_ACTING_ASSERTION_AZP || 'mdm-portal').split(',').map((s) => s.trim()),
+          }
+        : undefined,
     },
     vault: createVaultHttpClient({
       addr: process.env.VAULT_ADDR,
