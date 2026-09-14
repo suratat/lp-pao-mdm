@@ -104,7 +104,7 @@
     },
     {
       "clientId": "mdm-portal",
-      "description": "MDM Portal (ทางเลือก B, T9 - ยังไม่ implement) - backend ถือ client นี้เพื่อส่ง signed assertion X-Acting-Person ตาม §0.3",
+      "description": "MDM Portal (ทางเลือก B, T9 รอบแรก - self-service, implement แล้ว) - backend ถือ client นี้เพื่อขอ token (client credentials, scope personnel:self) แล้วส่ง header X-Acting-Person เป็น JWT เซ็นเอง (secret แยก: PORTAL_ACTING_ASSERTION_SECRET) ระบุตัวผู้ใช้ที่กำลังทำ self-service ตาม §0.3 - ดู portal/README.md",
       "protocol": "openid-connect",
       "publicClient": false,
       "bearerOnly": false,
