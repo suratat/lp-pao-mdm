@@ -1207,6 +1207,7 @@ components:
         - GENERAL_EMPLOYEE         # พนักงานจ้างทั่วไป
         - EXPERT_EMPLOYEE          # พนักงานจ้างผู้เชี่ยวชาญพิเศษ
         - TRANSFERRED_HEALTH       # บุคลากรถ่ายโอน (รพ.สต.)
+        - OUTSOURCE_INDIVIDUAL     # จ้างเหมาบริการ (รายบุคคล ประจำในหน่วยงาน ไม่มีเลขที่ตำแหน่ง)
 
     EventType:
       type: string
@@ -1398,11 +1399,16 @@ components:
 
     EmploymentUpsert:
       type: object
-      required: [employeeNo, personnelType, positionId, orgUnitId, effectiveFrom]
+      required: [employeeNo, personnelType, orgUnitId, effectiveFrom]
       properties:
         employeeNo: { type: string }
         personnelType: { $ref: '#/components/schemas/PersonnelType' }
-        positionId: { type: string, format: uuid }
+        positionId:
+          type: string
+          format: uuid
+          description: |
+            เลขที่ตำแหน่ง - ไม่ระบุได้สำหรับบุคลากรที่ไม่มีตำแหน่งทางการตามโครงสร้างอัตรากำลัง
+            (พนักงานจ้าง/จ้างเหมาบริการรายบุคคล)
         orgUnitId: { type: string, format: uuid }
         levelCode: { type: string }
         appointedDate: { type: string, format: date }

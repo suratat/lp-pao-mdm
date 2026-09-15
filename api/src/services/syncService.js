@@ -136,7 +136,7 @@ async function buildTokenClaims(client, personId, claims) {
     `SELECT e.employee_no, ou.code AS org_unit_code, p.title_th AS position_title
      FROM mdm.employment e
      JOIN mdm.org_unit ou ON ou.org_unit_id = e.org_unit_id
-     JOIN mdm.position p ON p.position_id = e.position_id
+     LEFT JOIN mdm.position p ON p.position_id = e.position_id
      WHERE e.person_id = $1 AND e.is_current = true`,
     [personId]
   );

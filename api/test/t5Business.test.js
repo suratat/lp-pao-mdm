@@ -102,6 +102,61 @@ describe('PUT /persons/{id}/employment - optimistic locking (§1.6)', () => {
   });
 });
 
+describe('PUT /persons/{id}/employment - positionId เป็น optional (พนักงานจ้าง/จ้างเหมาบริการรายบุคคล)', () => {
+  test('200 เมื่อไม่ส่ง positionId มา - DB บันทึก position_id เป็น NULL และ response ไม่มี employment.position', async () => {
+    const positionId = await makePosition();
+    const personId = await makeActivePerson(positionId);
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic' });
+
+    const res = await request(ctx.app)
+      .put(`/api/v1/persons/${personId}/employment`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        employeeNo: `EMP-NOPOS-${crypto.randomUUID()}`,
+        personnelType: 'OUTSOURCE_INDIVIDUAL',
+        orgUnitId: FIXTURE_ORG_UNIT_ID,
+        effectiveFrom: '2099-01-01',
+        expectedVersion: 1,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.position).toBeUndefined();
+
+    const { rows } = await adminPool.query(
+      `SELECT position_id FROM mdm.employment WHERE person_id = $1 AND is_current = true`,
+      [personId]
+    );
+    expect(rows[0].position_id).toBeNull();
+  });
+
+  test('สองคนไม่มีตำแหน่ง (position_id NULL) ช่วงเวลาซ้อนทับกันได้ ไม่ชน EXCLUDE constraint', async () => {
+    const positionId = await makePosition();
+    const personA = await makeActivePerson(positionId);
+    const personB = await makeActivePerson(await makePosition());
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment' });
+
+    const bodyFor = (employeeNo) => ({
+      employeeNo,
+      personnelType: 'GENERAL_EMPLOYEE',
+      orgUnitId: FIXTURE_ORG_UNIT_ID,
+      effectiveFrom: '2099-01-01',
+      expectedVersion: 1,
+    });
+
+    const resA = await request(ctx.app)
+      .put(`/api/v1/persons/${personA}/employment`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(bodyFor(`EMP-NOPOS-A-${crypto.randomUUID()}`));
+    expect(resA.status).toBe(200);
+
+    const resB = await request(ctx.app)
+      .put(`/api/v1/persons/${personB}/employment`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(bodyFor(`EMP-NOPOS-B-${crypto.randomUUID()}`));
+    expect(resB.status).toBe(200);
+  });
+});
+
 describe('POST /persons - duplicate pid (§3.4)', () => {
   test('409 พร้อม existingPersonId เมื่อ pid ซ้ำกับ record เดิม', async () => {
     const positionId = await makePosition();

@@ -16,7 +16,7 @@ function toImportRow(row) {
     employment: {
       employeeNo: row.employee_no,
       personnelType: mapPersonnelType(row.personnel_type_raw),
-      positionId: row.resolved_position_id,
+      positionId: row.resolved_position_id ?? undefined,
       orgUnitId: row.resolved_org_unit_id,
       levelCode: row.level_code ?? undefined,
       appointedDate: appointedDate?.isoDate,

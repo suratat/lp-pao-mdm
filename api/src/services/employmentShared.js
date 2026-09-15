@@ -76,7 +76,7 @@ async function closeAndOpenEmployment(client, personId, incoming, updatedBy = 'H
         personId,
         incoming.employeeNo,
         incoming.personnelType,
-        incoming.positionId,
+        incoming.positionId ?? null,
         incoming.orgUnitId,
         incoming.levelCode ?? null,
         incoming.appointedDate ?? null,

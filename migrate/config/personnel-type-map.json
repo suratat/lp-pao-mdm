@@ -9,5 +9,7 @@
   "พนักงานจ้างทั่วไป": "GENERAL_EMPLOYEE",
   "พนักงานจ้างผู้เชี่ยวชาญพิเศษ": "EXPERT_EMPLOYEE",
   "บุคลากรถ่ายโอน": "TRANSFERRED_HEALTH",
-  "บุคลากรถ่ายโอน (รพ.สต.)": "TRANSFERRED_HEALTH"
+  "บุคลากรถ่ายโอน (รพ.สต.)": "TRANSFERRED_HEALTH",
+  "จ้างเหมาบริการ": "OUTSOURCE_INDIVIDUAL",
+  "จ้างเหมาบริการรายบุคคล": "OUTSOURCE_INDIVIDUAL"
 }

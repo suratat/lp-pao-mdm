@@ -8,7 +8,7 @@ const EMPLOYMENT_SELECT = `
          pos.is_active AS position_is_active,
          ou.code AS org_unit_code, ou.name_th AS org_unit_name_th, parent_ou.name_th AS org_unit_parent_name_th
   FROM mdm.employment e
-  JOIN mdm.position pos ON pos.position_id = e.position_id
+  LEFT JOIN mdm.position pos ON pos.position_id = e.position_id
   JOIN mdm.org_unit ou ON ou.org_unit_id = e.org_unit_id
   LEFT JOIN mdm.org_unit parent_ou ON parent_ou.org_unit_id = ou.parent_id
 `;
