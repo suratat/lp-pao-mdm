@@ -2,16 +2,18 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 const { buildTestApp } = require('./testApp');
 const { makeFakePid, pidHash } = require('../src/security/pid');
-const { FIXTURE_ORG_UNIT_ID } = require('../src/constants');
+const { insertFixtureOrgUnit } = require('./fixtures');
 
 let ctx;
 let pepper;
 let syncToken;
+let fixtureOrgUnitId;
 
 beforeAll(async () => {
   ctx = await buildTestApp();
   pepper = await ctx.vault.getPepper();
   syncToken = await ctx.auth.signToken({ scope: 'sync:thaid', sub: 'check-broker' });
+  fixtureOrgUnitId = await insertFixtureOrgUnit(ctx.pool);
 });
 
 afterAll(async () => {
@@ -40,18 +42,18 @@ async function insertPerson(overrides = {}) {
 }
 
 // สร้างตำแหน่งใหม่ต่อคน (ไม่ใช้ position เดียวกันซ้ำ) เพราะ mdm.employment มี EXCLUDE constraint
-// (T1) ห้ามสองคนครองตำแหน่งเดียวกันซ้อนช่วงเวลากัน - ใช้ FIXTURE_POSITION_ID ร่วมกันหลายคนจะชนกันเอง
+// (T1) ห้ามสองคนครองตำแหน่งเดียวกันซ้อนช่วงเวลากัน - ใช้ position เดียวกันร่วมกันหลายคนจะชนกันเอง
 async function insertEmployment(personId, employeeNo) {
   const { rows } = await ctx.pool.query(
     `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
      VALUES ($1, 'ตำแหน่งทดสอบ', 'GENERAL', $2) RETURNING position_id`,
-    [`POS-TEST-${crypto.randomUUID()}`, FIXTURE_ORG_UNIT_ID]
+    [`POS-TEST-${crypto.randomUUID()}`, fixtureOrgUnitId]
   );
   await ctx.pool.query(
     `INSERT INTO mdm.employment
       (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, is_current, employment_status, updated_by)
      VALUES ($1, $2, 'CIVIL_SERVANT', $3, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
-    [personId, employeeNo, rows[0].position_id, FIXTURE_ORG_UNIT_ID]
+    [personId, employeeNo, rows[0].position_id, fixtureOrgUnitId]
   );
 }
 

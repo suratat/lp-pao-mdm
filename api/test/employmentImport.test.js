@@ -4,16 +4,18 @@ const { Pool } = require('pg');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid, pidHash } = require('../src/security/pid');
-const { FIXTURE_ORG_UNIT_ID } = require('../src/constants');
+const { insertFixtureOrgUnit } = require('./fixtures');
 
 let ctx;
 let adminPool;
 let pepper;
+let fixtureOrgUnitId;
 
 beforeAll(async () => {
   ctx = await buildTestApp();
   adminPool = new Pool({ connectionString: MIGRATOR_DATABASE_URL });
   pepper = await ctx.vault.getPepper();
+  fixtureOrgUnitId = await insertFixtureOrgUnit(adminPool);
 });
 
 afterAll(async () => {
@@ -25,7 +27,7 @@ async function makePosition() {
   const { rows } = await adminPool.query(
     `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
      VALUES ($1, 'ตำแหน่งทดสอบนำเข้า', 'GENERAL', $2) RETURNING position_id`,
-    [`POS-IMPORT-${crypto.randomUUID()}`, FIXTURE_ORG_UNIT_ID]
+    [`POS-IMPORT-${crypto.randomUUID()}`, fixtureOrgUnitId]
   );
   return rows[0].position_id;
 }
@@ -54,7 +56,7 @@ describe('POST /sync/hr/employment-batch - DRY_RUN', () => {
             employeeNo: `EMP-DRY-${crypto.randomUUID()}`,
             personnelType: 'CIVIL_SERVANT',
             positionId,
-            orgUnitId: FIXTURE_ORG_UNIT_ID,
+            orgUnitId: fixtureOrgUnitId,
             effectiveFrom: '2024-01-01',
           },
         },
@@ -89,7 +91,7 @@ describe('POST /sync/hr/employment-batch - APPLY', () => {
             employeeNo: `EMP-APPLY-${crypto.randomUUID()}`,
             personnelType: 'CIVIL_SERVANT',
             positionId,
-            orgUnitId: FIXTURE_ORG_UNIT_ID,
+            orgUnitId: fixtureOrgUnitId,
             effectiveFrom: '2024-01-01',
           },
         },
@@ -159,7 +161,7 @@ describe('POST /sync/hr/employment-batch - APPLY', () => {
             employeeNo: `EMP-GOOD-${crypto.randomUUID()}`,
             personnelType: 'CIVIL_SERVANT',
             positionId,
-            orgUnitId: FIXTURE_ORG_UNIT_ID,
+            orgUnitId: fixtureOrgUnitId,
             effectiveFrom: '2024-01-01',
           },
         },
@@ -215,7 +217,7 @@ describe('POST /sync/hr/employment-batch - APPLY', () => {
       employeeNo: `EMP-SAME-${crypto.randomUUID()}`,
       personnelType: 'CIVIL_SERVANT',
       positionId,
-      orgUnitId: FIXTURE_ORG_UNIT_ID,
+      orgUnitId: fixtureOrgUnitId,
       effectiveFrom: '2024-01-01',
     };
     const row = { rowRef: 'r1', pid, expectedFirstNameTh: 'ก', expectedLastNameTh: 'ข', employment };
@@ -248,7 +250,7 @@ describe('POST /sync/hr/employment-batch - APPLY', () => {
             employeeNo,
             personnelType: 'CIVIL_SERVANT',
             positionId: positionA,
-            orgUnitId: FIXTURE_ORG_UNIT_ID,
+            orgUnitId: fixtureOrgUnitId,
             effectiveFrom: '2024-01-01',
           },
         },
@@ -266,7 +268,7 @@ describe('POST /sync/hr/employment-batch - APPLY', () => {
             employeeNo,
             personnelType: 'CIVIL_SERVANT',
             positionId: positionB,
-            orgUnitId: FIXTURE_ORG_UNIT_ID,
+            orgUnitId: fixtureOrgUnitId,
             effectiveFrom: '2024-06-01',
           },
         },

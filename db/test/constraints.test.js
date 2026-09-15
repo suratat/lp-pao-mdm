@@ -18,6 +18,27 @@ afterAll(async () => {
   await pool.end();
 });
 
+// สร้าง org_unit/position ของตัวเองสำหรับ test นี้โดยเฉพาะ (ไม่พึ่งข้อมูลตัวอย่างจาก migration ใด ๆ)
+// เพื่อไม่ให้ test พังเมื่อ org_unit/position seed data เปลี่ยนแปลงในอนาคต (เช่น T-org-unit-seed ที่แทนที่
+// ข้อมูลตัวอย่าง T8 ด้วยโครงสร้างจริง)
+async function insertOrgUnit() {
+  const { rows } = await pool.query(
+    `INSERT INTO mdm.org_unit (code, name_th, unit_level)
+     VALUES ($1, 'หน่วยงานทดสอบ', 'DIVISION') RETURNING org_unit_id`,
+    [`TEST-ORG-${crypto.randomUUID()}`]
+  );
+  return rows[0].org_unit_id;
+}
+
+async function insertPosition(orgUnitId) {
+  const { rows } = await pool.query(
+    `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+     VALUES ($1, 'ตำแหน่งทดสอบ', 'GENERAL', $2) RETURNING position_id`,
+    [`POS-TEST-${crypto.randomUUID()}`, orgUnitId]
+  );
+  return rows[0].position_id;
+}
+
 async function insertPerson(overrides = {}) {
   const { rows } = await pool.query(
     `INSERT INTO mdm.person (pid_hash, status, verification_status)
@@ -45,16 +66,22 @@ describe('UNIQUE (pid_hash) ของ mdm.person', () => {
 });
 
 describe('partial UNIQUE (employee_no) WHERE is_current ของ mdm.employment', () => {
-  const ORG_UNIT_ID = '00000000-0000-0000-0000-000000000002';
-  const POSITION_A = '00000000-0000-0000-0000-000000000101';
-  const POSITION_B = '00000000-0000-0000-0000-000000000102';
+  let orgUnitId;
+  let positionA;
+  let positionB;
+
+  beforeAll(async () => {
+    orgUnitId = await insertOrgUnit();
+    positionA = await insertPosition(orgUnitId);
+    positionB = await insertPosition(orgUnitId);
+  });
 
   async function insertCurrentEmployment(personId, employeeNo, positionId) {
     return pool.query(
       `INSERT INTO mdm.employment
         (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, is_current, employment_status, updated_by)
        VALUES ($1, $2, 'CIVIL_SERVANT', $3, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
-      [personId, employeeNo, positionId, ORG_UNIT_ID]
+      [personId, employeeNo, positionId, orgUnitId]
     );
   }
 
@@ -63,23 +90,28 @@ describe('partial UNIQUE (employee_no) WHERE is_current ของ mdm.employment
     const personB = await insertPerson();
     const employeeNo = `EMP-DUP-${Date.now()}`;
 
-    await insertCurrentEmployment(personA, employeeNo, POSITION_A);
-    await expect(insertCurrentEmployment(personB, employeeNo, POSITION_B)).rejects.toThrow(
+    await insertCurrentEmployment(personA, employeeNo, positionA);
+    await expect(insertCurrentEmployment(personB, employeeNo, positionB)).rejects.toThrow(
       /duplicate key value/
     );
   });
 });
 
 describe('EXCLUDE ตำแหน่งซ้อนทับ (position_id + ช่วงวันที่) ของ mdm.employment', () => {
-  const ORG_UNIT_ID = '00000000-0000-0000-0000-000000000002';
-  const POSITION_ID = '00000000-0000-0000-0000-000000000103';
+  let orgUnitId;
+  let positionId;
+
+  beforeAll(async () => {
+    orgUnitId = await insertOrgUnit();
+    positionId = await insertPosition(orgUnitId);
+  });
 
   async function insertEmployment(personId, employeeNo, from, to) {
     return pool.query(
       `INSERT INTO mdm.employment
         (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, effective_to, is_current, employment_status, updated_by)
        VALUES ($1, $2, 'GENERAL_EMPLOYEE', $3, $4, $5, $6, false, 'ACTIVE', 'test')`,
-      [personId, employeeNo, POSITION_ID, ORG_UNIT_ID, from, to]
+      [personId, employeeNo, positionId, orgUnitId, from, to]
     );
   }
 
@@ -116,7 +148,7 @@ describe('EXCLUDE ตำแหน่งซ้อนทับ (position_id + ช�
         `INSERT INTO mdm.employment
           (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, effective_to, is_current, employment_status, updated_by)
          VALUES ($1, $2, 'GENERAL_EMPLOYEE', NULL, $3, $4, $5, false, 'ACTIVE', 'test')`,
-        [personId, employeeNo, ORG_UNIT_ID, from, to]
+        [personId, employeeNo, orgUnitId, from, to]
       );
     }
 

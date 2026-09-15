@@ -3,9 +3,18 @@ const crypto = require('node:crypto');
 const { makeFakePid } = require(path.join(__dirname, '..', '..', 'api', 'src', 'security', 'pid'));
 const defaultColumnMap = require('../config/column-map.json');
 
-const FIXTURE_ORG_UNIT_CODE = 'PERSONNEL-ADMIN'; // seed T1 (1700000000018): org_unit_id ...003
+// org_unit/position ของ fixture นี้สร้างสดใหม่ทุกครั้ง (ไม่พึ่ง org_unit/position ที่ seed จริงจาก
+// migration) เพื่อไม่ให้ test พังเมื่อโครงสร้างส่วนราชการจริงเปลี่ยนแปลง - ดู makeOrgUnit ด้านล่าง
+async function makeOrgUnit(adminPool, overrides = {}) {
+  const code = overrides.code || `TEST-ORG-${crypto.randomUUID()}`;
+  const { rows } = await adminPool.query(
+    `INSERT INTO mdm.org_unit (code, name_th, unit_level)
+     VALUES ($1, $2, 'DIVISION') RETURNING org_unit_id`,
+    [code, overrides.nameTh || 'หน่วยงานทดสอบ migrate']
+  );
+  return { orgUnitId: rows[0].org_unit_id, code };
+}
 
-// POS-0002 (seed T1) ถูกจองโดย api/test/fixtures.js#insertFixturePerson (FIXTURE_PERSON_ID) อยู่แล้ว -
 // เทสที่ผ่าน APPLY จริง (สร้าง mdm.employment) ต้องสร้างตำแหน่งใหม่ของตัวเอง ไม่ชนกับ EXCLUDE constraint
 // "ตำแหน่งหนึ่งมีผู้ครองได้หนึ่งคนในช่วงเวลาหนึ่ง" (§1.6) - ดู api/test/employmentImport.test.js#makePosition
 async function makePosition(adminPool, orgUnitId) {
@@ -36,15 +45,19 @@ function buildCsv(logicalRows, columnMap = defaultColumnMap) {
   return lines.join('\n');
 }
 
-// ค่าเริ่มต้นของแถวที่ผ่านทุกกฎคุณภาพ - ใช้รหัสสังกัด/ตำแหน่งที่ seed ไว้แล้วใน T1 (1700000000018)
+// ค่าเริ่มต้นของแถวที่ผ่านทุกกฎคุณภาพ - "positionNo"/"orgUnitCode" ไม่มี default อีกต่อไป (เดิมอ้าง
+// รหัสสังกัด/ตำแหน่งที่ seed ไว้ใน T1 1700000000018 ซึ่งถูกแทนที่ด้วยโครงสร้างจริงแล้ว) ผู้เรียกต้องสร้าง
+// org_unit/position ของตัวเองก่อนผ่าน makeOrgUnit/makePosition แล้วส่งเข้ามาเสมอ เพื่อไม่ให้ผลลัพธ์ของ
+// กฎคุณภาพขึ้นกับข้อมูลที่ seed จาก migration ใด ๆ
 function validRow(overrides = {}) {
+  if (overrides.positionNo === undefined || overrides.orgUnitCode === undefined) {
+    throw new Error('validRow() ต้องระบุ positionNo และ orgUnitCode เสมอ (ไม่มี default จาก seed อีกต่อไป)');
+  }
   return {
     pid: makeFakePid(),
     expectedFirstNameTh: 'ทดสอบ',
     expectedLastNameTh: 'นำเข้า',
     personnelTypeRaw: 'ข้าราชการ อบจ.',
-    positionNo: 'POS-0002',
-    orgUnitCode: 'PERSONNEL-ADMIN',
     levelCode: 'ชำนาญการ',
     appointedDateRaw: '01/10/2560',
     effectiveFromRaw: '01/10/2560',
@@ -55,4 +68,4 @@ function validRow(overrides = {}) {
   };
 }
 
-module.exports = { buildCsv, validRow, defaultColumnMap, makePosition, FIXTURE_ORG_UNIT_CODE };
+module.exports = { buildCsv, validRow, defaultColumnMap, makeOrgUnit, makePosition };

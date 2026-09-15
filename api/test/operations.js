@@ -1,6 +1,6 @@
 const crypto = require('node:crypto');
-const { FIXTURE_ORG_UNIT_ID } = require('../src/constants');
 const { makeFakePid, pidHash } = require('../src/security/pid');
+const { insertFixtureOrgUnit } = require('./fixtures');
 
 // T5: ทุก endpoint ทำงานจริงแล้ว (ไม่ใช่ stub เหมือน T2) การทดสอบ contract จึงต้องมี fixture จริงที่
 // สอดคล้องกับ business rule ของแต่ละ operation (เช่น getPersonPid ต้องมี pid_enc ที่เข้ารหัสด้วย vault
@@ -16,16 +16,16 @@ const { makeFakePid, pidHash } = require('../src/security/pid');
 //      "ids" ที่ path/body ด้านบนจะเรียกใช้ตอนรัน test จริง (หลัง beforeAll เสร็จ)
 const CONSUMER_SYSTEM_CLIENT_ID = 'test-client'; // ต้องตรงกับ azp default ของ testJwks.signToken()
 
-async function makePosition(adminPool) {
+async function makePosition(adminPool, orgUnitId) {
   const { rows } = await adminPool.query(
     `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
      VALUES ($1, 'ตำแหน่งทดสอบ contract', 'GENERAL', $2) RETURNING position_id`,
-    [`POS-CONTRACT-${crypto.randomUUID()}`, FIXTURE_ORG_UNIT_ID]
+    [`POS-CONTRACT-${crypto.randomUUID()}`, orgUnitId]
   );
   return rows[0].position_id;
 }
 
-async function makeActivePerson(adminPool, positionId) {
+async function makeActivePerson(adminPool, positionId, orgUnitId) {
   const personId = crypto.randomUUID();
   const pidHashValue = crypto.randomBytes(32).toString('hex');
   await adminPool.query(
@@ -42,7 +42,7 @@ async function makeActivePerson(adminPool, positionId) {
     `INSERT INTO mdm.employment
       (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, is_current, employment_status, updated_by)
      VALUES ($1, $2, 'CIVIL_SERVANT', $3, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
-    [personId, `EMP-CONTRACT-${crypto.randomUUID()}`, positionId, FIXTURE_ORG_UNIT_ID]
+    [personId, `EMP-CONTRACT-${crypto.randomUUID()}`, positionId, orgUnitId]
   );
   return personId;
 }
@@ -121,19 +121,21 @@ async function insertPendingClaimRequest(adminPool) {
 // เรียกครั้งเดียวใน beforeAll ของ contract.test.js หลังจาก buildTestApp() - ต้องใช้ vault ตัวเดียวกับที่
 // createApp() ใช้ (ctx.vault) เพื่อให้ decrypt ตอนรัน test ตรงกับ ciphertext ที่ seed ไว้ที่นี่
 async function seedFixtures({ adminPool, vault }) {
-  const readPositionId = await makePosition(adminPool);
-  const readPersonId = await makeActivePerson(adminPool, readPositionId);
+  const orgUnitId = await insertFixtureOrgUnit(adminPool);
+
+  const readPositionId = await makePosition(adminPool, orgUnitId);
+  const readPersonId = await makeActivePerson(adminPool, readPositionId, orgUnitId);
   const readPid = await attachPidAndPhoto(adminPool, vault, readPersonId);
 
-  const deactivatePositionId = await makePosition(adminPool);
-  const deactivatePersonId = await makeActivePerson(adminPool, deactivatePositionId);
+  const deactivatePositionId = await makePosition(adminPool, orgUnitId);
+  const deactivatePersonId = await makeActivePerson(adminPool, deactivatePositionId, orgUnitId);
 
-  const reactivatePositionId = await makePosition(adminPool);
-  const reactivatePersonId = await makeActivePerson(adminPool, reactivatePositionId);
+  const reactivatePositionId = await makePosition(adminPool, orgUnitId);
+  const reactivatePersonId = await makeActivePerson(adminPool, reactivatePositionId, orgUnitId);
 
-  const upsertPositionId = await makePosition(adminPool);
-  const upsertPersonId = await makeActivePerson(adminPool, upsertPositionId);
-  const upsertNewPositionId = await makePosition(adminPool);
+  const upsertPositionId = await makePosition(adminPool, orgUnitId);
+  const upsertPersonId = await makeActivePerson(adminPool, upsertPositionId, orgUnitId);
+  const upsertNewPositionId = await makePosition(adminPool, orgUnitId);
 
   const consumerSystemId = await insertConsumerSystem(adminPool);
   const subscriptionForDeleteId = await insertWebhookSubscription(
@@ -153,9 +155,10 @@ async function seedFixtures({ adminPool, vault }) {
   const deadDeliveryId = await insertDeadDelivery(adminPool, subscriptionForTestId, readPersonId);
   const claimRequestId = await insertPendingClaimRequest(adminPool);
 
-  const provisionPositionId = await makePosition(adminPool);
+  const provisionPositionId = await makePosition(adminPool, orgUnitId);
 
   return {
+    orgUnitId,
     readPersonId,
     readPid,
     deactivatePersonId,
@@ -198,7 +201,7 @@ function buildOperationDescriptors() {
           employeeNo: `EMP-PROVISION-${crypto.randomUUID()}`,
           personnelType: 'CIVIL_SERVANT',
           positionId: ids.provisionPositionId,
-          orgUnitId: FIXTURE_ORG_UNIT_ID,
+          orgUnitId: ids.orgUnitId,
           effectiveFrom: '2024-01-01',
         },
       }),
@@ -257,7 +260,7 @@ function buildOperationDescriptors() {
         employeeNo: `EMP-UPSERT-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: ids.upsertNewPositionId,
-        orgUnitId: FIXTURE_ORG_UNIT_ID,
+        orgUnitId: ids.orgUnitId,
         effectiveFrom: FUTURE_EFFECTIVE_FROM,
       }),
       expectStatus: 200,
@@ -281,7 +284,7 @@ function buildOperationDescriptors() {
         employeeNo: `EMP-REACT-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: ids.reactivatePositionId,
-        orgUnitId: FIXTURE_ORG_UNIT_ID,
+        orgUnitId: ids.orgUnitId,
         effectiveFrom: FUTURE_EFFECTIVE_FROM,
       }),
       expectStatus: 200,

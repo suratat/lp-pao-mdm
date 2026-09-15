@@ -1,14 +1,20 @@
 const { Pool } = require('pg');
 const { DATABASE_URL, MIGRATOR_DATABASE_URL } = require('./config');
 const { loadBatch } = require('../src/loader/loadBatch');
-const { buildCsv, validRow, defaultColumnMap } = require('./fixtures');
+const { buildCsv, validRow, defaultColumnMap, makeOrgUnit, makePosition } = require('./fixtures');
 
 let pool;
 let adminPool;
+let fixtureOrgUnitCode;
+let fixturePositionNo;
 
-beforeAll(() => {
+beforeAll(async () => {
   pool = new Pool({ connectionString: DATABASE_URL });
   adminPool = new Pool({ connectionString: MIGRATOR_DATABASE_URL });
+
+  const orgUnit = await makeOrgUnit(adminPool);
+  fixtureOrgUnitCode = orgUnit.code;
+  fixturePositionNo = await makePosition(adminPool, orgUnit.orgUnitId);
 });
 
 afterAll(async () => {
@@ -18,7 +24,10 @@ afterAll(async () => {
 
 describe('loadBatch (§5.3 ระยะ 1: "export ระบบเดิม -> schema stg_hr")', () => {
   test('โหลด CSV เข้า stg_hr ครบทุกแถว พร้อม pid_plaintext และ pid_loaded_at', async () => {
-    const rows = [validRow(), validRow()];
+    const rows = [
+      validRow({ positionNo: fixturePositionNo, orgUnitCode: fixtureOrgUnitCode }),
+      validRow({ positionNo: fixturePositionNo, orgUnitCode: fixtureOrgUnitCode }),
+    ];
     const csv = buildCsv(rows);
 
     const { batchId, rowCount } = await loadBatch(pool, {
@@ -46,12 +55,12 @@ describe('loadBatch (§5.3 ระยะ 1: "export ระบบเดิม -> s
     // ไม่มี mapping ของ employeeNo อีกต่อไป (column-map.json) - คอลัมน์นี้ต้องเป็น NULL เสมอหลังโหลด
     // (employeeNo ถูกกำหนดเป็น pid_plaintext ตอนแปลงเป็น EmploymentImportRow ใน toImportRow.js แทน)
     expect(rawRows[0].employee_no).toBeNull();
-    expect(rawRows[0].org_unit_code).toBe('PERSONNEL-ADMIN');
+    expect(rawRows[0].org_unit_code).toBe(fixtureOrgUnitCode);
     expect(rawRows[0].source_data).toBeTruthy();
   });
 
   test('แถวที่ไม่มี pid -> pid_plaintext และ pid_loaded_at เป็น null', async () => {
-    const row = validRow({ pid: '' });
+    const row = validRow({ pid: '', positionNo: fixturePositionNo, orgUnitCode: fixtureOrgUnitCode });
     const csv = buildCsv([row]);
 
     const { batchId } = await loadBatch(pool, {
