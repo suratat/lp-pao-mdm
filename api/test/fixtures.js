@@ -1,9 +1,34 @@
 const crypto = require('node:crypto');
-const { FIXTURE_PERSON_ID, FIXTURE_ORG_UNIT_ID, FIXTURE_POSITION_ID } = require('../src/constants');
+const { FIXTURE_PERSON_ID } = require('../src/constants');
+
+// สร้าง org_unit/position ของตัวเอง (ไม่พึ่ง org_unit ที่ seed จริงจาก migration) เพื่อไม่ให้ fixture ของ
+// test ผูกกับโครงสร้างส่วนราชการจริงที่เปลี่ยนแปลงได้ในอนาคต
+async function insertFixtureOrgUnit(pool) {
+  const { rows } = await pool.query(
+    `INSERT INTO mdm.org_unit (code, name_th, unit_level)
+     VALUES ($1, 'หน่วยงานทดสอบ', 'DIVISION')
+     RETURNING org_unit_id`,
+    [`TEST-ORG-${crypto.randomUUID()}`]
+  );
+  return rows[0].org_unit_id;
+}
+
+async function insertFixturePosition(pool, orgUnitId) {
+  const { rows } = await pool.query(
+    `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+     VALUES ($1, 'ตำแหน่งทดสอบ', 'ACADEMIC', $2)
+     RETURNING position_id`,
+    [`POS-FIXTURE-${crypto.randomUUID()}`, orgUnitId]
+  );
+  return rows[0].position_id;
+}
 
 // สร้าง person ตัวอย่างจริงใน DB (ไม่ใช่ค่าสมมติล้วนแบบ stub) เพื่อให้ access_log middleware เขียนแถวได้จริง
 // (subject_person_id มี FK ไป mdm.person) pid_hash เป็น hex สุ่ม ไม่ใช่เลขบัตรจริงหรือแม้แต่ pid ปลอมที่ต้อง reverse ได้
 async function insertFixturePerson(pool) {
+  const orgUnitId = await insertFixtureOrgUnit(pool);
+  const positionId = await insertFixturePosition(pool, orgUnitId);
+
   await pool.query(
     `INSERT INTO mdm.person (person_id, pid_hash, status, verification_status, thaid_verified_at, claimed_at, version)
      VALUES ($1, $2, 'ACTIVE', 'VERIFIED', now(), now(), 1)
@@ -39,8 +64,8 @@ async function insertFixturePerson(pool) {
       (person_id, employee_no, personnel_type, position_id, org_unit_id, level_code, appointed_date, effective_from, is_current, employment_status, updated_by)
      VALUES ($1, 'EMP-0001', 'CIVIL_SERVANT', $2, $3, 'ชำนาญการ', '2015-10-01', '2015-10-01', true, 'ACTIVE', 'test')
      ON CONFLICT DO NOTHING`,
-    [FIXTURE_PERSON_ID, FIXTURE_POSITION_ID, FIXTURE_ORG_UNIT_ID]
+    [FIXTURE_PERSON_ID, positionId, orgUnitId]
   );
 }
 
-module.exports = { insertFixturePerson, FIXTURE_PERSON_ID };
+module.exports = { insertFixturePerson, insertFixtureOrgUnit, insertFixturePosition, FIXTURE_PERSON_ID };

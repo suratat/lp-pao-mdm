@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid } = require('../src/security/pid');
-const { FIXTURE_ORG_UNIT_ID } = require('../src/constants');
+const { insertFixtureOrgUnit } = require('./fixtures');
 
 // T5: ทดสอบกฎธุรกิจที่ contract.test.js (happy-path ล้วนๆ) ไม่ครอบคลุม - optimistic lock, duplicate pid,
 // SSRF allow-list, field masking ตาม scope, และ resolveClaimRequest ทั้ง 3 action
@@ -13,10 +13,12 @@ process.env.WEBHOOK_ALLOWED_HOSTS = process.env.WEBHOOK_ALLOWED_HOSTS || 'exampl
 
 let ctx;
 let adminPool;
+let fixtureOrgUnitId;
 
 beforeAll(async () => {
   ctx = await buildTestApp();
   adminPool = new Pool({ connectionString: MIGRATOR_DATABASE_URL });
+  fixtureOrgUnitId = await insertFixtureOrgUnit(adminPool);
 });
 
 afterAll(async () => {
@@ -28,7 +30,7 @@ async function makePosition() {
   const { rows } = await adminPool.query(
     `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
      VALUES ($1, 'ตำแหน่งทดสอบ T5', 'GENERAL', $2) RETURNING position_id`,
-    [`POS-T5-${crypto.randomUUID()}`, FIXTURE_ORG_UNIT_ID]
+    [`POS-T5-${crypto.randomUUID()}`, fixtureOrgUnitId]
   );
   return rows[0].position_id;
 }
@@ -49,7 +51,7 @@ async function makeActivePerson(positionId) {
     `INSERT INTO mdm.employment
       (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, is_current, employment_status, updated_by)
      VALUES ($1, $2, 'CIVIL_SERVANT', $3, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
-    [personId, `EMP-T5-${crypto.randomUUID()}`, positionId, FIXTURE_ORG_UNIT_ID]
+    [personId, `EMP-T5-${crypto.randomUUID()}`, positionId, fixtureOrgUnitId]
   );
   return personId;
 }
@@ -68,7 +70,7 @@ describe('PUT /persons/{id}/employment - optimistic locking (§1.6)', () => {
         employeeNo: `EMP-CONFLICT-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: newPositionId,
-        orgUnitId: FIXTURE_ORG_UNIT_ID,
+        orgUnitId: fixtureOrgUnitId,
         effectiveFrom: '2099-01-01',
         expectedVersion: 999,
       });
@@ -90,7 +92,7 @@ describe('PUT /persons/{id}/employment - optimistic locking (§1.6)', () => {
         employeeNo: `EMP-OK-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: newPositionId,
-        orgUnitId: FIXTURE_ORG_UNIT_ID,
+        orgUnitId: fixtureOrgUnitId,
         effectiveFrom: '2099-01-01',
         expectedVersion: 1,
       });
@@ -114,7 +116,7 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
       .send({
         employeeNo: `EMP-NOPOS-${crypto.randomUUID()}`,
         personnelType: 'OUTSOURCE_INDIVIDUAL',
-        orgUnitId: FIXTURE_ORG_UNIT_ID,
+        orgUnitId: fixtureOrgUnitId,
         effectiveFrom: '2099-01-01',
         expectedVersion: 1,
       });
@@ -138,7 +140,7 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
     const bodyFor = (employeeNo) => ({
       employeeNo,
       personnelType: 'GENERAL_EMPLOYEE',
-      orgUnitId: FIXTURE_ORG_UNIT_ID,
+      orgUnitId: fixtureOrgUnitId,
       effectiveFrom: '2099-01-01',
       expectedVersion: 1,
     });
@@ -167,7 +169,7 @@ describe('POST /persons - duplicate pid (§3.4)', () => {
       employeeNo: `EMP-DUP-${crypto.randomUUID()}`,
       personnelType: 'CIVIL_SERVANT',
       positionId,
-      orgUnitId: FIXTURE_ORG_UNIT_ID,
+      orgUnitId: fixtureOrgUnitId,
       effectiveFrom: '2024-01-01',
     });
 
@@ -281,7 +283,7 @@ describe('POST /claim-requests/{id}/resolve - PROVISION/LINK (§2.1)', () => {
           employeeNo: `EMP-CLAIM-${crypto.randomUUID()}`,
           personnelType: 'CIVIL_SERVANT',
           positionId,
-          orgUnitId: FIXTURE_ORG_UNIT_ID,
+          orgUnitId: fixtureOrgUnitId,
           effectiveFrom: '2024-01-01',
         },
       });

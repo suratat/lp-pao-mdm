@@ -10,9 +10,7 @@ const { runQualityCheck } = require('../src/quality/rules');
 const { runImport } = require('../src/import/runImport');
 const { reconcileBatch } = require('../src/reconcile/reconcile');
 const { writeReport } = require('../src/report/writeReport');
-const { buildCsv, validRow, defaultColumnMap, makePosition, FIXTURE_ORG_UNIT_CODE } = require('./fixtures');
-
-const FIXTURE_ORG_UNIT_ID = '00000000-0000-0000-0000-000000000003'; // seed T1: ฝ่ายบริหารงานทั่วไป
+const { buildCsv, validRow, defaultColumnMap, makeOrgUnit, makePosition } = require('./fixtures');
 
 let pool;
 let adminPool;
@@ -21,6 +19,8 @@ let server;
 let apiBaseUrl;
 let token;
 let reportDir;
+let fixtureOrgUnitId;
+let fixtureOrgUnitCode;
 
 beforeAll(async () => {
   pool = new Pool({ connectionString: DATABASE_URL });
@@ -34,6 +34,10 @@ beforeAll(async () => {
 
   token = await apiCtx.auth.signToken({ scope: 'personnel:import' });
   reportDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stg-hr-reports-'));
+
+  const orgUnit = await makeOrgUnit(adminPool);
+  fixtureOrgUnitId = orgUnit.orgUnitId;
+  fixtureOrgUnitCode = orgUnit.code;
 });
 
 afterAll(async () => {
@@ -45,8 +49,8 @@ afterAll(async () => {
 
 describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (§5.3 ระยะ 1 และ 3)', () => {
   test('แถวถูกต้องครบ -> DRY_RUN ไม่บันทึกจริง, APPLY สร้างคน PENDING_CLAIM, reconcile ตรงกับไฟล์ต้นทาง 100%', async () => {
-    const positionNo = await makePosition(adminPool, FIXTURE_ORG_UNIT_ID);
-    const row = validRow({ rowRef: 'r1', positionNo, orgUnitCode: FIXTURE_ORG_UNIT_CODE });
+    const positionNo = await makePosition(adminPool, fixtureOrgUnitId);
+    const row = validRow({ rowRef: 'r1', positionNo, orgUnitCode: fixtureOrgUnitCode });
     const csv = buildCsv([row]);
 
     const { batchId } = await loadBatch(pool, {
@@ -101,7 +105,7 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
     // employeeNo ไม่มีคอลัมน์ต้นทางแยกอีกต่อไป (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) - ต้อง
     // เท่ากับ pid เสมอ (toImportRow.js)
     expect(employment.rows[0].employee_no).toBe(row.pid);
-    expect(employment.rows[0].org_unit_id).toBe(FIXTURE_ORG_UNIT_ID);
+    expect(employment.rows[0].org_unit_id).toBe(fixtureOrgUnitId);
     expect(employment.rows[0].position_no).toBe(positionNo);
 
     const reconciliation = await reconcileBatch(pool, batchId);
@@ -122,7 +126,7 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
   });
 
   test('แถวที่มีปัญหาคุณภาพ -> ไม่ถูกส่งเข้า import เลย (กรองก่อนถึง API)', async () => {
-    const badRow = validRow({ rowRef: 'bad', orgUnitCode: 'NO-SUCH-UNIT' });
+    const badRow = validRow({ rowRef: 'bad', positionNo: 'POS-DOES-NOT-MATTER', orgUnitCode: 'NO-SUCH-UNIT' });
     const csv = buildCsv([badRow]);
 
     const { batchId } = await loadBatch(pool, {
@@ -141,8 +145,8 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
   });
 
   test('reconcile หลัง pid_plaintext ถูกล้าง (จำลอง worker job stgHrPurge เกิน 30 วัน) -> PID_PURGED_CANNOT_RECONCILE แทนการรายงานผิด', async () => {
-    const positionNo = await makePosition(adminPool, FIXTURE_ORG_UNIT_ID);
-    const row = validRow({ rowRef: 'r1', positionNo, orgUnitCode: FIXTURE_ORG_UNIT_CODE });
+    const positionNo = await makePosition(adminPool, fixtureOrgUnitId);
+    const row = validRow({ rowRef: 'r1', positionNo, orgUnitCode: fixtureOrgUnitCode });
     const csv = buildCsv([row]);
 
     const { batchId } = await loadBatch(pool, {

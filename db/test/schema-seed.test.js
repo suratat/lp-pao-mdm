@@ -67,9 +67,11 @@ test('DIRECTORY_PUBLISH เป็น legal_basis=CONSENT และ requires_cons
   expect(rows[0].requires_consent).toBe(true);
 });
 
-test('seed mdm.org_unit / mdm.position มีตัวอย่างครบ', async () => {
+// รายละเอียดครบถ้วนของ seed org_unit จริง 11 หน่วยงาน (parent-child, unit_level, valid_from) อยู่ใน
+// orgUnitSeed.test.js - ตรงนี้ตรวจแค่ว่ามีข้อมูลอยู่จริง (ไม่ใช่ 0 แถว) mdm.position ไม่มี seed จาก
+// migration แล้ว (ของตัวอย่าง T8 ถูกแทนที่ด้วยโครงสร้างจริงที่ยังไม่มีกรอบอัตรากำลัง/ตำแหน่งกำหนดมาด้วย)
+// จึงไม่ทดสอบจำนวนแถวในตารางนี้ที่นี่ เพื่อไม่ให้ผลลัพธ์ขึ้นกับ test file อื่นที่ insert position ของตัวเอง
+test('seed mdm.org_unit มีข้อมูลจริง', async () => {
   const orgUnits = await pool.query(`SELECT count(*)::int AS n FROM mdm.org_unit`);
-  const positions = await pool.query(`SELECT count(*)::int AS n FROM mdm.position`);
-  expect(orgUnits.rows[0].n).toBeGreaterThanOrEqual(4);
-  expect(positions.rows[0].n).toBeGreaterThanOrEqual(3);
+  expect(orgUnits.rows[0].n).toBeGreaterThanOrEqual(11);
 });
