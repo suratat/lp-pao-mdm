@@ -44,7 +44,7 @@ async function loadPersonAggregate(pool, personId) {
        ou.org_unit_id, ou.code AS org_unit_code, ou.name_th AS org_unit_name_th,
        parent_ou.name_th AS org_unit_parent_name_th
      FROM mdm.employment e
-     JOIN mdm.position pos ON pos.position_id = e.position_id
+     LEFT JOIN mdm.position pos ON pos.position_id = e.position_id
      JOIN mdm.org_unit ou ON ou.org_unit_id = e.org_unit_id
      LEFT JOIN mdm.org_unit parent_ou ON parent_ou.org_unit_id = ou.parent_id
      WHERE e.person_id = $1 AND e.is_current = true`,
@@ -67,21 +67,28 @@ function presentOrgUnitRef(row) {
   return ref;
 }
 
+function presentPositionRef(employment) {
+  // ตัดฟิลด์ position ทั้ง key เมื่อไม่มีตำแหน่ง (พนักงานจ้าง/จ้างเหมาบริการรายบุคคล) - ไม่ใส่ null
+  // ตามกฎข้อ 5 (ไม่มี positionId ก็ไม่มีข้อมูลตำแหน่งให้ join มาด้วยอยู่แล้ว)
+  if (!employment.position_id) return undefined;
+  return {
+    positionId: employment.position_id,
+    positionNo: employment.position_no,
+    titleTh: employment.position_title_th,
+    lineOfWork: employment.line_of_work ?? undefined,
+    positionType: employment.position_type,
+    orgUnitId: employment.org_unit_id,
+    isActive: employment.position_is_active,
+  };
+}
+
 function presentEmployment(employment) {
   if (!employment) return undefined;
   return {
     employmentId: employment.employment_id,
     employeeNo: employment.employee_no,
     personnelType: employment.personnel_type,
-    position: {
-      positionId: employment.position_id,
-      positionNo: employment.position_no,
-      titleTh: employment.position_title_th,
-      lineOfWork: employment.line_of_work ?? undefined,
-      positionType: employment.position_type,
-      orgUnitId: employment.org_unit_id,
-      isActive: employment.position_is_active,
-    },
+    position: presentPositionRef(employment),
     orgUnit: presentOrgUnitRef(employment),
     levelCode: employment.level_code ?? undefined,
     appointedDate: employment.appointed_date ?? undefined,

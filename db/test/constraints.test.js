@@ -102,6 +102,29 @@ describe('EXCLUDE ตำแหน่งซ้อนทับ (position_id + ช�
       insertEmployment(personB, `EMP-OK-B-${Date.now()}`, '2020-07-01', '2020-12-31')
     ).resolves.toBeDefined();
   });
+
+  // พนักงานจ้าง/จ้างเหมาบริการรายบุคคลไม่มีเลขที่ตำแหน่ง (position_id เป็น NULL ได้ตั้งแต่
+  // 1700000000031) - ต้องยืนยันด้วย test จริงว่า Postgres ไม่ apply EXCLUDE กับแถวที่ position_id เป็น
+  // NULL (operator "=" คืน NULL ไม่ใช่ TRUE เมื่อเทียบกับ NULL เหมือน UNIQUE ที่ปล่อยผ่านหลาย NULL ได้)
+  // ไม่ใช่การสันนิษฐาน
+  test('อนุญาตหลายแถวที่ position_id เป็น NULL ช่วงเวลาซ้อนทับกันได้ (EXCLUDE ไม่ apply กับ NULL)', async () => {
+    const personA = await insertPerson();
+    const personB = await insertPerson();
+
+    async function insertNoPositionEmployment(personId, employeeNo, from, to) {
+      return pool.query(
+        `INSERT INTO mdm.employment
+          (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, effective_to, is_current, employment_status, updated_by)
+         VALUES ($1, $2, 'GENERAL_EMPLOYEE', NULL, $3, $4, $5, false, 'ACTIVE', 'test')`,
+        [personId, employeeNo, ORG_UNIT_ID, from, to]
+      );
+    }
+
+    await insertNoPositionEmployment(personA, `EMP-NOPOS-A-${Date.now()}`, '2024-01-01', '2024-06-30');
+    await expect(
+      insertNoPositionEmployment(personB, `EMP-NOPOS-B-${Date.now()}`, '2024-03-01', '2024-09-30')
+    ).resolves.toBeDefined();
+  });
 });
 
 describe('audit append-only (trigger ปฏิเสธ UPDATE/DELETE)', () => {

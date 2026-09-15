@@ -9,6 +9,15 @@ const { mapPersonnelType } = require('./personnelTypeMap');
 // จัดการด้วยมือแทนการเดา schema ที่ยังไม่ประกาศ (ดูสรุปงาน T8: "สิ่งที่ยังไม่ครอบคลุม")
 const ACTIVE_STATUS_LABELS = new Set(['ปฏิบัติงาน', 'ACTIVE']);
 
+// กลุ่มบุคลากรที่ไม่มีเลขที่ตำแหน่งตามโครงสร้างอัตรากำลัง (พนักงานจ้างทุกประเภท + จ้างเหมาบริการรายบุคคล)
+// - ต่างจาก CIVIL_SERVANT/TEACHER/PERMANENT_EMPLOYEE/TRANSFERRED_HEALTH ที่ยังต้องมีตำแหน่งเสมอ
+const POSITION_OPTIONAL_TYPES = new Set([
+  'CONTRACT_EMPLOYEE',
+  'GENERAL_EMPLOYEE',
+  'EXPERT_EMPLOYEE',
+  'OUTSOURCE_INDIVIDUAL',
+]);
+
 function err(code, message) {
   return { code, message };
 }
@@ -36,6 +45,17 @@ function checkRow(row, { orgUnitLookup, positionLookup }) {
     }
   }
 
+  // ประเภทบุคลากร (ไม่ได้อยู่ใน 5 กฎของ §5.3 ตรงๆ แต่จำเป็นก่อนแปลงเป็น EmploymentImportRow - นับรวมเป็นกฎ
+  // "สังกัด/ตำแหน่งที่ map ไม่ได้" ในความหมายกว้าง คือ "อ้างอิงที่ map เข้า enum ของ MDM ไม่ได้")
+  // คำนวณก่อนตรวจตำแหน่งด้านล่าง เพราะกลุ่ม POSITION_OPTIONAL_TYPES ต้องใช้ค่านี้ตัดสินว่าจะข้ามกฎ
+  // POSITION_NOT_FOUND หรือไม่
+  const personnelType = mapPersonnelType(row.personnel_type_raw);
+  if (!row.personnel_type_raw) {
+    errors.push(err('PERSONNEL_TYPE_NOT_MAPPED', 'ไม่มีประเภทบุคลากรในแถวนี้'));
+  } else if (!personnelType) {
+    errors.push(err('PERSONNEL_TYPE_NOT_MAPPED', `ไม่พบ mapping ของ "${row.personnel_type_raw}" ใน personnel-type-map.json`));
+  }
+
   // 3) สังกัด/ตำแหน่งที่ map ไม่ได้
   let resolvedOrgUnitId = null;
   let resolvedPositionId = null;
@@ -50,7 +70,10 @@ function checkRow(row, { orgUnitLookup, positionLookup }) {
 
   const position = row.position_no ? positionLookup.get(row.position_no) : null;
   if (!row.position_no) {
-    errors.push(err('POSITION_NOT_FOUND', 'ไม่มีเลขที่ตำแหน่งในแถวนี้'));
+    // พนักงานจ้าง/จ้างเหมาบริการรายบุคคล ไม่มีเลขที่ตำแหน่งตามโครงสร้างอัตรากำลัง - ไม่ถือเป็นข้อผิดพลาด
+    if (!POSITION_OPTIONAL_TYPES.has(personnelType)) {
+      errors.push(err('POSITION_NOT_FOUND', 'ไม่มีเลขที่ตำแหน่งในแถวนี้'));
+    }
   } else if (!position) {
     errors.push(err('POSITION_NOT_FOUND', `ไม่พบตำแหน่งเลขที่ ${row.position_no} ใน mdm.position`));
   } else {
@@ -60,15 +83,6 @@ function checkRow(row, { orgUnitLookup, positionLookup }) {
         err('POSITION_ORG_UNIT_MISMATCH', `ตำแหน่งเลขที่ ${row.position_no} ไม่ได้สังกัดรหัส ${row.org_unit_code} ใน mdm`)
       );
     }
-  }
-
-  // ประเภทบุคลากร (ไม่ได้อยู่ใน 5 กฎของ §5.3 ตรงๆ แต่จำเป็นก่อนแปลงเป็น EmploymentImportRow - นับรวมเป็นกฎ
-  // "สังกัด/ตำแหน่งที่ map ไม่ได้" ในความหมายกว้าง คือ "อ้างอิงที่ map เข้า enum ของ MDM ไม่ได้")
-  const personnelType = mapPersonnelType(row.personnel_type_raw);
-  if (!row.personnel_type_raw) {
-    errors.push(err('PERSONNEL_TYPE_NOT_MAPPED', 'ไม่มีประเภทบุคลากรในแถวนี้'));
-  } else if (!personnelType) {
-    errors.push(err('PERSONNEL_TYPE_NOT_MAPPED', `ไม่พบ mapping ของ "${row.personnel_type_raw}" ใน personnel-type-map.json`));
   }
 
   if (row.employment_status_raw && !ACTIVE_STATUS_LABELS.has(row.employment_status_raw.trim())) {

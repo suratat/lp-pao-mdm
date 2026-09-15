@@ -76,6 +76,25 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
     expect(codesFor(rawRows, 'r1')).toContain('POSITION_NOT_FOUND');
   });
 
+  test('พนักงานจ้าง/จ้างเหมาบริการรายบุคคลไม่มีเลขที่ตำแหน่ง -> ไม่ error POSITION_NOT_FOUND', async () => {
+    const { rawRows } = await loadAndCheck([
+      validRow({ rowRef: 'general', personnelTypeRaw: 'พนักงานจ้างทั่วไป', positionNo: '' }),
+      validRow({ rowRef: 'outsource', personnelTypeRaw: 'จ้างเหมาบริการ', positionNo: '' }),
+    ]);
+    expect(codesFor(rawRows, 'general')).not.toContain('POSITION_NOT_FOUND');
+    expect(codesFor(rawRows, 'outsource')).not.toContain('POSITION_NOT_FOUND');
+    const generalRow = rawRows.find((r) => r.row_ref === 'general');
+    expect(generalRow.quality_status).toBe('OK');
+    expect(generalRow.resolved_position_id).toBeNull();
+  });
+
+  test('ข้าราชการ/ครู/ลูกจ้างประจำ/ถ่ายโอน ยังต้องมีเลขที่ตำแหน่งเหมือนเดิม -> POSITION_NOT_FOUND', async () => {
+    const { rawRows } = await loadAndCheck([
+      validRow({ rowRef: 'civil', personnelTypeRaw: 'ข้าราชการ อบจ.', positionNo: '' }),
+    ]);
+    expect(codesFor(rawRows, 'civil')).toContain('POSITION_NOT_FOUND');
+  });
+
   test('ตำแหน่งมีจริงแต่สังกัดคนละหน่วยกับที่ระบุในแถว -> POSITION_ORG_UNIT_MISMATCH', async () => {
     // POS-0001 สังกัด org_unit "PERSONNEL" (กองการเจ้าหน้าที่) ไม่ใช่ "PERSONNEL-ADMIN"
     const { rawRows } = await loadAndCheck([
