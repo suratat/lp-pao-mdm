@@ -585,13 +585,13 @@ erDiagram
 
 | Keycloak client scope | ฟิลด์ที่ปลดล็อก | หมายเหตุ |
 |---|---|---|
-| `personnel:read:basic` | personId, ชื่อ-สกุล (ไทย/อังกฤษ), employeeNo, ประเภทบุคลากร, ตำแหน่ง/เลขที่ตำแหน่ง, ระดับ, สังกัด, อีเมลหน่วยงาน, status, verificationStatus, version | scope ขั้นต่ำของทุก consumer |
+| `personnel:read:basic` | personId, ชื่อ-สกุล (ไทย/อังกฤษ), ประเภทบุคลากร, ตำแหน่ง/เลขที่ตำแหน่ง, ระดับ, สังกัด, อีเมลหน่วยงาน, status, verificationStatus, version | scope ขั้นต่ำของทุก consumer (ไม่รวม employeeNo อีกต่อไป - ดูแถว personnel:read:pid) |
 | `personnel:read:contact` | มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, ผู้ติดต่อฉุกเฉิน | เช่น ระบบสารบรรณที่ต้องส่ง SMS |
 | `personnel:read:identity` | วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน, วันออก/หมดอายุบัตร, IAL, syncedAt | เช่น ระบบสวัสดิการ |
 | `personnel:read:employment` | วันบรรจุ, ประวัติการดำรงตำแหน่ง, เหตุ/วันพ้นสภาพ | เช่น ระบบประเมินผล, ระบบเงินเดือน |
 | `personnel:read:photo` | รูปถ่าย | เช่น ระบบบัตรพนักงาน |
 | `personnel:read:inactive` | เห็น record INACTIVE | ระบบเงินเดือน/บำเหน็จ |
-| `personnel:read:pid` / `personnel:lookup:pid` | ถอดรหัส pid / ค้นจาก pid | อนุมัติเป็นราย client โดย DPO เท่านั้น |
+| `personnel:read:pid` / `personnel:lookup:pid` | ถอดรหัส pid / ค้นจาก pid / employeeNo (= pid เสมอ - อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) | อนุมัติเป็นราย client โดย DPO เท่านั้น |
 | `personnel:self` | ข้อมูลของตนเอง + แก้ไขข้อมูลติดต่อ/ความยินยอม | user context |
 | `personnel:provision`, `personnel:write:employment`, `personnel:import` | งาน HR | realm role `hr_officer` |
 | `sync:thaid` | `POST /sync/thaid` | client `check-broker` เท่านั้น |
@@ -976,7 +976,7 @@ pid: ไม่มีวันเปลี่ยน — pid_hash ต่างก�
 | เลขประจำตัวประชาชน | `person.pid_hash`, `person.pid_enc` | ผ่าน checksum ก่อน; ใช้เป็นคีย์จับคู่หลัก; ไม่เก็บ plaintext ใน `stg_hr` เกิน 30 วัน |
 | คำนำหน้า/ชื่อ/สกุล | `person.expected_first_name_th`, `expected_last_name_th` (คอลัมน์ใน person สำหรับตรวจ claim) | **ไม่** นำเข้า `person_identity` — รอ ThaID |
 | ที่อยู่ตามทะเบียนบ้าน, วันเกิด, เพศ จาก HR | ไม่นำเข้า | เก็บใน staging เพื่อเปรียบเทียบเท่านั้น; แหล่งจริงคือ ThaID |
-| เลขประจำตัวข้าราชการ/พนักงาน | `employment.employee_no` | UNIQUE ใน current |
+| (ไม่มีในระบบเดิม - ไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) | `employment.employee_no` | = เลขประจำตัวประชาชน (pid) เสมอ, derive จาก `pid_plaintext` ไม่อ่านจากคอลัมน์แยก, UNIQUE ใน current, classification/scope เทียบเท่า pid (RESTRICTED, `personnel:read:pid`) |
 | ประเภทบุคลากร | `employment.personnel_type` | map เป็น enum (ข้าราชการ อบจ., ครู, ลูกจ้างประจำ, พนักงานจ้าง 3 ประเภท, ถ่ายโอน) |
 | ตำแหน่ง/เลขที่ตำแหน่ง/สายงาน/ประเภทตำแหน่ง | `position` (seed) + `employment.position_id` | เลขที่ตำแหน่งเป็นคีย์ |
 | สังกัด (สำนัก/กอง/ฝ่าย/งาน) | `org_unit` (seed) + `employment.org_unit_id` | รหัสสังกัดตามโครงสร้างส่วนราชการปัจจุบัน |

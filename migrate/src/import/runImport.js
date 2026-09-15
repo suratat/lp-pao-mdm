@@ -6,7 +6,7 @@ const MAX_ROWS_PER_REQUEST = 2000; // maxItems ของ EmploymentImportRow[] �
 
 async function fetchOkRows(pool, batchId) {
   const { rows } = await pool.query(
-    `SELECT row_ref, pid_plaintext, expected_first_name_th, expected_last_name_th, employee_no,
+    `SELECT row_ref, pid_plaintext, expected_first_name_th, expected_last_name_th,
             personnel_type_raw, level_code, appointed_date_raw, effective_from_raw, email_work,
             resolved_org_unit_id, resolved_position_id
      FROM stg_hr.raw_row WHERE batch_id = $1 AND quality_status = 'OK' ORDER BY row_ref`,

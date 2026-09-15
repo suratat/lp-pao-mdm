@@ -152,7 +152,7 @@ async function loadLookups(pool) {
 async function runQualityCheck(pool, batchId) {
   const { rows } = await pool.query(
     `SELECT raw_row_id, row_ref, pid_plaintext, expected_first_name_th, expected_last_name_th,
-            employee_no, personnel_type_raw, position_no, org_unit_code, employment_status_raw,
+            personnel_type_raw, position_no, org_unit_code, employment_status_raw,
             appointed_date_raw, effective_from_raw
      FROM stg_hr.raw_row WHERE batch_id = $1 ORDER BY row_ref`,
     [batchId]

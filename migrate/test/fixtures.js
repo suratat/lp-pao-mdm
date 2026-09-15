@@ -42,7 +42,6 @@ function validRow(overrides = {}) {
     pid: makeFakePid(),
     expectedFirstNameTh: 'ทดสอบ',
     expectedLastNameTh: 'นำเข้า',
-    employeeNo: `EMP-MIGRATE-${Math.random().toString(36).slice(2, 10)}`,
     personnelTypeRaw: 'ข้าราชการ อบจ.',
     positionNo: 'POS-0002',
     orgUnitCode: 'PERSONNEL-ADMIN',

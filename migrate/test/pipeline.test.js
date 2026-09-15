@@ -95,9 +95,12 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
       `SELECT e.employee_no, e.org_unit_id, p.position_no
        FROM mdm.employment e JOIN mdm.position p ON p.position_id = e.position_id
        WHERE e.employee_no = $1`,
-      [row.employeeNo]
+      [row.pid]
     );
     expect(employment.rows).toHaveLength(1);
+    // employeeNo ไม่มีคอลัมน์ต้นทางแยกอีกต่อไป (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) - ต้อง
+    // เท่ากับ pid เสมอ (toImportRow.js)
+    expect(employment.rows[0].employee_no).toBe(row.pid);
     expect(employment.rows[0].org_unit_id).toBe(FIXTURE_ORG_UNIT_ID);
     expect(employment.rows[0].position_no).toBe(positionNo);
 
@@ -135,5 +138,35 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
 
     const dryRun = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'DRY_RUN', createIfMissing: true });
     expect(dryRun.total).toBe(0);
+  });
+
+  test('reconcile หลัง pid_plaintext ถูกล้าง (จำลอง worker job stgHrPurge เกิน 30 วัน) -> PID_PURGED_CANNOT_RECONCILE แทนการรายงานผิด', async () => {
+    const positionNo = await makePosition(adminPool, FIXTURE_ORG_UNIT_ID);
+    const row = validRow({ rowRef: 'r1', positionNo, orgUnitCode: FIXTURE_ORG_UNIT_CODE });
+    const csv = buildCsv([row]);
+
+    const { batchId } = await loadBatch(pool, {
+      csvContent: csv,
+      columnMap: defaultColumnMap,
+      sourceFilename: 'purged.csv',
+      importedBy: 'tester',
+    });
+    await runQualityCheck(pool, batchId);
+    await runImport(pool, { apiBaseUrl, token, batchId, mode: 'APPLY', createIfMissing: true });
+
+    // จำลองสิ่งที่ worker job stgHrPurge ทำ (ล้างเฉพาะ pid_plaintext เป็น NULL หลัง retention 30 วัน)
+    await adminPool.query(`UPDATE stg_hr.raw_row SET pid_plaintext = NULL WHERE batch_id = $1`, [batchId]);
+
+    const reconciliation = await reconcileBatch(pool, batchId);
+    expect(reconciliation.isFullyReconciled).toBe(false);
+    expect(reconciliation.matched).toBe(0);
+    expect(reconciliation.mismatches).toEqual([
+      { rowRef: 'r1', issue: 'PID_PURGED_CANNOT_RECONCILE', message: expect.any(String) },
+    ]);
+
+    // รายงานต้องไม่มีเลขบัตรจริงหลุดออกมา แม้ตอนรายงาน "reconcile ไม่ได้" ก็ตาม
+    const reportPath = await writeReport(reportDir, `reconcile-purged-${batchId}.json`, reconciliation);
+    const content = await fs.readFile(reportPath, 'utf8');
+    expect(content).not.toContain(row.pid);
   });
 });

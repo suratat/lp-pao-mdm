@@ -43,7 +43,9 @@ describe('loadBatch (§5.3 ระยะ 1: "export ระบบเดิม -> s
     expect(rawRows).toHaveLength(2);
     expect(rawRows[0].pid_plaintext).toBe(rows[0].pid);
     expect(rawRows[0].pid_loaded_at).not.toBeNull();
-    expect(rawRows[0].employee_no).toBe(rows[0].employeeNo);
+    // ไม่มี mapping ของ employeeNo อีกต่อไป (column-map.json) - คอลัมน์นี้ต้องเป็น NULL เสมอหลังโหลด
+    // (employeeNo ถูกกำหนดเป็น pid_plaintext ตอนแปลงเป็น EmploymentImportRow ใน toImportRow.js แทน)
+    expect(rawRows[0].employee_no).toBeNull();
     expect(rawRows[0].org_unit_code).toBe('PERSONNEL-ADMIN');
     expect(rawRows[0].source_data).toBeTruthy();
   });

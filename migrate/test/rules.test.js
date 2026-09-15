@@ -56,7 +56,7 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
     expect(JSON.stringify(rawRows)).not.toContain(badPid);
   });
 
-  test('เลขบัตรซ้ำกันในไฟล์เดียวกัน -> DUPLICATE_PID ทั้งสองแถว', async () => {
+  test('เลขบัตรซ้ำกันในไฟล์เดียวกัน -> DUPLICATE_PID ทั้งสองแถว (error เดียว ไม่ซ้ำสอง แม้ employeeNo = pid ด้วย)', async () => {
     const pid = require('../../api/src/security/pid').makeFakePid();
     const { rawRows } = await loadAndCheck([
       validRow({ rowRef: 'dup1', pid }),
@@ -64,6 +64,10 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
     ]);
     expect(codesFor(rawRows, 'dup1')).toContain('DUPLICATE_PID');
     expect(codesFor(rawRows, 'dup2')).toContain('DUPLICATE_PID');
+    // employeeNo = pid เสมอตอนนี้ (ไม่มีคอลัมน์ต้นทางแยก) - ยืนยันว่ากฎคุณภาพไม่ตรวจ "ซ้ำ" สองครั้งราวกับ
+    // เป็นคนละฟิลด์ (DUPLICATE_PID ครั้งเดียวต่อแถว ไม่มี error code อื่นที่หมายถึง employee_no ซ้ำแยกต่างหาก)
+    expect(codesFor(rawRows, 'dup1')).toEqual(['DUPLICATE_PID']);
+    expect(codesFor(rawRows, 'dup2')).toEqual(['DUPLICATE_PID']);
   });
 
   test('รหัสสังกัดไม่พบใน mdm.org_unit -> ORG_UNIT_NOT_FOUND', async () => {
