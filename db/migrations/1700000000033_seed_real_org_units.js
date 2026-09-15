@@ -10,6 +10,11 @@ exports.shorthands = undefined;
 // ไม่ hardcode UUID ของหน่วยงานใหม่ (ต่างจาก T18) - อ้างอิงกันด้วย code แทน เพื่อให้ down migration
 // ไม่ต้องพึ่ง UUID คงที่ที่จำไว้ล่วงหน้า และลดความเสี่ยงชนกับ UUID คงที่อื่นที่ใช้อยู่แล้วในระบบ (fixture
 // ของ test ต่าง ๆ) - รายชื่อ/รหัสหน่วยงานยืนยันจากผู้ใช้ตรง ๆ ไม่ได้มาจากเอกสารออกแบบ
+//
+// ก่อนรัน migration นี้บน staging/production จริง ให้รัน
+// db/preflight/1700000000033_check_sample_org_data.sql ก่อนเสมอ เพื่อตรวจว่ามีข้อมูลจริง (employment,
+// stg_hr batch เก่า ฯลฯ) ผูกอยู่กับ org_unit/position ตัวอย่างของ T8 หรือไม่ - ถ้ามี migration นี้จะ
+// fail แบบ FK violation ทันที (ปลอดภัยโดยโครงสร้าง ไม่ลบเงียบ ๆ) แต่ควรรู้ล่วงหน้าเพื่อวางแผนแก้ไข
 const DIVISIONS = [
   { code: 'HQ', name_th: 'องค์การบริหารส่วนจังหวัดลำปาง' },
   { code: 'SP', name_th: 'สำนักปลัดองค์การบริหารส่วนจังหวัด' },
