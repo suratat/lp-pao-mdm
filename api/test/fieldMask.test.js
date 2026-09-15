@@ -128,4 +128,34 @@ describe('GET /persons/{personId} - field mask ตาม scope จริงผ�
     expect(fields).toEqual(expect.arrayContaining(['personId', 'status', 'basic.firstNameTh']));
     expect(fields.some((f) => f.startsWith('identity.'))).toBe(false);
   });
+
+  // T8: employeeNo = เลขบัตรประชาชน (pid) เสมอ (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) จึงต้อง
+  // ถูก mask เหมือน pid_hash/pid_enc คือต้องมี scope personnel:read:pid โดยเฉพาะ แค่ personnel:read:basic
+  // หรือ personnel:read:employment อย่างเดียวไม่พอ
+  test('employeeNo ต้องใช้ scope personnel:read:pid เท่านั้น (basic/employment อย่างเดียวไม่พอ)', async () => {
+    const token = await ctx.auth.signToken({
+      scope: 'personnel:read:basic personnel:read:employment',
+    });
+    const res = await request(ctx.app)
+      .get(`/api/v1/persons/${FIXTURE_PERSON_ID}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.basic.employeeNo).toBeUndefined();
+    expect(res.body.employment).toBeDefined();
+    expect(res.body.employment.employeeNo).toBeUndefined();
+  });
+
+  test('เพิ่ม personnel:read:pid -> เห็น employeeNo ทั้งใน basic และ employment', async () => {
+    const token = await ctx.auth.signToken({
+      scope: 'personnel:read:basic personnel:read:employment personnel:read:pid',
+    });
+    const res = await request(ctx.app)
+      .get(`/api/v1/persons/${FIXTURE_PERSON_ID}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.basic.employeeNo).toBe('EMP-0001');
+    expect(res.body.employment.employeeNo).toBe('EMP-0001');
+  });
 });

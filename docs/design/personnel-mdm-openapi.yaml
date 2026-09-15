@@ -73,7 +73,11 @@ paths:
       parameters:
         - name: q
           in: query
-          description: ค้นหาจากชื่อ-สกุล (ไทย/อังกฤษ) หรือ employeeNo แบบ prefix match
+          description: |
+            ค้นหาจากชื่อ-สกุล (ไทย/อังกฤษ) แบบ prefix match
+            ไม่รองรับค้นหาด้วย employeeNo อีกต่อไป เพราะ employeeNo = เลขบัตรประชาชน (pid) เสมอ
+            (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) การค้นหาด้วยค่านี้ผ่าน query string จะทำให้ pid
+            หลุดไปอยู่ใน URL/access log ซึ่งขัดกฎข้อ 1 ของ CLAUDE.md
           schema: { type: string, minLength: 2, maxLength: 100 }
         - name: orgUnitId
           in: query
@@ -1263,7 +1267,12 @@ components:
             titleEn: { type: string }
             firstNameEn: { type: string }
             lastNameEn: { type: string }
-            employeeNo: { type: string, description: เลขประจำตัวข้าราชการ/พนักงาน }
+            employeeNo:
+              type: string
+              x-required-scope: personnel:read:pid
+              description: |
+                เลขประจำตัวข้าราชการ/พนักงาน = เลขบัตรประชาชนเสมอ (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยก
+                ต่างหาก) จึงต้องมี scope personnel:read:pid เท่านั้น (เดียวกับ pid_hash/pid_enc)
             personnelType: { $ref: '#/components/schemas/PersonnelType' }
             positionTitle: { type: string }
             positionNo: { type: string }
@@ -1380,7 +1389,10 @@ components:
       x-source: HR
       properties:
         employmentId: { type: string, format: uuid }
-        employeeNo: { type: string }
+        employeeNo:
+          type: string
+          x-required-scope: personnel:read:pid
+          description: เลขประจำตัวข้าราชการ/พนักงาน = เลขบัตรประชาชนเสมอ - ดู PersonDetail.basic.employeeNo
         personnelType: { $ref: '#/components/schemas/PersonnelType' }
         position: { $ref: '#/components/schemas/Position' }
         orgUnit: { $ref: '#/components/schemas/OrgUnitRef' }
@@ -1401,7 +1413,9 @@ components:
       type: object
       required: [employeeNo, personnelType, orgUnitId, effectiveFrom]
       properties:
-        employeeNo: { type: string }
+        employeeNo:
+          type: string
+          description: เลขบัตรประชาชนของบุคคล (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก)
         personnelType: { $ref: '#/components/schemas/PersonnelType' }
         positionId:
           type: string
@@ -1541,11 +1555,14 @@ components:
           description: true เมื่อชื่อจาก ThaID ไม่ตรงกับที่ HR คาดไว้ตอน provision (บันทึกให้ HR ตรวจสอบ ไม่บล็อกการเข้าสู่ระบบ)
         tokenClaims:
           type: object
-          description: claims ที่ check.lp-pao.go.th ควรใส่ใน session/profile ที่ส่งให้ app ผ่าน /api/verify (ไม่มี pid)
+          description: |
+            claims ที่ check.lp-pao.go.th ควรใส่ใน session/profile ที่ส่งให้ app ผ่าน /api/verify (ไม่มี pid)
+            ไม่มี employeeNo ด้วยเหตุผลเดียวกัน เพราะ employeeNo = เลขบัตรประชาชนเสมอ (อบจ.ลำปางไม่มีเลข
+            ประจำตัวข้าราชการแยกต่างหาก) การใส่ค่านี้ลง session ของทุกแอปหลัง check.lp-pao.go.th จะทำให้ pid
+            หลุดไปอยู่ในระบบปลายทางทั้งหมด ขัดกฎข้อ 1 ของ CLAUDE.md โดยตรง
           properties:
             sub: { type: string, format: uuid }
             name: { type: string }
-            employeeNo: { type: string }
             orgUnitCode: { type: string }
             positionTitle: { type: string }
             roles:

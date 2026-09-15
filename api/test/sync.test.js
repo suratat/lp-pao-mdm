@@ -155,7 +155,7 @@ describe('POST /sync/thaid - CLAIMED', () => {
     expect(res.body.verificationStatus).toBe('VERIFIED');
     expect(res.body.nameMismatchWithHr).toBe(false);
     expect(res.body.changedFields).toEqual(expect.arrayContaining(['identity.first_name_th', 'identity.last_name_th']));
-    expect(res.body.tokenClaims.employeeNo).toBe('EMP-CLAIM-001');
+    expect(res.body.tokenClaims.employeeNo).toBeUndefined();
     expect(res.body.tokenClaims.orgUnitCode).toBeTruthy();
     assertNoPidLeak(res, pid);
 

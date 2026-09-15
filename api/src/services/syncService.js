@@ -131,9 +131,13 @@ async function insertChangeLogRows(client, personId, syncEventId, changes) {
 
 // เส้นทางเดียวในการถอดรหัส/แปลง sub ให้ token claims ของ check.lp-pao.go.th (§2.2 ภาคผนวก ก)
 // roles ยังไม่คำนวณจริง (mapping org_unit -> realm role เป็นงานของ mdm-worker ตามภาคผนวก ก ยังไม่ implement)
+//
+// ไม่ใส่ employeeNo ใน tokenClaims เพราะ employeeNo = เลขบัตรประชาชน (pid) เสมอ (อบจ.ลำปางไม่มีเลข
+// ประจำตัวข้าราชการแยกต่างหาก) - session ของทุกแอปหลัง check.lp-pao.go.th จะเห็น claims ชุดนี้ ถ้าใส่
+// employeeNo ลงไป pid จะหลุดไปอยู่ในระบบปลายทางทั้งหมด ขัดกฎข้อ 1 ของ CLAUDE.md โดยตรง
 async function buildTokenClaims(client, personId, claims) {
   const { rows } = await client.query(
-    `SELECT e.employee_no, ou.code AS org_unit_code, p.title_th AS position_title
+    `SELECT ou.code AS org_unit_code, p.title_th AS position_title
      FROM mdm.employment e
      JOIN mdm.org_unit ou ON ou.org_unit_id = e.org_unit_id
      LEFT JOIN mdm.position p ON p.position_id = e.position_id
@@ -145,7 +149,6 @@ async function buildTokenClaims(client, personId, claims) {
   return {
     sub: personId,
     name: buildDisplayName(claims),
-    employeeNo: employment?.employee_no,
     orgUnitCode: employment?.org_unit_code,
     positionTitle: employment?.position_title,
     roles: [],

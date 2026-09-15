@@ -18,11 +18,12 @@ async function searchPersons(
   conditions.push(`p.status = ANY($${params.length}::text[])`);
 
   if (q) {
+    // ไม่ค้นหาด้วย e.employee_no อีกต่อไป เพราะ employeeNo = เลขบัตรประชาชน (pid) เสมอ (อบจ.ลำปางไม่มี
+    // เลขประจำตัวข้าราชการแยกต่างหาก) - ถ้าให้ค้นหาได้ ผู้เรียกจะส่ง pid (หรือบางส่วน) ผ่าน query string
+    // ของ URL ตรงๆ ซึ่งขัดกฎข้อ 1 ของ CLAUDE.md ("ห้าม pid ปรากฏใน ... URL/query string")
     params.push(`${q}%`);
     const qIdx = params.length;
-    conditions.push(
-      `(pi.first_name_th ILIKE $${qIdx} OR pi.last_name_th ILIKE $${qIdx} OR e.employee_no ILIKE $${qIdx})`
-    );
+    conditions.push(`(pi.first_name_th ILIKE $${qIdx} OR pi.last_name_th ILIKE $${qIdx})`);
   }
 
   if (orgUnitId) {
