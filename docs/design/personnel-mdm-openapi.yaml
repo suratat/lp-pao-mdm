@@ -1380,8 +1380,10 @@ components:
         lineOfWork: { type: string, description: สายงาน }
         positionType:
           type: string
-          enum: [EXECUTIVE, DIRECTOR, ACADEMIC, GENERAL]
-          description: EXECUTIVE = บริหารท้องถิ่น, DIRECTOR = อำนวยการท้องถิ่น, ACADEMIC = วิชาการ, GENERAL = ทั่วไป
+          enum: [EXECUTIVE, DIRECTOR, ACADEMIC, GENERAL, SCHOOL_DIRECTOR, SCHOOL_DEPUTY_DIRECTOR]
+          description: >-
+            EXECUTIVE = บริหารท้องถิ่น, DIRECTOR = อำนวยการท้องถิ่น, ACADEMIC = วิชาการ, GENERAL = ทั่วไป,
+            SCHOOL_DIRECTOR = ผู้อำนวยการสถานศึกษา, SCHOOL_DEPUTY_DIRECTOR = รองผู้อำนวยการสถานศึกษา
         orgUnitId: { type: string, format: uuid }
         isActive: { type: boolean }
 
