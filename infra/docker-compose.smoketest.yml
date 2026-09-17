@@ -11,14 +11,14 @@
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:25.0
     restart: unless-stopped
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin_staging_only
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin_staging_only
-      KC_HEALTH_ENABLED: "true"
+      KC_HEALTH_ENABLED: "false"
       KC_HOSTNAME: 192.168.0.5
       KC_HOSTNAME_PORT: "8081"
       KC_HOSTNAME_STRICT: "false"
