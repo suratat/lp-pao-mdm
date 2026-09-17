@@ -23,6 +23,33 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml up -d --bui
 
 `.env.staging` และ `vault/secrets/*` อยู่ใน `.gitignore` แล้ว (ยืนยันก่อนรันครั้งแรกทุกครั้ง — เป็นความลับจริงของ deployment นั้นๆ ไม่ใช่ placeholder)
 
+### ⚠️ การตั้งค่า secret ผ่าน SSH ด้วย `read -s`
+
+เคยเกิดเหตุ (2026-09-17): รันคำสั่งรูปแบบ `echo -n "ใส่ KEYCLOAK_CLIENT_SECRET: "; read -s SECRET` แบบรวมบรรทัดเดียวผ่าน SSH แล้ว `echo -n` หลุดไปต่อท่อเขียนทับ `.env.staging` แทนที่จะพิมพ์ prompt ขึ้นจอ (redirection/pipe ที่ตั้งใจไว้คนละคำสั่งไปโดนคำสั่ง `echo` แทน) ผลคือ `KEYCLOAK_CLIENT_SECRET` ใน `.env.staging` กลายเป็นข้อความ prompt เอง ไม่ใช่ secret จริง ทำให้ Portal error 500 อยู่หลายชั่วโมงกว่าจะเจอสาเหตุ
+
+วิธีที่ปลอดภัยกว่า:
+
+1. **แยกคำสั่งพิมพ์ prompt กับคำสั่งรับ input/เขียนไฟล์ออกเป็นคนละบรรทัดเสมอ** อย่ารวมด้วย `;` หรือ pipe ในบรรทัดเดียวที่มี redirection ปนอยู่
+
+   ```bash
+   # ผิด — เสี่ยง echo/redirection หลุดไปโดนไฟล์อื่น
+   echo -n "ใส่ secret: "; read -s SECRET; echo "KEYCLOAK_CLIENT_SECRET=$SECRET" >> .env.staging
+
+   # ถูก — แยกทีละบรรทัด ตรวจ SECRET ก่อนเขียนไฟล์
+   echo "ใส่ KEYCLOAK_CLIENT_SECRET:"
+   read -s SECRET
+   echo
+   printf 'KEYCLOAK_CLIENT_SECRET=%s\n' "$SECRET" >> .env.staging
+   ```
+
+2. **ตรวจไฟล์ด้วย `grep -c` ก่อน-หลังทุกครั้ง** ที่แก้ `.env.staging` แบบ interactive เพื่อจับทั้งกรณีเขียนผิดค่าและกรณีตัวแปรซ้ำบรรทัด (เจอ `.env.staging` มีบางบรรทัด เช่น `CHANGE_ME`/`CHECK_BASE_URL` ถูกเขียนซ้ำ 2 ครั้งด้วยค่าเดียวกัน — ไม่กระทบเพราะ shell/env loader ใช้บรรทัดสุดท้าย แต่ควรระวังไม่ให้สะสม):
+
+   ```bash
+   grep -c '^KEYCLOAK_CLIENT_SECRET=' .env.staging   # ต้องเป็น 1 เสมอ ก่อนและหลังแก้
+   ```
+
+3. อย่าเชื่อว่า secret ถูกต้องเพียงเพราะ `docker compose up` รันผ่าน — ให้ทดสอบเรียก endpoint ที่ใช้ secret นั้นจริง (เช่น token exchange กับ Keycloak) ก่อนถือว่างานเสร็จ
+
 ## วิธีรัน smoke test (พิสูจน์ realm import + client-credentials → /sync/thaid)
 
 ```bash

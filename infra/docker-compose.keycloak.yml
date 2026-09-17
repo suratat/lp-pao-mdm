@@ -3,6 +3,7 @@
 # ใช้แทน docker-compose.smoketest.yml ซึ่งเป็น start-dev ชั่วคราวเท่านั้น (ข้อมูลหายเมื่อ restart)
 services:
   keycloak:
+    # อย่าลดเวอร์ชันเป็น 25.0 โดยไม่ทดสอบ bootstrap admin ซ้ำก่อน — ดูสาเหตุที่เคยพบใน keycloak/README.md
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
     # --cache=local: ป้องกัน Infinispan cluster false-positive (เจอ "new cluster view" แล้ว container shutdown ตัวเอง)
