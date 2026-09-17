@@ -5,7 +5,8 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
-    command: ["start", "--import-realm"]
+    # --cache=local: ป้องกัน Infinispan cluster false-positive (เจอ "new cluster view" แล้ว container shutdown ตัวเอง)
+    command: ["start", "--import-realm", "--cache=local"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
