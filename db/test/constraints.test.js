@@ -244,3 +244,51 @@ describe('audit append-only (trigger ปฏิเสธ UPDATE/DELETE)', () => {
     ).rejects.toThrow(/append-only/);
   });
 });
+
+describe('FK (position.position_type -> mdm.position_type) และ 2 หมวดใหม่ (SCHOOL_DIRECTOR/SCHOOL_DEPUTY_DIRECTOR)', () => {
+  const ALL_CODES = [
+    'EXECUTIVE',
+    'DIRECTOR',
+    'ACADEMIC',
+    'GENERAL',
+    'SCHOOL_DIRECTOR',
+    'SCHOOL_DEPUTY_DIRECTOR',
+  ];
+  let orgUnitId;
+
+  beforeAll(async () => {
+    orgUnitId = await insertOrgUnit();
+  });
+
+  async function insertPositionWithType(positionType) {
+    return pool.query(
+      `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+       VALUES ($1, 'ตำแหน่งทดสอบ position_type', $2, $3) RETURNING position_id`,
+      // position_no เป็น varchar(50) - ใช้แค่ uuid สั้นๆ (ไม่ต่อ positionType เข้าไป กันเกินความยาวสำหรับ
+      // โค้ดยาวอย่าง SCHOOL_DEPUTY_DIRECTOR)
+      [`POS-TYPE-${crypto.randomUUID()}`, positionType, orgUnitId]
+    );
+  }
+
+  test.each(ALL_CODES)('บันทึก position_type = %s ได้ (ทั้ง 4 หมวดเดิม + 2 หมวดใหม่)', async (code) => {
+    await expect(insertPositionWithType(code)).resolves.toBeDefined();
+  });
+
+  test('ปฏิเสธ position_type ที่ไม่มีอยู่ใน mdm.position_type (FK violation)', async () => {
+    await expect(insertPositionWithType('NOT_A_REAL_POSITION_TYPE')).rejects.toThrow(
+      /violates foreign key constraint/
+    );
+  });
+
+  // ยืนยัน (ข้อ 5c) ว่าตำแหน่งจริงที่ seed ไว้ก่อน migration นี้ (1700000000034_seed_first_real_position,
+  // position_type = ACADEMIC) ยังอ่านค่า position_type ถูกต้องหลัง position_type กลายเป็น FK ไปตารางใหม่
+  // แล้ว - ดู db/test/positionSeed.test.js สำหรับ assertion เต็มรูปแบบของแถวนี้
+  test('ตำแหน่งจริงที่ seed ไว้ก่อน migration นี้ (นักวิชาการคอมพิวเตอร์) ยังมี position_type = ACADEMIC ถูกต้อง', async () => {
+    const { rows } = await pool.query(
+      `SELECT position_type FROM mdm.position WHERE position_no = $1`,
+      ['52-1-07-3106-003']
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].position_type).toBe('ACADEMIC');
+  });
+});
