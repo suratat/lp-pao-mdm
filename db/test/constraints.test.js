@@ -159,6 +159,43 @@ describe('EXCLUDE ตำแหน่งซ้อนทับ (position_id + ช�
   });
 });
 
+describe('FK (employment.personnel_type -> mdm.personnel_type) และโค้ด OTHER', () => {
+  let orgUnitId;
+
+  beforeAll(async () => {
+    orgUnitId = await insertOrgUnit();
+  });
+
+  async function insertEmployment(personId, employeeNo, personnelType) {
+    return pool.query(
+      `INSERT INTO mdm.employment
+        (person_id, employee_no, personnel_type, position_id, org_unit_id, effective_from, is_current, employment_status, updated_by)
+       VALUES ($1, $2, $3, NULL, $4, CURRENT_DATE, true, 'ACTIVE', 'test')`,
+      [personId, employeeNo, personnelType, orgUnitId]
+    );
+  }
+
+  test('OTHER เป็นค่าที่ mdm.personnel_type ยอมรับ และบันทึกได้โดยไม่มี position_id (เหมือนกลุ่ม optional-position อื่น)', async () => {
+    const personId = await insertPerson();
+    await expect(
+      insertEmployment(personId, `EMP-OTHER-${Date.now()}`, 'OTHER')
+    ).resolves.toBeDefined();
+
+    const { rows } = await pool.query(
+      `SELECT position_id FROM mdm.employment WHERE person_id = $1 AND is_current = true`,
+      [personId]
+    );
+    expect(rows[0].position_id).toBeNull();
+  });
+
+  test('ปฏิเสธโค้ด personnel_type ที่ไม่มีอยู่ใน mdm.personnel_type (FK violation)', async () => {
+    const personId = await insertPerson();
+    await expect(
+      insertEmployment(personId, `EMP-BADTYPE-${Date.now()}`, 'NOT_A_REAL_TYPE')
+    ).rejects.toThrow(/violates foreign key constraint/);
+  });
+});
+
 describe('audit append-only (trigger ปฏิเสธ UPDATE/DELETE)', () => {
   test('audit.thaid_sync_event', async () => {
     const { rows } = await pool.query(

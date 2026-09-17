@@ -131,6 +131,32 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
     expect(rows[0].position_id).toBeNull();
   });
 
+  test('200 เมื่อ personnelType เป็น OTHER (อื่นๆ) และไม่ส่ง positionId มา - ผ่าน OpenAPI enum validation และบันทึกได้เหมือนกลุ่ม optional-position อื่น', async () => {
+    const positionId = await makePosition();
+    const personId = await makeActivePerson(positionId);
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic' });
+
+    const res = await request(ctx.app)
+      .put(`/api/v1/persons/${personId}/employment`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        employeeNo: `EMP-OTHER-${crypto.randomUUID()}`,
+        personnelType: 'OTHER',
+        orgUnitId: fixtureOrgUnitId,
+        effectiveFrom: '2099-01-01',
+        expectedVersion: 1,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.position).toBeUndefined();
+
+    const { rows } = await adminPool.query(
+      `SELECT position_id FROM mdm.employment WHERE person_id = $1 AND is_current = true`,
+      [personId]
+    );
+    expect(rows[0].position_id).toBeNull();
+  });
+
   test('สองคนไม่มีตำแหน่ง (position_id NULL) ช่วงเวลาซ้อนทับกันได้ ไม่ชน EXCLUDE constraint', async () => {
     const positionId = await makePosition();
     const personA = await makeActivePerson(positionId);

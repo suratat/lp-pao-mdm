@@ -11,5 +11,6 @@
   "บุคลากรถ่ายโอน": "TRANSFERRED_HEALTH",
   "บุคลากรถ่ายโอน (รพ.สต.)": "TRANSFERRED_HEALTH",
   "จ้างเหมาบริการ": "OUTSOURCE_INDIVIDUAL",
-  "จ้างเหมาบริการรายบุคคล": "OUTSOURCE_INDIVIDUAL"
+  "จ้างเหมาบริการรายบุคคล": "OUTSOURCE_INDIVIDUAL",
+  "อื่นๆ": "OTHER"
 }
