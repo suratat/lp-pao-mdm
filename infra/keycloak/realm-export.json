@@ -6,6 +6,8 @@
   "ssoSessionMaxLifespan": 36000,
   "offlineSessionIdleTimeout": 0,
   "revokeRefreshToken": true,
+  "defaultDefaultClientScopes": [],
+  "defaultOptionalClientScopes": [],
 
   "roles": {
     "realm": [
@@ -104,7 +106,7 @@
     },
     {
       "clientId": "mdm-portal",
-      "description": "MDM Portal (ทางเลือก B, T9 รอบแรก - self-service, implement แล้ว) - backend ถือ client นี้เพื่อขอ token (client credentials, scope personnel:self) แล้วส่ง header X-Acting-Person เป็น JWT เซ็นเอง (secret แยก: PORTAL_ACTING_ASSERTION_SECRET) ระบุตัวผู้ใช้ที่กำลังทำ self-service ตาม §0.3 - ดู portal/README.md",
+      "description": "MDM Portal (T9 self-service) - backend ขอ token ด้วย client credentials (scope personnel:self) แล้วส่ง X-Acting-Person เป็น JWT เซ็นเอง (secret: PORTAL_ACTING_ASSERTION_SECRET) ระบุผู้ใช้จริงตาม §0.3 - ดู portal/README.md",
       "protocol": "openid-connect",
       "publicClient": false,
       "bearerOnly": false,
