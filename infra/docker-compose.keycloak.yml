@@ -16,8 +16,12 @@ services:
       KC_DB_POOL_INITIAL_SIZE: "1"
       KC_DB_POOL_MIN_SIZE: "1"
       KC_DB_POOL_MAX_SIZE: "3"
-      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_HOSTNAME}
-      KC_HOSTNAME_PORT: ${KEYCLOAK_PUBLIC_PORT}
+      # KC_HOSTNAME ต้องเป็น URL เต็ม (scheme+host) ตาม Keycloak v26 hostname v2 API (ค่า default ตั้งแต่
+      # v26 ไม่ใช่ v1 แบบเดิม) - ห้ามตั้ง KC_HOSTNAME_PORT คู่กัน เพราะ v2 ไม่มี option นี้แล้ว (เป็นของ v1
+      # เก่า) ตั้งคู่กันแล้วชนกัน เกิด warning และ Admin Console โหลดไม่สำเร็จ (ค้างที่ "Loading the
+      # Administration Console") - พบและยืนยันจริงบน VM production (192.168.0.5, WireGuard) หลัง Cloudflare
+      # Tunnel ชี้ iam.lp-pao.go.th มาที่ container นี้แล้ว 2026-09-19
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
