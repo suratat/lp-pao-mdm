@@ -169,8 +169,11 @@ services:
       NODE_ENV: production
       MDM_API_BASE_URL: http://nginx # ชี้เข้า service nginx ใน mdm-internal network (mount /api/v1 ที่ api)
       KEYCLOAK_TOKEN_URL: ${KEYCLOAK_TOKEN_URL}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      # PORTAL_CLIENT_ID/SECRET (client mdm-portal ของ Portal เอง) - เดิมชื่อ KEYCLOAK_CLIENT_ID/SECRET
+      # แบบ generic เหมือนกับที่ worker (ด้านบน) เกือบใช้ (KEYCLOAK_ADMIN_CLIENT_ID/SECRET) จนตั้งค่าจริง
+      # สลับ client กันไปมาระหว่าง portal/worker มาแล้ว - ดู infra/.env.staging.example
+      PORTAL_CLIENT_ID: ${PORTAL_CLIENT_ID}
+      PORTAL_CLIENT_SECRET: ${PORTAL_CLIENT_SECRET}
       # ต้องเป็นค่าเดียวกับ PORTAL_ACTING_ASSERTION_SECRET ของ api1/api2 ด้านบน
       PORTAL_ACTING_ASSERTION_SECRET: ${PORTAL_ACTING_ASSERTION_SECRET}
       PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET}
