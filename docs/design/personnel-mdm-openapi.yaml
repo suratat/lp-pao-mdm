@@ -1213,6 +1213,7 @@ components:
         - TRANSFERRED_HEALTH       # บุคลากรถ่ายโอน (รพ.สต.)
         - OUTSOURCE_INDIVIDUAL     # จ้างเหมาบริการ (รายบุคคล ประจำในหน่วยงาน ไม่มีเลขที่ตำแหน่ง)
         - OTHER                    # อื่นๆ (ไม่เข้ากลุ่มใดใน 8 ประเภทข้างต้น ไม่มีเลขที่ตำแหน่ง)
+        - POLITICAL_APPOINTEE      # ผู้ดำรงตำแหน่งทางการเมือง (คณะผู้บริหาร - ไม่มีเลขที่ตำแหน่ง)
 
     EventType:
       type: string
@@ -1380,10 +1381,11 @@ components:
         lineOfWork: { type: string, description: สายงาน }
         positionType:
           type: string
-          enum: [EXECUTIVE, DIRECTOR, ACADEMIC, GENERAL, SCHOOL_DIRECTOR, SCHOOL_DEPUTY_DIRECTOR]
+          enum: [EXECUTIVE, DIRECTOR, ACADEMIC, GENERAL, SCHOOL_DIRECTOR, SCHOOL_DEPUTY_DIRECTOR, POLITICAL]
           description: >-
             EXECUTIVE = บริหารท้องถิ่น, DIRECTOR = อำนวยการท้องถิ่น, ACADEMIC = วิชาการ, GENERAL = ทั่วไป,
-            SCHOOL_DIRECTOR = ผู้อำนวยการสถานศึกษา, SCHOOL_DEPUTY_DIRECTOR = รองผู้อำนวยการสถานศึกษา
+            SCHOOL_DIRECTOR = ผู้อำนวยการสถานศึกษา, SCHOOL_DEPUTY_DIRECTOR = รองผู้อำนวยการสถานศึกษา,
+            POLITICAL = ฝ่ายการเมือง
         orgUnitId: { type: string, format: uuid }
         isActive: { type: boolean }
 

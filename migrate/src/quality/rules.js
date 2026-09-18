@@ -10,15 +10,16 @@ const { mapPersonnelType } = require('./personnelTypeMap');
 const ACTIVE_STATUS_LABELS = new Set(['ปฏิบัติงาน', 'ACTIVE']);
 
 // กลุ่มบุคลากรที่ไม่มีเลขที่ตำแหน่งตามโครงสร้างอัตรากำลัง (พนักงานจ้างทุกประเภท + จ้างเหมาบริการรายบุคคล +
-// อื่นๆ) - ต่างจาก CIVIL_SERVANT/TEACHER/PERMANENT_EMPLOYEE/TRANSFERRED_HEALTH ที่ยังต้องมีตำแหน่งเสมอ
-// สังกัด (org_unit_code) ยังคงบังคับต้องมีเหมือนกลุ่มอื่นทุกกลุ่ม (ดูกฎ ORG_UNIT_NOT_FOUND ด้านล่าง - ไม่ได้
-// ถูกยกเว้นสำหรับกลุ่มนี้)
+// อื่นๆ + ผู้ดำรงตำแหน่งทางการเมือง) - ต่างจาก CIVIL_SERVANT/TEACHER/PERMANENT_EMPLOYEE/TRANSFERRED_HEALTH
+// ที่ยังต้องมีตำแหน่งเสมอ สังกัด (org_unit_code) ยังคงบังคับต้องมีเหมือนกลุ่มอื่นทุกกลุ่ม (ดูกฎ
+// ORG_UNIT_NOT_FOUND ด้านล่าง - ไม่ได้ถูกยกเว้นสำหรับกลุ่มนี้)
 const POSITION_OPTIONAL_TYPES = new Set([
   'CONTRACT_EMPLOYEE',
   'GENERAL_EMPLOYEE',
   'EXPERT_EMPLOYEE',
   'OUTSOURCE_INDIVIDUAL',
   'OTHER',
+  'POLITICAL_APPOINTEE',
 ]);
 
 function err(code, message) {
