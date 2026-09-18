@@ -12,4 +12,9 @@ RUN npm install
 
 COPY db/migrations ./db/migrations
 
+# migration 1700000000038_seed_real_position_batch.js อ่าน migrate/data/position-seed-data.csv ตอนรันจริง
+# (path.join(__dirname, '..', '..', 'migrate', 'data', ...) จาก db/migrations = /repo/migrate/data/...) -
+# ต้อง copy โฟลเดอร์นี้เข้า image ด้วย ไม่งั้น migration หาไฟล์ไม่เจอตอนรันใน container (พบตอน deploy จริง)
+COPY migrate/data ./migrate/data
+
 CMD ["npx", "node-pg-migrate", "up", "-m", "db/migrations", "-j", "js"]
