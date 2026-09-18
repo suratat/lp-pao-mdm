@@ -99,29 +99,42 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
     expect(codesFor(rawRows, 'r1')).toContain('POSITION_NOT_FOUND');
   });
 
-  test('พนักงานจ้าง/จ้างเหมาบริการรายบุคคล/อื่นๆ ไม่มีเลขที่ตำแหน่ง -> ไม่ error POSITION_NOT_FOUND', async () => {
+  test('พนักงานจ้าง/จ้างเหมาบริการรายบุคคล/อื่นๆ/ผู้ดำรงตำแหน่งทางการเมือง ไม่มีเลขที่ตำแหน่ง -> ไม่ error POSITION_NOT_FOUND', async () => {
     const { rawRows } = await loadAndCheck([
       defaultRow({ rowRef: 'general', personnelTypeRaw: 'พนักงานจ้างทั่วไป', positionNo: '' }),
       defaultRow({ rowRef: 'outsource', personnelTypeRaw: 'จ้างเหมาบริการ', positionNo: '' }),
       defaultRow({ rowRef: 'other', personnelTypeRaw: 'อื่นๆ', positionNo: '' }),
+      defaultRow({ rowRef: 'political', personnelTypeRaw: 'ผู้ดำรงตำแหน่งทางการเมือง', positionNo: '' }),
     ]);
     expect(codesFor(rawRows, 'general')).not.toContain('POSITION_NOT_FOUND');
     expect(codesFor(rawRows, 'outsource')).not.toContain('POSITION_NOT_FOUND');
     expect(codesFor(rawRows, 'other')).not.toContain('POSITION_NOT_FOUND');
+    expect(codesFor(rawRows, 'political')).not.toContain('POSITION_NOT_FOUND');
     const generalRow = rawRows.find((r) => r.row_ref === 'general');
     expect(generalRow.quality_status).toBe('OK');
     expect(generalRow.resolved_position_id).toBeNull();
     const otherRow = rawRows.find((r) => r.row_ref === 'other');
     expect(otherRow.quality_status).toBe('OK');
     expect(otherRow.resolved_position_id).toBeNull();
+    const politicalRow = rawRows.find((r) => r.row_ref === 'political');
+    expect(politicalRow.quality_status).toBe('OK');
+    expect(politicalRow.resolved_position_id).toBeNull();
   });
 
-  test('อื่นๆ ยังคงต้องมีรหัสสังกัด (org_unit_code) เหมือนกลุ่มอื่น -> ORG_UNIT_NOT_FOUND ถ้าไม่มี', async () => {
+  test('อื่นๆ/ผู้ดำรงตำแหน่งทางการเมือง ยังคงต้องมีรหัสสังกัด (org_unit_code) เหมือนกลุ่มอื่น -> ORG_UNIT_NOT_FOUND ถ้าไม่มี', async () => {
     const { rawRows } = await loadAndCheck([
       defaultRow({ rowRef: 'other-no-org', personnelTypeRaw: 'อื่นๆ', positionNo: '', orgUnitCode: '' }),
+      defaultRow({
+        rowRef: 'political-no-org',
+        personnelTypeRaw: 'ผู้ดำรงตำแหน่งทางการเมือง',
+        positionNo: '',
+        orgUnitCode: '',
+      }),
     ]);
     expect(codesFor(rawRows, 'other-no-org')).toContain('ORG_UNIT_NOT_FOUND');
     expect(codesFor(rawRows, 'other-no-org')).not.toContain('POSITION_NOT_FOUND');
+    expect(codesFor(rawRows, 'political-no-org')).toContain('ORG_UNIT_NOT_FOUND');
+    expect(codesFor(rawRows, 'political-no-org')).not.toContain('POSITION_NOT_FOUND');
   });
 
   test('ข้าราชการ/ครู/ลูกจ้างประจำ/ถ่ายโอน ยังต้องมีเลขที่ตำแหน่งเหมือนเดิม -> POSITION_NOT_FOUND', async () => {

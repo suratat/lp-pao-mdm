@@ -194,6 +194,48 @@ describe('FK (employment.personnel_type -> mdm.personnel_type) และโค�
       insertEmployment(personId, `EMP-BADTYPE-${Date.now()}`, 'NOT_A_REAL_TYPE')
     ).rejects.toThrow(/violates foreign key constraint/);
   });
+
+  test('POLITICAL_APPOINTEE (ผู้ดำรงตำแหน่งทางการเมือง) เป็นค่าที่ mdm.personnel_type ยอมรับ และบันทึกได้โดยไม่มี position_id', async () => {
+    const personId = await insertPerson();
+    await expect(
+      insertEmployment(personId, `EMP-POLITICAL-${Date.now()}`, 'POLITICAL_APPOINTEE')
+    ).resolves.toBeDefined();
+
+    const { rows } = await pool.query(
+      `SELECT position_id FROM mdm.employment WHERE person_id = $1 AND is_current = true`,
+      [personId]
+    );
+    expect(rows[0].position_id).toBeNull();
+  });
+});
+
+describe('org_unit ใหม่ (EX/OT) และ position_type ใหม่ (POLITICAL) สำหรับคณะผู้บริหาร/กรณีอื่นๆ', () => {
+  test('mdm.org_unit มี EX (คณะผู้บริหาร) และ OT (อื่นๆ) เป็นลูกของ HQ', async () => {
+    const { rows } = await pool.query(
+      `SELECT code, name_th, parent_id FROM mdm.org_unit WHERE code = ANY($1::varchar[]) ORDER BY code`,
+      [['EX', 'OT']]
+    );
+    expect(rows).toHaveLength(2);
+    const byCode = Object.fromEntries(rows.map((r) => [r.code, r]));
+    expect(byCode.EX.name_th).toBe('คณะผู้บริหาร');
+    expect(byCode.OT.name_th).toBe('อื่นๆ');
+    expect(byCode.EX.parent_id).not.toBeNull();
+    expect(byCode.OT.parent_id).not.toBeNull();
+
+    const { rows: hqRows } = await pool.query(`SELECT org_unit_id FROM mdm.org_unit WHERE code = 'HQ'`);
+    expect(byCode.EX.parent_id).toBe(hqRows[0].org_unit_id);
+    expect(byCode.OT.parent_id).toBe(hqRows[0].org_unit_id);
+  });
+
+  test('POLITICAL เป็นค่าที่ mdm.position_type ยอมรับ - บันทึกตำแหน่งฝ่ายการเมืองในสังกัด EX ได้', async () => {
+    const { rows: orgUnitRows } = await pool.query(`SELECT org_unit_id FROM mdm.org_unit WHERE code = 'EX'`);
+    const { rows } = await pool.query(
+      `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+       VALUES ($1, 'นายกองค์การบริหารส่วนจังหวัดลำปาง', 'POLITICAL', $2) RETURNING position_id`,
+      [`POS-POLITICAL-${crypto.randomUUID()}`, orgUnitRows[0].org_unit_id]
+    );
+    expect(rows).toHaveLength(1);
+  });
 });
 
 describe('audit append-only (trigger ปฏิเสธ UPDATE/DELETE)', () => {
