@@ -16,8 +16,7 @@ services:
       KC_DB_POOL_INITIAL_SIZE: "1"
       KC_DB_POOL_MIN_SIZE: "1"
       KC_DB_POOL_MAX_SIZE: "3"
-      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_HOSTNAME}
-      KC_HOSTNAME_PORT: ${KEYCLOAK_PUBLIC_PORT}
+      KC_HOSTNAME: https://iam.lp-pao.go.th
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
