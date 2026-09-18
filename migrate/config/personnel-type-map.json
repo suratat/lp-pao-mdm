@@ -6,5 +6,7 @@
   "พนักงานจ้าง": "GENERAL_EMPLOYEE",
   "ข้าราชการถ่ายโอน (รพ.สต.)": "TRANSFERRED_HEALTH",
   "จ้างเหมาบริการ": "OUTSOURCE_INDIVIDUAL",
-  "อื่นๆ": "OTHER"
+  "อื่นๆ": "OTHER",
+  "ผู้ดำรงตำแหน่งทางการเมือง": "POLITICAL_APPOINTEE",
+  "คณะผู้บริหาร": "POLITICAL_APPOINTEE"
 }
