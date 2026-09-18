@@ -96,7 +96,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "secret": "mdm-worker-staging-secret-CHANGE-ME",
+      "secret": "ZDc1JYVcEfy5TOrnpATMNNKOJyJ6LijwXnX5jGmiaoQ=",
       "attributes": {
         "access.token.lifespan": "300",
         "use.refresh.tokens": "false"
@@ -114,7 +114,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "secret": "mdm-portal-staging-secret-CHANGE-ME",
+      "secret": "rdsIUJu46N2vmOTzoF/rheuv8T+X8QzFSZg+N5QMgaI=",
       "attributes": {
         "access.token.lifespan": "300",
         "use.refresh.tokens": "false"

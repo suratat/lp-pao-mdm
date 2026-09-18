@@ -39,10 +39,14 @@ async function main() {
   const isProduction = process.env.NODE_ENV === 'production';
   const checkAuthClient = buildCheckAuthClient(isProduction);
 
+  // PORTAL_CLIENT_ID/PORTAL_CLIENT_SECRET (เดิมชื่อ KEYCLOAK_CLIENT_ID/KEYCLOAK_CLIENT_SECRET แบบ generic) -
+  // เปลี่ยนชื่อให้ระบุชัดว่าเป็นของ Portal เอง (client mdm-portal) แยกจาก KEYCLOAK_ADMIN_CLIENT_ID/SECRET
+  // ของ worker (client mdm-worker) หลังพบว่า .env.staging จริงบนเครื่องตั้งชื่อคล้ายกันจนตั้งค่าสลับ client
+  // กันไปมา (worker's ไปอยู่ใน portal's slot) - ดู infra/.env.staging.example
   const getServiceToken = createKeycloakServiceTokenProvider({
     tokenUrl: requireEnv('KEYCLOAK_TOKEN_URL'),
-    clientId: process.env.KEYCLOAK_CLIENT_ID || 'mdm-portal',
-    clientSecret: requireEnv('KEYCLOAK_CLIENT_SECRET'),
+    clientId: process.env.PORTAL_CLIENT_ID || 'mdm-portal',
+    clientSecret: requireEnv('PORTAL_CLIENT_SECRET'),
     scope: 'personnel:self',
   });
 
@@ -50,7 +54,7 @@ async function main() {
     baseUrl: process.env.MDM_API_BASE_URL || 'https://mdm.lp-pao.go.th',
     getServiceToken,
     actingAssertionSecret: requireEnv('PORTAL_ACTING_ASSERTION_SECRET'),
-    portalClientId: process.env.KEYCLOAK_CLIENT_ID || 'mdm-portal',
+    portalClientId: process.env.PORTAL_CLIENT_ID || 'mdm-portal',
   });
 
   const app = createApp({
