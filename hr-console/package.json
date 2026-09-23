@@ -1,0 +1,20 @@
+{
+  "name": "lp-pao-mdm-hr-console",
+  "private": true,
+  "version": "0.1.0",
+  "description": "HR Console (T9 รอบ 2) - อนุมัติ/ปฏิเสธ claim request และดู reverify list - อบจ.ลำปาง",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  }
+}

@@ -4,9 +4,9 @@
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `docker-compose.staging.yml` | stack จริงตามภาคผนวก ค: postgres, migrate (one-shot), roles-bootstrap (one-shot), vault (raft), vault-init (one-shot, idempotent), api×2, worker, nginx, portal (T9 self-service — คุยกับ api ผ่าน service name `nginx` ใน network เดียวกัน ไม่ผ่าน localhost) |
+| `docker-compose.staging.yml` | stack จริงตามภาคผนวก ค: postgres, migrate (one-shot), roles-bootstrap (one-shot), vault (raft), vault-init (one-shot, idempotent), api×2, worker, nginx, portal (T9 self-service), hr-console (T9 รอบ 2 — HR อนุมัติ claim request/ดู reverify list) — ทั้ง portal และ hr-console คุยกับ api ผ่าน service name `nginx` ใน network เดียวกัน ไม่ผ่าน localhost |
 | `docker-compose.smoketest.yml` | overlay เพิ่ม Keycloak ชั่วคราว + ตัวรัน smoke test เท่านั้น (ไม่ใช่ topology ของ staging จริง — staging จริงชี้ไปที่ Keycloak `iam.lp-pao.go.th` ที่มีอยู่แล้ว) |
-| `keycloak/realm-export.json` | realm `lp-pao` ตามภาคผนวก ก: client scopes (§2.2), audience mapper, clients (`check-broker`, `mdm-worker`, `mdm-portal`, `eoffice`), realm roles |
+| `keycloak/realm-export.json` | realm `lp-pao` ตามภาคผนวก ก: client scopes (§2.2), audience mapper, clients (`check-broker`, `mdm-worker`, `mdm-portal`, `hr-console`, `eoffice`), realm roles |
 | `vault/` | config (raft), policies (per-service + staging-shared), `init.sh` (bootstrap idempotent) |
 | `postgres/bootstrap-roles.sql` | สร้าง LOGIN role `mdm_api_svc`/`mdm_worker_svc` ผูกกับ group role ที่ T1 สร้างไว้ |
 | `smoke-test.sh` | ขอ token จาก `check-broker` แล้วเรียก `POST /sync/thaid` จริง |
