@@ -142,6 +142,25 @@
       "optionalClientScopes": []
     },
     {
+      "clientId": "dpo-console",
+      "description": "DPO Console (T9 รอบ 3) - authorization code login ของเจ้าหน้าที่ role dpo/auditor ตรวจสอบ audit log. ต้องมี client scope \"roles\" (built-in) เพื่อให้ id_token มี realm_access.roles - ดู dpo-console/README.md",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "secret": "dpo-console-staging-secret-CHANGE-ME",
+      "redirectUris": ["https://dpo.lp-pao.go.th/*", "http://localhost:3300/*"],
+      "webOrigins": ["https://dpo.lp-pao.go.th"],
+      "attributes": {
+        "access.token.lifespan": "900"
+      },
+      "defaultClientScopes": ["roles", "mdm-api-audience", "audit:read", "events:read"],
+      "optionalClientScopes": []
+    },
+    {
       "clientId": "eoffice",
       "description": "ตัวอย่างระบบปลายทางระบบแรก (e-Office) ตามภาคผนวก ก ข้อ 3 - ห้ามใช้ client ร่วมกันหลายระบบ สร้างใหม่ต่อระบบปลายทางจริง",
       "protocol": "openid-connect",
