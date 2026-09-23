@@ -187,6 +187,33 @@ services:
       - nginx
     networks: [mdm-internal]
 
+  # T9 รอบ 2: HR Console - คุยกับ MDM API ผ่าน HTTP เท่านั้น (เหมือน portal ด้านบน) ยิงตรงไปที่ service
+  # "nginx" ในเครือข่ายภายใน ไม่ใช่ localhost/IP ข้าง VM
+  hr-console:
+    build:
+      context: ..
+      dockerfile: infra/hr-console/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${HR_CONSOLE_PORT}
+      NODE_ENV: production
+      MDM_API_BASE_URL: http://nginx
+      KEYCLOAK_AUTHORIZATION_URL: ${KEYCLOAK_AUTHORIZATION_URL}
+      KEYCLOAK_TOKEN_URL: ${KEYCLOAK_TOKEN_URL}
+      KEYCLOAK_JWKS_URI: ${JWT_JWKS_URI}
+      KEYCLOAK_ISSUER: ${JWT_ISSUER}
+      KEYCLOAK_LOGOUT_URL: ${KEYCLOAK_LOGOUT_URL}
+      HR_CONSOLE_CLIENT_ID: ${HR_CONSOLE_CLIENT_ID}
+      HR_CONSOLE_CLIENT_SECRET: ${HR_CONSOLE_CLIENT_SECRET}
+      HR_CONSOLE_CALLBACK_URL: ${HR_CONSOLE_CALLBACK_URL}
+      HR_CONSOLE_SCOPES: ${HR_CONSOLE_SCOPES}
+      HR_CONSOLE_SESSION_SECRET: ${HR_CONSOLE_SESSION_SECRET}
+    ports:
+      - "${HR_CONSOLE_PORT}:${HR_CONSOLE_PORT}"
+    depends_on:
+      - nginx
+    networks: [mdm-internal]
+
 networks:
   mdm-internal:
     driver: bridge

@@ -123,6 +123,25 @@
       "optionalClientScopes": ["personnel:read:basic", "personnel:read:contact", "audit:read"]
     },
     {
+      "clientId": "hr-console",
+      "description": "HR Console (T9 รอบ 2) - authorization code login ของเจ้าหน้าที่ role hr_officer จัดการ claim request/reverify. ต้องมี client scope \"roles\" (built-in) เพื่อให้ id_token มี realm_access.roles ให้ตรวจ hr_officer ได้ - ดู hr-console/README.md",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "secret": "hr-console-staging-secret-CHANGE-ME",
+      "redirectUris": ["https://hr.lp-pao.go.th/*", "http://localhost:3200/*"],
+      "webOrigins": ["https://hr.lp-pao.go.th"],
+      "attributes": {
+        "access.token.lifespan": "900"
+      },
+      "defaultClientScopes": ["roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic"],
+      "optionalClientScopes": []
+    },
+    {
       "clientId": "eoffice",
       "description": "ตัวอย่างระบบปลายทางระบบแรก (e-Office) ตามภาคผนวก ก ข้อ 3 - ห้ามใช้ client ร่วมกันหลายระบบ สร้างใหม่ต่อระบบปลายทางจริง",
       "protocol": "openid-connect",
