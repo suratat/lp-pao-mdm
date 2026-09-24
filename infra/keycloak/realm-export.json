@@ -162,6 +162,7 @@
     },
     {
       "clientId": "eoffice",
+      "enabled": false,
       "description": "ตัวอย่างระบบปลายทางระบบแรก (e-Office) ตามภาคผนวก ก ข้อ 3 - ห้ามใช้ client ร่วมกันหลายระบบ สร้างใหม่ต่อระบบปลายทางจริง",
       "protocol": "openid-connect",
       "publicClient": false,
