@@ -59,7 +59,7 @@ services:
     environment:
       KEYCLOAK_BASE_URL: http://keycloak:8080
       MDM_API_BASE_URL: http://nginx:80
-      CHECK_BROKER_CLIENT_SECRET: check-broker-staging-secret-CHANGE-ME
+      CHECK_BROKER_CLIENT_SECRET: ${CHECK_BROKER_CLIENT_SECRET:?ตั้งค่าก่อนรัน smoke-test}
     networks: [mdm-internal]
     profiles: ["tools"] # ไม่ start อัตโนมัติตอน `up` - เรียกผ่าน `run --rm smoke-test` เท่านั้น
 

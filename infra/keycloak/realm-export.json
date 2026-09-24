@@ -78,7 +78,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "secret": "check-broker-staging-secret-CHANGE-ME",
+      "secret": "REPLACE_AT_DEPLOY",
       "attributes": {
         "access.token.lifespan": "300",
         "use.refresh.tokens": "false"
@@ -132,7 +132,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "secret": "hr-console-staging-secret-CHANGE-ME",
+      "secret": "REPLACE_AT_DEPLOY",
       "redirectUris": ["https://hr.lp-pao.go.th/*", "http://localhost:3200/*"],
       "webOrigins": ["https://hr.lp-pao.go.th"],
       "attributes": {
@@ -151,7 +151,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "secret": "dpo-console-staging-secret-CHANGE-ME",
+      "secret": "REPLACE_AT_DEPLOY",
       "redirectUris": ["https://dpo.lp-pao.go.th/*", "http://localhost:3300/*"],
       "webOrigins": ["https://dpo.lp-pao.go.th"],
       "attributes": {
@@ -170,7 +170,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "secret": "eoffice-staging-secret-CHANGE-ME",
+      "secret": "REPLACE_AT_DEPLOY",
       "attributes": {
         "access.token.lifespan": "300",
         "use.refresh.tokens": "false"
