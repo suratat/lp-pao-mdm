@@ -2,6 +2,8 @@ const { createRemoteJWKSet, jwtVerify } = require('jose');
 
 const ALLOWED_ALGORITHMS = ['RS256'];
 const HR_OFFICER_ROLE = 'hr_officer';
+// T10: สิทธิ์จัดการ master data หน่วยงาน/ตำแหน่ง - แยกจาก hr_officer โดยสิ้นเชิง (ผู้ใช้ต้องมีทั้งสอง role: hr_officer เพื่อ login)
+const MASTER_DATA_ADMIN_ROLE = 'hr_master_data_admin';
 
 function resolveJwks(jwks) {
   // production: jwks เป็น URL string ของ JWKS endpoint ของ Keycloak (createRemoteJWKSet cache ให้เอง)
@@ -24,9 +26,10 @@ function createIdTokenVerifier({ jwks, issuer, audience }) {
       sub: payload.sub,
       roles,
       isHrOfficer: roles.includes(HR_OFFICER_ROLE),
+      isMasterDataAdmin: roles.includes(MASTER_DATA_ADMIN_ROLE),
       displayName: payload.name || payload.preferred_username || payload.sub,
     };
   };
 }
 
-module.exports = { createIdTokenVerifier, HR_OFFICER_ROLE };
+module.exports = { createIdTokenVerifier, HR_OFFICER_ROLE, MASTER_DATA_ADMIN_ROLE };

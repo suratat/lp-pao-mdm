@@ -33,6 +33,7 @@ async function createSessionCookieValue(session, secret) {
     idToken: session.idToken ?? null,
     accessTokenExpiresAt: session.accessTokenExpiresAt,
     displayName: session.displayName ?? null,
+    isMasterDataAdmin: session.isMasterDataAdmin === true,
   })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
     .setIssuedAt()
@@ -51,6 +52,7 @@ async function readSessionFromCookieValue(value, secret) {
       idToken: payload.idToken ?? null,
       accessTokenExpiresAt: payload.accessTokenExpiresAt,
       displayName: payload.displayName ?? null,
+      isMasterDataAdmin: payload.isMasterDataAdmin === true,
     };
   } catch {
     return null;

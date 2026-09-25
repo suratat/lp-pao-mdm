@@ -73,6 +73,7 @@ function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionSecret, is
           idToken,
           accessTokenExpiresAt: Date.now() + expiresIn * 1000,
           displayName: identity.displayName,
+          isMasterDataAdmin: identity.isMasterDataAdmin,
         },
         sessionSecret
       );

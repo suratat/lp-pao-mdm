@@ -954,6 +954,64 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/OrgUnit' }
+    post:
+      tags: [Reference]
+      summary: เพิ่มหน่วยงาน (HR master data admin)
+      description: |
+        สร้างหน่วยงานใหม่ (T10) ต้องมี scope `personnel:manage:reference` **และ** realm role `hr_master_data_admin`
+        - `code` ต้องไม่ซ้ำ (409 `org-unit-code-conflict`) และแก้ไม่ได้ภายหลัง
+        - `parentId` (ถ้าระบุ) ต้องมีอยู่จริงและ active (422 `org-unit-parent-invalid`)
+        - บันทึก `audit.reference_change_log` ใน transaction เดียวกัน
+      operationId: createOrgUnit
+      security:
+        - keycloak: [personnel:manage:reference]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrgUnitCreate' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /org-units/{orgUnitId}:
+    put:
+      tags: [Reference]
+      summary: แก้หน่วยงาน / ปิดใช้งาน (soft-delete) (HR master data admin)
+      description: |
+        แทนที่ฟิลด์ที่แก้ได้ทั้งชุด (`parentId`/`nameEn` ที่ไม่ส่งมาถือเป็น null) `code` แก้ไม่ได้ (ส่งมาแล้วได้ 400)
+        **ไม่มี DELETE** - ปิดใช้งานด้วย `isActive=false` เท่านั้น เพราะ position/employment อ้างอิงอยู่
+        - ปิดใช้งานไม่ได้ถ้ายังมีหน่วยงานลูกที่ active, ตำแหน่งที่ active หรือผู้ดำรงตำแหน่งปัจจุบัน (409 `org-unit-in-use`)
+        - เปิดใช้งานกลับได้เมื่อ parent active (422 `org-unit-parent-invalid`)
+        - `parentId` ต้องไม่ทำให้เกิด cycle (422 `org-unit-parent-cycle`) ไม่ตรวจลำดับ `unitLevel` ของ parent
+      operationId: updateOrgUnit
+      security:
+        - keycloak: [personnel:manage:reference]
+      parameters:
+        - $ref: '#/components/parameters/OrgUnitId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrgUnitUpdate' }
+      responses:
+        '200':
+          description: แก้แล้ว (หรือไม่มีอะไรเปลี่ยน)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrgUnit' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /positions:
     get:
@@ -966,6 +1024,12 @@ paths:
         - name: orgUnitId
           in: query
           schema: { type: string, format: uuid }
+        - name: activeOnly
+          in: query
+          description: >-
+            true = เฉพาะตำแหน่งที่ active (T10: เพิ่มเพื่อให้ HR Console เลือกดูได้) ค่าเริ่มต้น false คงพฤติกรรมเดิม
+            (คืนทั้ง active และ inactive) ต่างจาก /org-units ที่ค่าเริ่มต้นเป็น true
+          schema: { type: boolean, default: false }
       responses:
         '200':
           description: รายการตำแหน่ง
@@ -974,6 +1038,86 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Position' }
+    post:
+      tags: [Reference]
+      summary: เพิ่มตำแหน่ง (HR master data admin)
+      description: |
+        สร้างตำแหน่งใหม่ (T10) ต้องมี scope `personnel:manage:reference` **และ** realm role `hr_master_data_admin`
+        - `positionNo` ต้องไม่ซ้ำ ตรวจด้วย UNIQUE index ของฐานข้อมูล (สอง request พร้อมกันได้ 201 กับ 409 ไม่ใช่ 500)
+          → 409 `position-no-conflict`
+        - `orgUnitId` ต้องมีอยู่จริงและ active, `positionType` ต้องมีใน `GET /position-types` และ active → 422
+        - บันทึก `audit.reference_change_log` ใน transaction เดียวกัน
+      operationId: createPosition
+      security:
+        - keycloak: [personnel:manage:reference]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PositionCreate' }
+      responses:
+        '201':
+          description: สร้างแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Position' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /positions/{positionId}:
+    put:
+      tags: [Reference]
+      summary: แก้ตำแหน่ง / ปิดใช้งาน (soft-delete) (HR master data admin)
+      description: |
+        แทนที่ฟิลด์ที่แก้ได้ทั้งชุด (`lineOfWork` ที่ไม่ส่งมาถือเป็น null) `positionNo` แก้ได้ (ต้องไม่ซ้ำ → 409)
+        **ไม่มี DELETE** - ปิดใช้งานด้วย `isActive=false` เท่านั้น
+        - ปิดใช้งานไม่ได้ถ้ามีผู้ดำรงตำแหน่งปัจจุบัน (409 `position-occupied`)
+        - ย้ายสังกัด (`orgUnitId` เปลี่ยน) ไม่ได้ถ้ามีผู้ดำรงตำแหน่งปัจจุบัน (409 `position-occupied`)
+        - `orgUnitId` ใหม่ต้อง active และเปิดใช้งานตำแหน่งกลับได้เมื่อสังกัด active (422 `org-unit-invalid`)
+      operationId: updatePosition
+      security:
+        - keycloak: [personnel:manage:reference]
+      parameters:
+        - $ref: '#/components/parameters/PositionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PositionUpdate' }
+      responses:
+        '200':
+          description: แก้แล้ว (หรือไม่มีอะไรเปลี่ยน)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Position' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /position-types:
+    get:
+      tags: [Reference]
+      summary: หมวดตำแหน่ง (แหล่งข้อมูล dropdown ของฟอร์มตำแหน่ง)
+      description: T10 - เพิ่มเพื่อให้ HR Console เลือก `positionType` จาก dropdown ได้ ไม่ต้อง hardcode
+      operationId: listPositionTypes
+      security:
+        - keycloak: [personnel:read:basic]
+      parameters:
+        - name: activeOnly
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: รายการหมวดตำแหน่ง
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PositionType' }
 
   # ------------------------------------------------------------------ Audit
   /audit/access-logs:
@@ -1107,6 +1251,9 @@ components:
             personnel:write:employment: HR บันทึกตำแหน่ง/สังกัด/วันบรรจุ, ระงับ/คืนสถานะ, ขอ re-verify
             personnel:provision: HR เตรียม record ล่วงหน้าและจัดการ claim request
             personnel:import: นำเข้าข้อมูลชุดจากระบบ HR เดิม
+            personnel:manage:reference: >-
+              เพิ่ม/แก้ master data หน่วยงานและตำแหน่ง (T10) - ต้องมี realm role `hr_master_data_admin` ควบคู่เสมอ
+              (API ตรวจทั้ง scope และ role เพราะ hr-console ผูก scope นี้ให้ทุกผู้ใช้ของ client)
             sync:thaid: check.lp-pao.go.th เท่านั้น (client `check-broker`)
             events:read: อ่านฟีดเหตุการณ์
             webhook:manage: จัดการ webhook subscription ของ client ตนเอง
@@ -1117,6 +1264,16 @@ components:
           scopes: *scopes
 
   parameters:
+    OrgUnitId:
+      name: orgUnitId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PositionId:
+      name: positionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     PersonId:
       name: personId
       in: path
@@ -1169,6 +1326,11 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     Conflict:
       description: ข้อมูลขัดแย้ง (เช่น version ไม่ตรง, ตำแหน่งมีผู้ครองอยู่)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: ข้อมูลถูกรูปแบบแต่ขัดกับ business rule (เช่น หน่วยงานที่อ้างถึงไม่มี/ไม่ active)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -1388,6 +1550,69 @@ components:
             POLITICAL = ฝ่ายการเมือง
         orgUnitId: { type: string, format: uuid }
         isActive: { type: boolean }
+
+    PositionType:
+      type: object
+      required: [code, nameTh, isActive]
+      properties:
+        code: { type: string, examples: [ACADEMIC] }
+        nameTh: { type: string }
+        isActive: { type: boolean }
+
+    OrgUnitCreate:
+      type: object
+      additionalProperties: false
+      required: [code, nameTh, unitLevel]
+      properties:
+        code: { type: string, pattern: '^[A-Za-z0-9_-]{1,50}$', description: รหัสหน่วยงาน ไม่ซ้ำ และแก้ไม่ได้หลังสร้าง }
+        parentId: { type: [string, 'null'], format: uuid }
+        nameTh: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        nameEn: { type: [string, 'null'], maxLength: 255 }
+        unitLevel: { type: string, enum: [DIVISION, SECTION, UNIT] }
+
+    OrgUnitUpdate:
+      type: object
+      additionalProperties: false
+      required: [nameTh, unitLevel, isActive]
+      properties:
+        parentId: { type: [string, 'null'], format: uuid }
+        nameTh: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        nameEn: { type: [string, 'null'], maxLength: 255 }
+        unitLevel: { type: string, enum: [DIVISION, SECTION, UNIT] }
+        isActive: { type: boolean }
+
+    PositionCreate:
+      type: object
+      additionalProperties: false
+      required: [positionNo, titleTh, positionType, orgUnitId]
+      properties:
+        positionNo: { $ref: '#/components/schemas/PositionNo' }
+        titleTh: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        lineOfWork: { type: [string, 'null'], maxLength: 100 }
+        positionType: { type: string, description: code จาก GET /position-types }
+        orgUnitId: { type: string, format: uuid }
+
+    PositionUpdate:
+      type: object
+      additionalProperties: false
+      required: [positionNo, titleTh, positionType, orgUnitId, isActive]
+      properties:
+        positionNo: { $ref: '#/components/schemas/PositionNo' }
+        titleTh: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        lineOfWork: { type: [string, 'null'], maxLength: 100 }
+        positionType: { type: string }
+        orgUnitId: { type: string, format: uuid }
+        isActive: { type: boolean }
+
+    PositionNo:
+      type: string
+      maxLength: 50
+      # 4 รูปแบบตามข้อมูลจริง (migrate/data/position-seed-data.csv 1,025 แถว - ตรวจครบทุกแถวใน api/test):
+      #   NN-N-NN-NNNN-NNN | NN-N-NN-NNNN-NNN (ถ) (ถ่ายโอน รพ.สต.) | EX-NNN (เลขจำลองคณะผู้บริหาร) | ตัวเลข 1-2 หลัก
+      # หมายเหตุ: ช่องว่างหน้า (ถ) ยอมรับ 1-2 ตัว เพราะมีแถวจริงที่ seed ไว้แล้ว 1 แถวที่มี 2 ช่องว่าง (ไม่งั้น PUT แถวนั้นจะไม่ผ่าน)
+      # ต้องตรงกับ POSITION_NO_PATTERN ใน hr-console/src/routes/masterDataRoutes.js
+      pattern: '^(\d{2}-\d-\d{2}-\d{4}-\d{3}( {1,2}\(ถ\))?|EX-\d{3}|\d{1,2})$'
+      examples: ['52-1-07-3106-003']
 
     Employment:
       type: object

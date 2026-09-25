@@ -64,9 +64,26 @@ string) เป็นพฤติกรรมที่ตั้งใจตาม
 surface ที่ pid จะไปโผล่ในที่ที่ไม่ตั้งใจ) `ClaimRequest` schema เองไม่มีฟิลด์ pid/pid_hash ให้แสดงในหน้า
 รายการเลย (แสดงได้แค่ `displayName` จาก ThaID) — จงใจตามสัญญา API เดิม ไม่ใช่ intentional gap ของงานนี้
 
-Reference lookups (org-unit/position picker) ยังไม่ทำเหมือน Portal เดิม — ช่อง `orgUnitId`/`positionId`
-เป็น UUID พิมพ์เองเพราะ scope ของ client `hr-console` ไม่มี `personnel:read:basic` สำหรับดึงรายการ
-org-unit/position มาทำ dropdown (การเพิ่ม scope เพื่อ dropdown เพิ่มเติมไม่ได้อยู่ใน MVP รอบนี้)
+Reference lookups (org-unit/position picker) ในฟอร์ม approve ยังไม่ทำเหมือน Portal เดิม — ช่อง `orgUnitId`/`positionId`
+เป็น UUID พิมพ์เอง (client `hr-console` มี `personnel:read:basic` แล้ว และหน้า master data ของ T10 ใช้ dropdown จริง
+แต่ฟอร์ม approve ยังไม่ได้ปรับ)
+
+## T10: จัดการ master data หน่วยงาน/ตำแหน่ง (`/hr/master-data`)
+
+หน้าเพิ่ม/แก้ `mdm.org_unit` และ `mdm.position` ผ่าน `POST/PUT /org-units`, `/positions` ของ MDM API
+- **สิทธิ์:** เฉพาะผู้มี realm role **`hr_master_data_admin`** (PS ที่ได้รับมอบหมาย + เจ้าของระบบ) แยกจาก `hr_officer` โดยสิ้นเชิง
+  แต่ยังต้องมี `hr_officer` ด้วยเพื่อ login เข้า console ได้ (ผู้ใช้ต้องมีทั้งสอง role) `hr_officer` ทั่วไปได้ 403 ทุก path/method ของ
+  `/hr/master-data*` และไม่เห็นลิงก์เมนู ที่ console นี้เป็นเพียงชั้นแรก — MDM API ตรวจ scope `personnel:manage:reference`
+  **และ** role จาก access token ซ้ำเสมอ (ไม่พึ่ง console) ดู `infra/keycloak/README.md`
+- **หน้า:** รายการหน่วยงาน (กรอง ใช้งาน/ปิดใช้งาน/ทั้งหมด), รายการตำแหน่ง (กรองหน่วยงาน, ค้นหาเลขที่/ชื่อ, แบ่งหน้า 50 รายการ),
+  ฟอร์มเพิ่ม/แก้ทั้งสองแบบ
+- **ไม่มีการลบ:** "ปิดใช้งาน" = `isActive=false` (มี confirm ก่อนส่ง) MDM API ปฏิเสธถ้ายังมีของที่ผูกอยู่ (หน่วยงานลูก/ตำแหน่ง/ผู้ดำรงตำแหน่ง)
+  และแสดงเหตุผลในฟอร์ม
+- **Validation ฝั่ง client:** `pattern`/`required`/`maxlength` + สคริปต์ inline (`setCustomValidity`, ตัดช่องว่างหัวท้าย) หน่วยงาน/หมวดตำแหน่ง/ต้นสังกัด
+  เป็น `<select>` เท่านั้น (ค่าที่ส่งคือ id ไม่ใช่ข้อความที่พิมพ์เอง) และ server ของ console ตรวจซ้ำก่อนเรียก API (`src/masterData.js`)
+  รูปแบบ `position_no` ต้องตรงกับ `components.schemas.PositionNo` ใน OpenAPI (4 รูปแบบตามข้อมูลจริง)
+- **ยังไม่ได้ทดสอบในเบราว์เซอร์จริง:** เทสตรวจ HTML ที่ render (attribute `pattern` คอมไพล์ได้ทั้งโหมด u/v, สคริปต์ไม่มี syntax error) แต่ไม่ได้รัน
+  สคริปต์ใน DOM จริง (ไม่มี jsdom/เบราว์เซอร์ในรายการ dependency) — ควรเปิดดูด้วยตาบน staging ก่อนใช้งานจริง
 
 ## ยังไม่ครอบคลุมในรอบนี้ (ตั้งใจ ไม่ใช่ลืม)
 

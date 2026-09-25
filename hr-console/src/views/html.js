@@ -10,7 +10,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function layout(title, bodyHtml, { displayName } = {}) {
+function layout(title, bodyHtml, { displayName, isMasterDataAdmin } = {}) {
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -31,6 +31,10 @@ function layout(title, bodyHtml, { displayName } = {}) {
     .badge-stale, .badge-pending_hr { background: #fff3cd; }
     .badge-expired { background: #f8d7da; }
     form.inline { display: inline; }
+    input.invalid:invalid, select.invalid:invalid { border-color: #b00020; }
+    .muted { color: #888; }
+    .tabs a { margin-right: 1rem; }
+    .row { display: flex; gap: 1rem; } .row > * { flex: 1; }
     .actions form, .actions a { margin-right: 0.5rem; }
   </style>
 </head>
@@ -38,6 +42,7 @@ function layout(title, bodyHtml, { displayName } = {}) {
   <nav>
     <a href="/hr/claim-requests">คำขอเชื่อมตัวตน (Claim Requests)</a>
     <a href="/hr/reverify">รายชื่อต้อง Reverify</a>
+    ${isMasterDataAdmin ? '<a href="/hr/master-data">จัดการหน่วยงาน/ตำแหน่ง</a>' : ''}
     <a href="/auth/logout">ออกจากระบบ</a>
     ${displayName ? `<span class="who">${escapeHtml(displayName)}</span>` : ''}
   </nav>

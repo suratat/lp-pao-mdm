@@ -40,7 +40,7 @@ describe.each(operations)('$method $pathTemplate ($name)', (op) => {
 
     if (!op.noAuth) {
       const personId = typeof op.personId === 'function' ? op.personId(ids) : op.personId;
-      const token = await ctx.auth.signToken({ scope: op.scope, personId });
+      const token = await ctx.auth.signToken({ scope: op.scope, personId, roles: op.roles });
       req = req.set('Authorization', `Bearer ${token}`);
     }
 

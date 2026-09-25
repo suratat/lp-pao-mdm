@@ -13,6 +13,7 @@
     "realm": [
       { "name": "staff", "description": "บุคลากรทั่วไป (self-service)" },
       { "name": "hr_officer", "description": "เจ้าหน้าที่ฝ่ายบุคคล - personnel:provision, personnel:write:employment, personnel:import" },
+      { "name": "hr_master_data_admin", "description": "จัดการ master data หน่วยงาน/ตำแหน่ง (T10, personnel:manage:reference) - เฉพาะ PS ที่ได้รับมอบหมาย + เจ้าของระบบ ไม่ใช่ composite ของ hr_officer ต้องมีควบคู่กัน" },
       { "name": "dpo", "description": "เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล - audit:read" },
       { "name": "auditor", "description": "ผู้ตรวจสอบ - audit:read" },
       { "name": "mdm_admin", "description": "break-glass account ตามภาคผนวก ก ข้อ 7" }
@@ -20,6 +21,27 @@
   },
 
   "clientScopes": [
+    {
+      "name": "roles",
+      "description": "realm roles ของผู้ใช้ใน claim realm_access.roles (id/access token) - ประกาศเองเพราะ --import-realm ไม่สร้าง built-in scope ให้เมื่อไฟล์นี้มี clientScopes (ตรวจแล้ว: ไม่ประกาศ = hr-console/dpo-console ไม่มี realm_access.roles)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
     {
       "name": "mdm-api-audience",
       "description": "ใส่ aud=mdm-api ให้ทุก client ที่เรียก MDM API (ภาคผนวก ก ข้อ 2)",
@@ -50,6 +72,7 @@
     { "name": "personnel:provision", "description": "งาน HR: pre-provision, claim-request, deactivate/reactivate - เฉพาะ hr_officer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "personnel:write:employment", "description": "แก้ไขข้อมูลการปฏิบัติงาน - เฉพาะ hr_officer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "personnel:import", "description": "HR batch import - เฉพาะ hr_officer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:manage:reference", "description": "เพิ่ม/แก้ master data หน่วยงานและตำแหน่ง (POST/PUT /org-units, /positions) - ผูกกับ client hr-console แต่ MDM API ตรวจ realm role hr_master_data_admin เพิ่มเสมอ (scope นี้อยู่ใน token ของ hr_officer ทุกคน ไม่ใช่ตัวกั้นสิทธิ์)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "sync:thaid", "description": "POST /sync/thaid - client check-broker เท่านั้น", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "events:read", "description": "GET /events feed", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "webhook:manage", "description": "จัดการ webhook subscription/delivery ของตนเอง", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
@@ -138,7 +161,7 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic"],
+      "defaultClientScopes": ["roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference"],
       "optionalClientScopes": []
     },
     {

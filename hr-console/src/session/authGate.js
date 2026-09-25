@@ -9,7 +9,7 @@ const {
 
 const REFRESH_BUFFER_MS = 15_000;
 
-// ตรวจ session cookie ของ HR Console แล้วเติม req.hrAuth = { accessToken, displayName } ให้ route ถัดไปใช้
+// ตรวจ session cookie ของ HR Console แล้วเติม req.hrAuth = { accessToken, displayName, isMasterDataAdmin } ให้ route ถัดไปใช้
 // ถ้า access token ใกล้หมดอายุ (ภายใน REFRESH_BUFFER_MS) จะ refresh ด้วย refresh_token ให้อัตโนมัติ
 // (silent refresh) - ถ้า refresh ไม่สำเร็จ หรือไม่มี session เลย ให้ redirect ไปหน้า login
 function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionSecret, isProduction }) {
@@ -20,7 +20,7 @@ function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionSecret, isPr
       return res.redirect(302, '/auth/login');
     }
 
-    let { accessToken, refreshToken, idToken, accessTokenExpiresAt, displayName } = session;
+    let { accessToken, refreshToken, idToken, accessTokenExpiresAt, displayName, isMasterDataAdmin } = session;
 
     if (Date.now() > accessTokenExpiresAt - REFRESH_BUFFER_MS) {
       if (!refreshToken) {
@@ -45,6 +45,8 @@ function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionSecret, isPr
           }
           idToken = result.tokens.id_token;
           displayName = identity.displayName;
+          // ถูกถอด/เพิ่ม hr_master_data_admin ระหว่าง session ก็มีผลตอน refresh (MDM API ตรวจ role จาก access token ซ้ำอยู่แล้ว)
+          isMasterDataAdmin = identity.isMasterDataAdmin;
         } catch {
           clearSessionCookie(res, { secure: req.protocol === 'https' });
           return res.redirect(302, '/auth/login');
@@ -56,13 +58,13 @@ function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionSecret, isPr
       accessTokenExpiresAt = Date.now() + result.tokens.expires_in * 1000;
 
       const cookieToken = await createSessionCookieValue(
-        { accessToken, refreshToken, idToken, accessTokenExpiresAt, displayName },
+        { accessToken, refreshToken, idToken, accessTokenExpiresAt, displayName, isMasterDataAdmin },
         sessionSecret
       );
       setSessionCookie(res, cookieToken, { secure: req.protocol === 'https' || isProduction });
     }
 
-    req.hrAuth = { accessToken, displayName };
+    req.hrAuth = { accessToken, displayName, isMasterDataAdmin: isMasterDataAdmin === true };
     next();
   };
 }
