@@ -25,6 +25,7 @@ function createApp({ mdmClient, sessionSecret, isProduction = false, checkAuthCl
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     const status = err.status && Number.isInteger(err.status) ? err.status : 500;
+    console.error('portal_error', { path: req.path, status, message: err.message, stack: err.stack });
     res.status(status).send(layout('เกิดข้อผิดพลาด', `<p class="error">เกิดข้อผิดพลาด (${status})</p>`));
   });
 
