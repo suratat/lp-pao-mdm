@@ -21,7 +21,7 @@ async function main() {
     clientId: requireEnv('HR_CONSOLE_CLIENT_ID'),
     clientSecret: requireEnv('HR_CONSOLE_CLIENT_SECRET'),
     redirectUri: requireEnv('HR_CONSOLE_CALLBACK_URL'),
-    scope: process.env.HR_CONSOLE_SCOPES || 'openid personnel:provision personnel:write:employment personnel:import personnel:read:basic',
+    scope: process.env.HR_CONSOLE_SCOPES || 'openid personnel:provision personnel:write:employment personnel:import personnel:read:basic personnel:manage:reference',
   });
 
   const verifyIdToken = createIdTokenVerifier({

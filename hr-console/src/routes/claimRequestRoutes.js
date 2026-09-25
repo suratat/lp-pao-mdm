@@ -66,7 +66,7 @@ function createClaimRequestRoutes({ mdmClient }) {
            </p>
            ${renderClaimRequestsTable(result.data)}
            ${nextLink}`,
-          { displayName: req.hrAuth.displayName }
+          { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
         )
       );
     } catch (err) {
@@ -105,7 +105,7 @@ function createClaimRequestRoutes({ mdmClient }) {
            <button type="submit" style="margin-top:1rem">อนุมัติและสร้างบุคลากร</button>
          </form>
          <p><a href="/hr/claim-requests">ย้อนกลับ</a></p>`,
-        { displayName: req.hrAuth.displayName }
+        { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
       )
     );
   });
@@ -139,7 +139,7 @@ function createClaimRequestRoutes({ mdmClient }) {
             layout(
               'อนุมัติคำขอเชื่อมตัวตน',
               `${renderApiError(err)}<p><a href="/hr/claim-requests/${encodeURIComponent(claimRequestId)}/approve">กรอกใหม่</a></p>`,
-              { displayName: req.hrAuth.displayName }
+              { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
             )
           );
       }
@@ -153,7 +153,7 @@ function createClaimRequestRoutes({ mdmClient }) {
       res.redirect(302, '/hr/claim-requests?resolved=rejected');
     } catch (err) {
       if (err instanceof MdmApiError) {
-        return res.status(err.status).send(layout('ปฏิเสธคำขอ', renderApiError(err), { displayName: req.hrAuth.displayName }));
+        return res.status(err.status).send(layout('ปฏิเสธคำขอ', renderApiError(err), { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }));
       }
       next(err);
     }

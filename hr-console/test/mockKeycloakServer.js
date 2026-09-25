@@ -32,6 +32,9 @@ function createMockKeycloakServer({ auth, hrConsoleClientId, hrConsoleClientSecr
       scope: def.scope,
       sub: def.username || 'hr-user',
       azp: hrConsoleClientId,
+      // Keycloak client scope "roles" ใส่ realm_access.roles ใน access token ด้วย (ยืนยันกับ Keycloak 26 จริงแล้ว) -
+      // MDM API ใช้ตรวจ hr_master_data_admin (T10)
+      realmRoles: def.roles,
       expiresIn: `${def.expiresIn ?? 300}s`,
     });
     return {

@@ -69,7 +69,7 @@ function createReverifyRoutes({ mdmClient }) {
            ${message}
            ${renderStaleTable(result.data)}
            ${nextLink}`,
-          { displayName: req.hrAuth.displayName }
+          { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
         )
       );
     } catch (err) {
@@ -87,7 +87,7 @@ function createReverifyRoutes({ mdmClient }) {
           layout(
             'รายชื่อต้อง Reverify',
             `<p class="error">ขอ reverify ไม่สำเร็จ (${escapeHtml(err.status)}): ${escapeHtml(err.problem?.detail || err.problem?.title || '')}</p><p><a href="/hr/reverify">ย้อนกลับ</a></p>`,
-            { displayName: req.hrAuth.displayName }
+            { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
           )
         );
       }

@@ -11,10 +11,26 @@ const HR_CONSOLE_CLIENT_SECRET = 'hr-console-test-secret';
 const REDIRECT_URI = 'http://hr-console.test/auth/callback';
 const SESSION_SECRET = 'hr-console-test-session-secret';
 const HR_SCOPE = 'openid personnel:provision personnel:write:employment personnel:import personnel:read:basic';
+// T10: ใน Keycloak จริง scope นี้เป็น default client scope ของ hr-console จึงอยู่ใน token ของ hr_officer ทุกคน
+const HR_SCOPE_WITH_MANAGE = `${HR_SCOPE} personnel:manage:reference`;
 
 function defaultScenarios() {
   return {
-    'good-code': { roles: ['hr_officer'], displayName: 'เจ้าหน้าที่ ก.', username: 'hr.staff', scope: HR_SCOPE },
+    'good-code': { roles: ['hr_officer'], displayName: 'เจ้าหน้าที่ ก.', username: 'hr.staff', scope: HR_SCOPE_WITH_MANAGE },
+    // T10: ผู้จัดการ master data = hr_officer + hr_master_data_admin
+    'master-data-admin-code': {
+      roles: ['hr_officer', 'hr_master_data_admin'],
+      displayName: 'เจ้าหน้าที่ PS (master data)',
+      username: 'hr.masterdata',
+      scope: HR_SCOPE_WITH_MANAGE,
+    },
+    // มี hr_master_data_admin แต่ไม่มี hr_officer -> login ไม่ได้ (ยังบังคับ hr_officer เป็นเงื่อนไขเข้า console)
+    'master-data-only-code': {
+      roles: ['hr_master_data_admin'],
+      displayName: 'มีแต่ master data',
+      username: 'hr.mdonly',
+      scope: HR_SCOPE_WITH_MANAGE,
+    },
     'no-role-code': { roles: ['staff'], displayName: 'พนักงานทั่วไป', username: 'staff.user', scope: 'personnel:self' },
     'no-id-token-code': { roles: ['hr_officer'], omitIdToken: true, scope: HR_SCOPE },
     'short-lived-code': { roles: ['hr_officer'], displayName: 'เจ้าหน้าที่หมดอายุเร็ว', username: 'hr.shortlived', scope: HR_SCOPE, expiresIn: 1 },

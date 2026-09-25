@@ -58,7 +58,53 @@ function createMdmClient({ baseUrl }) {
     return call('POST', `/api/v1/persons/${encodeURIComponent(personId)}/reverify`, accessToken);
   }
 
-  return { listClaimRequests, resolveClaimRequest, listStalePersons, requestReverify };
+  // T10: master data หน่วยงาน/ตำแหน่ง - อ่านใช้ personnel:read:basic, เขียนใช้ personnel:manage:reference + role
+  // hr_master_data_admin (MDM API ตรวจทั้งคู่จาก access token ของผู้ใช้เอง)
+  function listOrgUnits(accessToken, { activeOnly } = {}) {
+    return call('GET', `/api/v1/org-units?activeOnly=${activeOnly ? 'true' : 'false'}`, accessToken);
+  }
+
+  function listPositions(accessToken, { orgUnitId, activeOnly } = {}) {
+    const qs = new URLSearchParams();
+    if (orgUnitId) qs.set('orgUnitId', orgUnitId);
+    if (activeOnly) qs.set('activeOnly', 'true');
+    const query = qs.toString();
+    return call('GET', `/api/v1/positions${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  function listPositionTypes(accessToken) {
+    return call('GET', '/api/v1/position-types', accessToken);
+  }
+
+  function createOrgUnit(accessToken, body) {
+    return call('POST', '/api/v1/org-units', accessToken, body);
+  }
+
+  function updateOrgUnit(accessToken, orgUnitId, body) {
+    return call('PUT', `/api/v1/org-units/${encodeURIComponent(orgUnitId)}`, accessToken, body);
+  }
+
+  function createPosition(accessToken, body) {
+    return call('POST', '/api/v1/positions', accessToken, body);
+  }
+
+  function updatePosition(accessToken, positionId, body) {
+    return call('PUT', `/api/v1/positions/${encodeURIComponent(positionId)}`, accessToken, body);
+  }
+
+  return {
+    listClaimRequests,
+    resolveClaimRequest,
+    listStalePersons,
+    requestReverify,
+    listOrgUnits,
+    listPositions,
+    listPositionTypes,
+    createOrgUnit,
+    updateOrgUnit,
+    createPosition,
+    updatePosition,
+  };
 }
 
 module.exports = { createMdmClient, MdmApiError };
