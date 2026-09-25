@@ -462,6 +462,28 @@ describe('POST/PUT /positions', () => {
     expect((await api('put', `/positions/${pos.positionId}`).send(body({ titleTh: 'แก้ชื่อได้' }))).status).toBe(200);
   });
 
+  test('แก้ชื่อตำแหน่ง (title_th) ของตำแหน่งที่มีคนครองอยู่ -> GET /persons/{id} และ GET /persons/{id}/employment ของคนนั้นเห็นชื่อใหม่ทันที (อ่านสด ไม่มี cache)', async () => {
+    const org = await makeOrgUnit();
+    const pos = await makePosition(org.orgUnitId, { titleTh: 'ชื่อตำแหน่งเดิม T10' });
+    const personId = await occupy(pos.positionId, org.orgUnitId);
+    const readToken = await ctx.auth.signToken({ scope: 'personnel:read:basic personnel:read:employment' });
+    const readTitles = async () => {
+      const person = await api('get', `/persons/${personId}`, readToken);
+      const employment = await api('get', `/persons/${personId}/employment`, readToken);
+      expect([person.status, employment.status]).toEqual([200, 200]);
+      return { basic: person.body.basic?.positionTitle, current: employment.body.find((e) => e.position)?.position.titleTh };
+    };
+
+    expect(await readTitles()).toEqual({ basic: 'ชื่อตำแหน่งเดิม T10', current: 'ชื่อตำแหน่งเดิม T10' });
+
+    const put = await api('put', `/positions/${pos.positionId}`).send({
+      positionNo: pos.positionNo, titleTh: 'ชื่อตำแหน่งใหม่ T10', positionType: pos.positionType, orgUnitId: org.orgUnitId, isActive: true,
+    });
+    expect(put.status).toBe(200);
+
+    expect(await readTitles()).toEqual({ basic: 'ชื่อตำแหน่งใหม่ T10', current: 'ชื่อตำแหน่งใหม่ T10' });
+  });
+
   test('ปิดใช้งาน (soft-delete) ตำแหน่งว่างได้ แถวยังอยู่; เปิดกลับได้เมื่อสังกัด active, ไม่ได้ (422) เมื่อสังกัด inactive', async () => {
     const org = await makeOrgUnit();
     const pos = await makePosition(org.orgUnitId);
