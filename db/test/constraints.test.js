@@ -268,6 +268,49 @@ describe('audit append-only (trigger ปฏิเสธ UPDATE/DELETE)', () => {
     );
   });
 
+  test('audit.reference_change_log (T10) - trigger ปฏิเสธ UPDATE/DELETE และ CHECK ของ table_name/action', async () => {
+    const { rows } = await pool.query(
+      `INSERT INTO audit.reference_change_log (table_name, record_id, action, field_name, new_value, actor_sub)
+       VALUES ('position', gen_random_uuid(), 'CREATE', 'position_no', '"X-1"', 'test-actor') RETURNING log_id`
+    );
+    const id = rows[0].log_id;
+    await expect(
+      pool.query(`UPDATE audit.reference_change_log SET actor_sub = 'x' WHERE log_id = $1`, [id])
+    ).rejects.toThrow(/append-only/);
+    await expect(pool.query(`DELETE FROM audit.reference_change_log WHERE log_id = $1`, [id])).rejects.toThrow(
+      /append-only/
+    );
+    await expect(
+      pool.query(
+        `INSERT INTO audit.reference_change_log (table_name, record_id, action, field_name, actor_sub)
+         VALUES ('person', gen_random_uuid(), 'CREATE', 'x', 'a')`
+      )
+    ).rejects.toThrow(/check constraint/);
+    await expect(
+      pool.query(
+        `INSERT INTO audit.reference_change_log (table_name, record_id, action, field_name, actor_sub)
+         VALUES ('position', gen_random_uuid(), 'DELETE', 'x', 'a')`
+      )
+    ).rejects.toThrow(/check constraint/);
+  });
+
+  test('audit.reference_change_log: mdm_app INSERT ได้แต่ไม่มีสิทธิ์ UPDATE/DELETE (ชั้นที่ 2), mdm_audit อ่านได้', async () => {
+    const { rows } = await pool.query(
+      `SELECT has_table_privilege('mdm_app', 'audit.reference_change_log', 'INSERT') AS app_insert,
+              has_table_privilege('mdm_app', 'audit.reference_change_log', 'UPDATE') AS app_update,
+              has_table_privilege('mdm_app', 'audit.reference_change_log', 'DELETE') AS app_delete,
+              has_table_privilege('mdm_audit', 'audit.reference_change_log', 'SELECT') AS audit_select,
+              has_table_privilege('mdm_audit', 'audit.reference_change_log', 'INSERT') AS audit_insert`
+    );
+    expect(rows[0]).toEqual({
+      app_insert: true,
+      app_update: false,
+      app_delete: false,
+      audit_select: true,
+      audit_insert: false,
+    });
+  });
+
   test('audit.access_log (ผ่าน partition รายเดือน)', async () => {
     // ใช้ access_id (bigserial คีย์เดียวก็เพียงพอ) แทนคู่คีย์ (access_id, accessed_at) เพื่อเลี่ยงปัญหาความละเอียด
     // ของ timestamptz ที่หายไปเมื่อผ่าน JS Date แล้วส่งกลับเป็นพารามิเตอร์ WHERE (ไม่งั้นจะไม่ match แถวใดเลย)

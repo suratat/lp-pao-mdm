@@ -23,10 +23,11 @@ async function createTestAuthContext() {
     azp = 'test-client',
     personId,
     roles,
+    realmRoles,
     signingKey = privateKey,
     expiresIn = '5m',
   } = {}) {
-    let jwt = new SignJWT({ scope, azp, ...(personId ? { person_id: personId } : {}), ...(roles ? { roles } : {}) })
+    let jwt = new SignJWT({ scope, azp, ...(personId ? { person_id: personId } : {}), ...(roles ? { roles } : {}), ...(realmRoles ? { realm_access: { roles: realmRoles } } : {}) })
       .setProtectedHeader({ alg, kid: KEY_ID })
       .setIssuedAt()
       .setSubject(sub)

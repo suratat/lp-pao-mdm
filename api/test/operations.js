@@ -157,8 +157,14 @@ async function seedFixtures({ adminPool, vault }) {
 
   const provisionPositionId = await makePosition(adminPool, orgUnitId);
 
+  // T10: master data ที่ PUT ได้ (org_unit/position ของตัวเอง ไม่มีผู้ดำรงตำแหน่ง)
+  const refOrgUnitId = await insertFixtureOrgUnit(adminPool);
+  const refPositionId = await makePosition(adminPool, refOrgUnitId);
+
   return {
     orgUnitId,
+    refOrgUnitId,
+    refPositionId,
     readPersonId,
     readPid,
     deactivatePersonId,
@@ -461,6 +467,60 @@ function buildOperationDescriptors() {
       scope: 'webhook:manage',
       expectStatus: 202,
     },
+    // T10: ต้องมีทั้ง scope personnel:manage:reference และ role hr_master_data_admin
+    {
+      name: 'createOrgUnit',
+      method: 'post',
+      pathTemplate: '/org-units',
+      path: () => '/org-units',
+      scope: 'personnel:manage:reference',
+      roles: ['hr_master_data_admin'],
+      body: () => ({ code: `CT-${crypto.randomUUID().slice(0, 8)}`, nameTh: 'หน่วยงาน contract', unitLevel: 'SECTION' }),
+      expectStatus: 201,
+    },
+    {
+      name: 'updateOrgUnit',
+      method: 'put',
+      pathTemplate: '/org-units/:orgUnitId',
+      path: (ids) => `/org-units/${ids.refOrgUnitId}`,
+      scope: 'personnel:manage:reference',
+      roles: ['hr_master_data_admin'],
+      body: () => ({ nameTh: 'หน่วยงาน contract (แก้แล้ว)', unitLevel: 'DIVISION', isActive: true }),
+      expectStatus: 200,
+    },
+    {
+      name: 'createPosition',
+      method: 'post',
+      pathTemplate: '/positions',
+      path: () => '/positions',
+      scope: 'personnel:manage:reference',
+      roles: ['hr_master_data_admin'],
+      body: (ids) => ({
+        positionNo: `${10 + Math.floor(Math.random() * 90)}-1-07-${1000 + Math.floor(Math.random() * 9000)}-${100 + Math.floor(Math.random() * 900)}`,
+        titleTh: 'ตำแหน่ง contract',
+        positionType: 'GENERAL',
+        orgUnitId: ids.refOrgUnitId,
+      }),
+      expectStatus: 201,
+    },
+    {
+      name: 'updatePosition',
+      method: 'put',
+      pathTemplate: '/positions/:positionId',
+      path: (ids) => `/positions/${ids.refPositionId}`,
+      scope: 'personnel:manage:reference',
+      roles: ['hr_master_data_admin'],
+      body: (ids) => ({
+        positionNo: `EX-${100 + Math.floor(Math.random() * 900)}`,
+        titleTh: 'ตำแหน่ง contract (แก้แล้ว)',
+        lineOfWork: 'สายงานทดสอบ',
+        positionType: 'ACADEMIC',
+        orgUnitId: ids.refOrgUnitId,
+        isActive: true,
+      }),
+      expectStatus: 200,
+    },
+    { name: 'listPositionTypes', method: 'get', pathTemplate: '/position-types', path: () => '/position-types', scope: 'personnel:read:basic', expectStatus: 200 },
     { name: 'listOrgUnits', method: 'get', pathTemplate: '/org-units', path: () => '/org-units', scope: 'personnel:read:basic', expectStatus: 200 },
     { name: 'listPositions', method: 'get', pathTemplate: '/positions', path: () => '/positions', scope: 'personnel:read:basic', expectStatus: 200 },
     {

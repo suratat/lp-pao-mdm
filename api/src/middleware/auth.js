@@ -28,6 +28,14 @@ function createActingPersonVerifier({ secret, allowedAzp = [], issuer = 'mdm-por
   };
 }
 
+// roles มาได้สองทาง: claim แบบ flat `roles` (ตามเอกสาร §2.2) หรือ `realm_access.roles` ที่ Keycloak client scope
+// "roles" (built-in) ใส่ให้ใน access token ของ hr-console (T10: ต้องอ่านทางหลังเพื่อตรวจ hr_master_data_admin)
+function extractRoles(payload) {
+  const flat = Array.isArray(payload.roles) ? payload.roles : [];
+  const realm = Array.isArray(payload.realm_access?.roles) ? payload.realm_access.roles : [];
+  return [...new Set([...flat, ...realm])];
+}
+
 // claim ที่ MDM ใช้ตามเอกสาร §2.2 ภาคผนวก ก: sub, azp, scope, person_id (user context), roles
 function createAuthMiddleware({ jwks, issuer, audience, actingAssertion }) {
   const verifyAccessToken = createTokenVerifier({ jwks, issuer, audience });
@@ -62,7 +70,7 @@ function createAuthMiddleware({ jwks, issuer, audience, actingAssertion }) {
         azp: payload.azp,
         scope,
         personId,
-        roles: Array.isArray(payload.roles) ? payload.roles : [],
+        roles: extractRoles(payload),
       };
       next();
     } catch {
@@ -84,4 +92,18 @@ function requireScope(requiredScope) {
   };
 }
 
-module.exports = { createAuthMiddleware, requireScope };
+// ตรวจ realm role เพิ่มจาก scope (T10) - จำเป็นเมื่อ client (เช่น hr-console) ผูก scope ให้ทุกผู้ใช้ของ client
+// ทำให้ scope อย่างเดียวไม่พอแยกสิทธิ์ระดับบุคคล ต้องเรียกต่อจาก requireScope() เสมอ
+function requireRole(requiredRole) {
+  return function (req, res, next) {
+    const roles = req.auth?.roles || [];
+    if (!roles.includes(requiredRole)) {
+      return next(
+        new HttpProblem(403, 'insufficient-role', 'สิทธิ์ไม่เพียงพอ', `ต้องมี role "${requiredRole}"`)
+      );
+    }
+    next();
+  };
+}
+
+module.exports = { createAuthMiddleware, requireScope, requireRole };
