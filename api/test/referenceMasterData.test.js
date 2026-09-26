@@ -385,13 +385,14 @@ describe('POST/PUT /positions', () => {
       `9${crypto.randomInt(0, 10)}-1-07-${String(crypto.randomInt(0, 10000)).padStart(4, '0')}-${suffix()}`,
       `9${crypto.randomInt(0, 10)}-2-08-${String(crypto.randomInt(0, 10000)).padStart(4, '0')}-${suffix()} (ถ)`,
       `EX-${String(crypto.randomInt(900, 1000))}`,
+      String(crypto.randomInt(100, 10000)), // เลขลำดับล้วน 3-4 หลัก (ลูกจ้างประจำ) - เดิมรับแค่ 1-2 หลัก
     ];
     for (const positionNo of good) {
       // eslint-disable-next-line no-await-in-loop
       const res = await api('post', '/positions').send({ positionNo, titleTh: 'x', positionType: 'GENERAL', orgUnitId: org.orgUnitId });
       expect([201, 409]).toContain(res.status); // 409 = สุ่มชนของที่มีอยู่ ยังถือว่ารูปแบบผ่าน
     }
-    for (const positionNo of ['', ' 52-1-07-3106-003', '52-1-07-3106-003 ', '52-1-07-3106', 'ex-001', 'EX-1', '123', 'ABC', '52-1-07-3106-003 (ก)']) {
+    for (const positionNo of ['', ' 52-1-07-3106-003', '52-1-07-3106-003 ', '52-1-07-3106', 'ex-001', 'EX-1', '12345', '12a', 'ABC', '52-1-07-3106-003 (ก)']) {
       // eslint-disable-next-line no-await-in-loop
       const res = await api('post', '/positions').send({ positionNo, titleTh: 'x', positionType: 'GENERAL', orgUnitId: org.orgUnitId });
       expect([positionNo, res.status]).toEqual([positionNo, 400]);
