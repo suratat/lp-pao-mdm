@@ -97,3 +97,4 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 - PR #31 (fix/keycloak-basic-scope): MERGED (2026-09-26) — T10-fix: declare basic client scope (sub claim) explicitly
 - PR #30 (fix/hr-console-server-side-session): MERGED (2026-09-26) — T10-fix: hr-console/dpo-console server-side session (แก้ login วนลูปจาก cookie เกิน 4096 ไบต์)
 - PR #29 (reference-master-data-write): MERGED (2026-09-25) — T10: HR Console master data (org units / positions) + hr_master_data_admin
+- PR #35 (docs/multi-session-workflow): MERGED (2026-09-26) — docs: add multi-session workflow + fill in Status Log
