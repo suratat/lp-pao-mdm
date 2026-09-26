@@ -1890,7 +1890,7 @@ components:
         accessedAt: { type: string, format: date-time }
         subjectPersonId: { type: string, format: uuid }
         actorType: { type: string, enum: [USER, SERVICE] }
-        actorSub: { type: string }
+        actorSub: { type: [string, 'null'] }
         clientId: { type: string }
         endpoint: { type: string }
         fieldsReturned:
