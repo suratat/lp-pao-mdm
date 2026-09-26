@@ -70,3 +70,30 @@ lp-pao-mdm/
 - โค้ด comment/ข้อความ error ที่ผู้ใช้เห็นเป็นภาษาไทย, ชื่อตัวแปร/ฟังก์ชันภาษาอังกฤษ
 - ไม่ติดตั้ง dependency ใหม่นอกรายการในข้อ 2 โดยไม่บอกเหตุผล
 - ห้าม deploy ขึ้น production เอง งานที่แตะเครื่องจริงให้เตรียมคำสั่ง/ไฟล์ แล้วให้เจ้าของระบบรันผ่าน `deploy.sh` ใน staging ก่อนเสมอ
+
+## Multi-Session Workflow
+
+Rules to keep parallel Claude Code sessions / chats in sync via git as the single source of truth.
+
+### Before starting ANY task, run:
+```bash
+git fetch --all && git status && git log --oneline -10 --all --graph
+```
+
+### Rules
+1. One task = one branch = one active session. Never run two sessions on the same branch at the same time.
+2. Update the "Status Log" below the moment a task changes state (started / blocked / PR open / merged) — not just in chat.
+3. When resuming work in a new session, state which branch/PR/task you're continuing, don't assume the session remembers.
+4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
+
+### Status Log
+- PR #34 (fix/position-number-lock, T10-fix): OPEN, mergeable, no CI configured — BLOCKED on 5-step staging checklist (browser test approve form, Back-button/pageshow test, curl 422 test, DRY_RUN with real HR CSV, deploy.sh on staging) — none checked yet (2026-09-26)
+- PR #33 (docs/keycloak-basic-scope-note, T10 docs): OPEN, mergeable — documents basic client scope loss on --import-realm (2026-09-26)
+- T9 (Portal, HR Console, DPO Console): DONE, merged to main
+- T8 (stg_hr schema + HR migrate runner): DONE, merged to main
+- T7 (check.lp-pao.go.th sync-on-login): DONE, confirmed merged into check-app master on sso-server (commit e84c682) (2026-09-26)
+- T1-T6 (SQL migrations → API → worker → staging docker-compose/Keycloak): DONE, merged to main
+- PR #32 (fix/audit-log-actor-sub-nullable): MERGED (2026-09-26) — T10-fix: AccessLogEntry.actorSub allow null for SERVICE actors
+- PR #31 (fix/keycloak-basic-scope): MERGED (2026-09-26) — T10-fix: declare basic client scope (sub claim) explicitly
+- PR #30 (fix/hr-console-server-side-session): MERGED (2026-09-26) — T10-fix: hr-console/dpo-console server-side session (แก้ login วนลูปจาก cookie เกิน 4096 ไบต์)
+- PR #29 (reference-master-data-write): MERGED (2026-09-25) — T10: HR Console master data (org units / positions) + hr_master_data_admin
