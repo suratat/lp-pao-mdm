@@ -93,3 +93,7 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 - T8 (stg_hr schema + HR migrate runner): DONE, merged to main
 - T7 (check.lp-pao.go.th sync-on-login): DONE, confirmed merged into check-app master on sso-server (commit e84c682) (2026-09-26)
 - T1-T6 (SQL migrations → API → worker → staging docker-compose/Keycloak): DONE, merged to main
+- PR #32 (fix/audit-log-actor-sub-nullable): MERGED (2026-09-26) — T10-fix: AccessLogEntry.actorSub allow null for SERVICE actors
+- PR #31 (fix/keycloak-basic-scope): MERGED (2026-09-26) — T10-fix: declare basic client scope (sub claim) explicitly
+- PR #30 (fix/hr-console-server-side-session): MERGED (2026-09-26) — T10-fix: hr-console/dpo-console server-side session (แก้ login วนลูปจาก cookie เกิน 4096 ไบต์)
+- PR #29 (reference-master-data-write): MERGED (2026-09-25) — T10: HR Console master data (org units / positions) + hr_master_data_admin
