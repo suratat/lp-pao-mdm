@@ -87,4 +87,9 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- (newest entries on top; format: `- <task/branch>: <STATE> (<date>) — <one-line note>`)
+- PR #34 (fix/position-number-lock, T10-fix): OPEN, mergeable, no CI configured — BLOCKED on 5-step staging checklist (browser test approve form, Back-button/pageshow test, curl 422 test, DRY_RUN with real HR CSV, deploy.sh on staging) — none checked yet (2026-09-26)
+- PR #33 (docs/keycloak-basic-scope-note, T10 docs): OPEN, mergeable — documents basic client scope loss on --import-realm (2026-09-26)
+- T9 (Portal, HR Console, DPO Console): DONE, merged to main
+- T8 (stg_hr schema + HR migrate runner): DONE, merged to main
+- T7 (check.lp-pao.go.th sync-on-login): DONE, confirmed merged into check-app master on sso-server (commit e84c682) (2026-09-26)
+- T1-T6 (SQL migrations → API → worker → staging docker-compose/Keycloak): DONE, merged to main
