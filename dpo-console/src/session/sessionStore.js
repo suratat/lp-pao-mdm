@@ -13,13 +13,13 @@ const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 const SID_PATTERN = /^[A-Za-z0-9_-]{43}$/; // base64url ของ 32 ไบต์
 
 function createSessionStore({ ttlMs = SESSION_TTL_MS, maxSessions = MAX_SESSIONS, now = Date.now } = {}) {
-  const sessions = new Map(); // sid -> { data, expiresAt } (Map เรียงตามลำดับที่ใส่ ใช้ตัดตัวเก่าสุดเมื่อเต็ม)
+  const sessions = new Map(); // sid -> { data, expiresAt } (Map เรียงตามการใช้งานล่าสุด: หัว = ไม่ได้ใช้นานสุด -> ตัดก่อนเมื่อเต็ม)
   let timer = null;
 
   function create(data) {
     // ออก sid ใหม่ทุกครั้งที่ login เสมอ (กัน session fixation)
     const sid = crypto.randomBytes(32).toString('base64url');
-    while (sessions.size >= maxSessions) sessions.delete(sessions.keys().next().value);
+    while (sessions.size >= maxSessions) sessions.delete(sessions.keys().next().value); // ตัวที่ไม่ได้ใช้นานสุด (LRU)
     sessions.set(sid, { data: { ...data }, expiresAt: now() + ttlMs });
     return sid;
   }
@@ -32,6 +32,10 @@ function createSessionStore({ ttlMs = SESSION_TTL_MS, maxSessions = MAX_SESSIONS
       sessions.delete(sid);
       return null;
     }
+    // LRU: ย้ายไปท้าย Map ทุกครั้งที่ถูกใช้งาน เพื่อให้ตอนเต็มตัดตัวที่ "ไม่ได้ใช้นานสุด" ไม่ใช่ตัวที่ login ก่อน
+    // (คนที่ active อยู่ไม่ถูกตัดก่อนคนที่ login ทีหลังแต่เลิกใช้แล้ว) - อายุ absolute (expiresAt) ไม่ถูกต่อ
+    sessions.delete(sid);
+    sessions.set(sid, entry);
     return entry.data;
   }
 

@@ -27,7 +27,7 @@ code flow มาตรฐานกับ client Keycloak ของตัวเ�
    `hr_console_sid` เก็บแค่ session id สุ่ม 32 ไบต์ (Set-Cookie ~105 ไบต์ ไม่ขึ้นกับขนาด token) — เดิมเก็บ token ทั้งชุด
    ใน cookie JWE เดียว จนเกิน 4096 ไบต์เมื่อ token โตขึ้น (T10 เพิ่ม role/scope) เบราว์เซอร์ทิ้ง Set-Cookie เงียบๆ
    ทำให้ login วนลูป (`ERR_TOO_MANY_REDIRECTS`/`invalid_grant`) — `id_token` ตรวจแล้วทิ้ง ไม่เก็บ
-   - อายุ session absolute 12 ชม., มี sweep ทุก 5 นาที และเพดาน 5,000 session (เต็มแล้วตัดตัวเก่าสุด)
+   - อายุ session absolute 12 ชม., มี sweep ทุก 5 นาที และเพดาน 5,000 session (เต็มแล้วตัดตัวที่ **ไม่ได้ใช้นานสุด** แบบ LRU ไม่ใช่ตัวที่ login ก่อน)
    - login ออก sid ใหม่ทุกครั้ง (กัน session fixation) และล้าง cookie รุ่นเก่า `hr_console_session`; logout ลบ session ฝั่ง server ด้วย
    - **ข้อจำกัดที่ตั้งใจ:** รันได้แค่ **instance เดียว** และ **session หายเมื่อ restart/deploy** (ผู้ใช้ถูกส่งไป Keycloak แล้วกลับมาเอง
      ถ้า SSO session ยังอยู่) ถ้าจะรันหลาย instance ต้องเปลี่ยน store เป็น Redis (คง interface `create/get/update/delete`)

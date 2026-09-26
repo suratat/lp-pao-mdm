@@ -148,9 +148,17 @@ describe('3-4) logout, sid ปลอม/หมดอายุ/รูปแบบ
   });
 
   test('cookie รุ่นเก่า (dpo_console_session JWE) ที่ค้างในเบราว์เซอร์ถูกเมินและถูกล้างตอน login/logout', async () => {
-    const stale = `dpo_console_session=${'x'.repeat(4000)}`;
+    // cookie รุ่นเก่าจริง: JWE (dir/A256GCM) ที่พก token ทั้งชุด สร้างด้วยวิธีเดียวกับโค้ดเดิม + ยาวเกิน 4000 ไบต์
+    const legacyJwe = await new EncryptJWT({ accessToken: 'a'.repeat(1500), refreshToken: 'r'.repeat(900), idToken: 'i'.repeat(1300), accessTokenExpiresAt: Date.now() + 60_000, displayName: 'เก่า' })
+      .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
+      .setIssuedAt()
+      .setExpirationTime('12h')
+      .encrypt(crypto.createHash('sha256').update('old-secret').digest());
+    const stale = `dpo_console_session=${encodeURIComponent(legacyJwe)}`;
     const noSid = await request(harness.dpoConsoleApp).get('/dpo/access-logs').set('Cookie', stale);
     expect(noSid.status).toBe(302);
+    expect(noSid.headers.location).toBe('/auth/login'); // redirect ตรงๆ ไม่มีหน้า error
+    expect(noSid.text).not.toContain('เกิดข้อผิดพลาด');
 
     const { agent, callback } = await login(harness.dpoConsoleApp, 'good-dpo-code');
     expect(callback.headers['set-cookie'].some((c) => c.startsWith('dpo_console_session=;') && c.includes('Max-Age=0'))).toBe(true);
@@ -235,12 +243,24 @@ describe('5) sessionStore (unit, จำลองเวลา)', () => {
     expect(store.get(fresh)).toEqual({ k: 'fresh' });
   });
 
-  test('เต็ม (maxSessions) -> ตัดตัวเก่าสุดออก ไม่ให้ memory บวมไม่จำกัด', () => {
+  test('เต็ม (maxSessions) -> ตัดตัวที่ไม่ได้ใช้นานสุด (LRU) ไม่ใช่ตัวที่ login ก่อน', () => {
     const store = createSessionStore({ maxSessions: 3 });
-    const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((k) => store.create({ k }));
+    const [a, b, c] = ['a', 'b', 'c'].map((k) => store.create({ k }));
+    expect(store.get(a)).toEqual({ k: 'a' }); // a ถูกใช้งานล่าสุด (แม้ login ก่อนสุด) -> b กลายเป็นตัวที่ไม่ได้ใช้นานสุด
+    const d = store.create({ k: 'd' });
     expect(store.size()).toBe(3);
-    expect(store.get(a)).toBeNull();
-    expect([b, c, d].map((s) => store.get(s).k)).toEqual(['b', 'c', 'd']);
+    expect(store.get(b)).toBeNull();
+    expect([a, c, d].map((s) => store.get(s).k)).toEqual(['a', 'c', 'd']);
+  });
+
+  test('LRU ไม่ต่ออายุ absolute: session ที่ active ตลอดก็ยังหมดอายุตาม TTL', () => {
+    let t = 1_000_000;
+    const store = createSessionStore({ ttlMs: 1000, now: () => t });
+    const sid = store.create({ k: 1 });
+    t += 600;
+    expect(store.get(sid)).not.toBeNull();
+    t += 600; // รวม 1200 > 1000 แม้เพิ่งถูกใช้เมื่อ 600ms ก่อน
+    expect(store.get(sid)).toBeNull();
   });
 
   test('sweeper เริ่ม/หยุดได้ และไม่ค้าง process (unref)', () => {
