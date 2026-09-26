@@ -2,6 +2,7 @@ const { createApp } = require('./app');
 const { createKeycloakAuthClient } = require('./security/keycloakAuthClient');
 const { createIdTokenVerifier } = require('./security/idTokenVerifier');
 const { createMdmClient } = require('./mdmClient');
+const { createSessionStore } = require('./session/sessionStore');
 
 const PORT = process.env.PORT || 3200;
 
@@ -32,11 +33,16 @@ async function main() {
 
   const mdmClient = createMdmClient({ baseUrl: process.env.MDM_API_BASE_URL || 'https://mdm.lp-pao.go.th' });
 
+  // session อยู่ในหน่วยความจำของ process นี้ (instance เดียว, หายเมื่อ restart) - ดู session/sessionStore.js
+  // HR_CONSOLE_SESSION_SECRET ไม่ใช้แล้ว (เดิมใช้เข้ารหัส cookie JWE) ปล่อยไว้ใน env ได้ ไม่มีผล
+  const sessionStore = createSessionStore();
+  sessionStore.startSweeper();
+
   const app = createApp({
     keycloakAuthClient,
     verifyIdToken,
     mdmClient,
-    sessionSecret: requireEnv('HR_CONSOLE_SESSION_SECRET'),
+    sessionStore,
     isProduction,
   });
 
