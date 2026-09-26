@@ -43,6 +43,27 @@
       ]
     },
     {
+      "name": "basic",
+      "description": "OIDC sub claim (user id) - ประกาศเองด้วยเหตุผลเดียวกับ roles ข้างบน (--import-realm ไม่สร้าง built-in scope ให้เมื่อไฟล์นี้มี clientScopes เอง ไม่ประกาศ = access token ไม่มี sub เลย)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "id",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "name": "mdm-api-audience",
       "description": "ใส่ aud=mdm-api ให้ทุก client ที่เรียก MDM API (ภาคผนวก ก ข้อ 2)",
       "protocol": "openid-connect",
@@ -161,7 +182,7 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference"],
+      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference"],
       "optionalClientScopes": []
     },
     {
@@ -180,7 +201,7 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["roles", "mdm-api-audience", "audit:read", "events:read"],
+      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "audit:read", "events:read"],
       "optionalClientScopes": []
     },
     {
