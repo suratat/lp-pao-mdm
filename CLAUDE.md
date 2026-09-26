@@ -70,3 +70,21 @@ lp-pao-mdm/
 - โค้ด comment/ข้อความ error ที่ผู้ใช้เห็นเป็นภาษาไทย, ชื่อตัวแปร/ฟังก์ชันภาษาอังกฤษ
 - ไม่ติดตั้ง dependency ใหม่นอกรายการในข้อ 2 โดยไม่บอกเหตุผล
 - ห้าม deploy ขึ้น production เอง งานที่แตะเครื่องจริงให้เตรียมคำสั่ง/ไฟล์ แล้วให้เจ้าของระบบรันผ่าน `deploy.sh` ใน staging ก่อนเสมอ
+
+## Multi-Session Workflow
+
+Rules to keep parallel Claude Code sessions / chats in sync via git as the single source of truth.
+
+### Before starting ANY task, run:
+```bash
+git fetch --all && git status && git log --oneline -10 --all --graph
+```
+
+### Rules
+1. One task = one branch = one active session. Never run two sessions on the same branch at the same time.
+2. Update the "Status Log" below the moment a task changes state (started / blocked / PR open / merged) — not just in chat.
+3. When resuming work in a new session, state which branch/PR/task you're continuing, don't assume the session remembers.
+4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
+
+### Status Log
+- (newest entries on top; format: `- <task/branch>: <STATE> (<date>) — <one-line note>`)
