@@ -13,6 +13,32 @@
 4. **client `hr-console` (T9 รอบ 2) และ `dpo-console` (T9 รอบ 3) อ้าง client scope `"roles"` — ต้องประกาศเองใน `clientScopes` ของไฟล์นี้ (แก้แล้วใน T10)** — assumption เดิม (ว่า `--import-realm` จะสร้าง built-in scope `roles` ให้เอง) **พิสูจน์แล้วว่าผิด** (T10, 2026-09-25, Keycloak 26.0 จริง): เมื่อไฟล์มี `clientScopes` เอง Keycloak ไม่สร้าง built-in scope ใดให้ log ขึ้น `Referenced client scope 'roles' doesn't exist. Ignoring` และทั้ง id_token/access_token ของ hr-console **ไม่มี `realm_access.roles`** เลย (ยืนยันด้วย `generate-example-*-token` ของ Admin API) ทำให้ role gate `hr_officer`/`dpo`/`auditor` ของ console และการตรวจ `hr_master_data_admin` ของ MDM API ใช้ไม่ได้บน realm ที่ import จากไฟล์นี้ — ตอนนี้ไฟล์ประกาศ client scope `roles` พร้อม mapper `oidc-usermodel-realm-role-mapper` (claim `realm_access.roles`, id+access token) เองแล้ว และตรวจซ้ำกับ Keycloak จริงว่า token มี `realm_access.roles` ครบ (ถ้า realm production สร้างมือมาก่อน ตรวจว่ามี scope/mapper เทียบเท่านี้ด้วย)
 5. **`KC_HOSTNAME` (Keycloak v26 hostname v2 API) ต้องเป็น URL เต็ม (scheme+host) และห้ามตั้ง `KC_HOSTNAME_PORT` คู่กัน** — พบตอนตั้งค่า production จริงบน VM WireGuard (192.168.0.5) หลัง Cloudflare Tunnel ชี้ `iam.lp-pao.go.th` มาแล้ว (2026-09-19): เดิม `KC_HOSTNAME` ตั้งเป็น URL เต็ม (`https://iam.lp-pao.go.th`) พร้อมกับยังมี `KC_HOSTNAME_PORT` ค้างอยู่ (ตัวแปรเก่าของ hostname v1) ทำให้ Admin Console ค้างที่ "Loading the Administration Console" — reproduce ได้จริงด้วย Keycloak 26.0.8 container: ตั้งทั้งสองตัวพร้อมกันจะเจอ log `ERROR [org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers] Hostname v1 options [hostname-port] are still in use, please review your configuration` ตอน startup ทุกครั้ง (ในการทดสอบนี้ Keycloak ยังคง boot ต่อได้และ `/realms/lp-pao/.well-known/openid-configuration`/`/admin/master/console/config` ยังรายงาน URL ถูกต้อง แต่ ERROR นี้ยืนยันว่า config ไม่ถูกต้องตาม hostname v2 อย่างเป็นทางการ - ไม่ได้ทดสอบซ้ำอาการหน้าเว็บค้างจริงในเบราว์เซอร์ผ่าน Cloudflare Tunnel จริง เพราะอยู่นอกขอบเขตที่ทำได้จาก sandbox นี้) แก้โดยลบ `KC_HOSTNAME_PORT` ออกจาก environment ทั้งหมด แล้วตั้ง `KC_HOSTNAME` เป็น URL เต็มอย่างเดียว (ตัวแปรใหม่ `KEYCLOAK_PUBLIC_URL` ใน `.env.staging.example`) - ทดสอบซ้ำหลังแก้แล้วไม่มี ERROR นี้อีก และ issuer/token_endpoint/jwks_uri ยังคงถูกต้อง
 
+## Client Scope `basic` หายหลัง `--import-realm` (พบใน T10)
+
+**อาการ:** access token ของ `hr-console` / `dpo-console` **ไม่มี claim `sub`** ทำให้ MDM API อ่าน `req.auth.sub` ไม่ได้ (`undefined`) และ `actor_sub` ที่ควรระบุว่า "ใครทำ" ว่างเปล่า:
+- `audit.access_log.actor_sub` (column nullable) ถูกเขียนเป็น `NULL` — middleware เขียน `req.auth.sub || null` จึงไม่มี error ให้เห็น แต่ log ระบุตัวผู้ใช้ไม่ได้
+- `audit.reference_change_log.actor_sub` (POST/PUT `/org-units`, `/positions`) เป็น `NOT NULL` — ถ้า `sub` หายจะเขียนไม่ได้ (การเพิ่ม/แก้ master data ล้มเหลว) ไม่ใช่เก็บ `NULL` *(ข้อนี้อนุมานจากโค้ด/schema ไม่ได้จำลองซ้ำ — ดูหมายเหตุใน PR)*
+
+claims ใน access token ที่วัดจริงกับ Keycloak 26.0 ก่อนแก้ (ตอนตรวจ `roles` ใน T10) คือ `exp, iat, jti, iss, aud, typ, azp, sid, realm_access, scope` — **ไม่มี `sub`**
+
+**สาเหตุ:** เหมือนกับ scope `roles` ด้านบน — เมื่อ `realm-export.json` ประกาศ `clientScopes` เอง Keycloak `--import-realm` **จะไม่สร้าง built-in client scope ให้เลย** (หลัง import มีเฉพาะ scope ที่ไฟล์ประกาศ + `offline_access`) ใน Keycloak 26 claim `sub` มาจาก built-in scope `basic` (mapper `sub`) เมื่อ scope นี้ไม่มี token จึงไม่มี `sub` ส่วนชื่อ built-in อื่นที่ client อ้างแต่ไม่ได้ประกาศ (เช่น `profile`, `email`, `web-origins`, `acr`) จะถูกข้ามเงียบๆ พร้อม WARN ใน log: `Referenced client scope '<ชื่อ>' doesn't exist. Ignoring`
+
+**วิธีแก้ (PR #31):** ประกาศ client scope `basic` เองใน `clientScopes` พร้อม protocol mapper `sub`
+- `protocolMapper`: `oidc-usermodel-property-mapper`, `user.attribute: id`, `claim.name: sub`, `jsonType.label: String`, `id.token.claim` / `access.token.claim` / `userinfo.token.claim` = `true`
+- ผูก `basic` เป็น `defaultClientScopes` ของ `hr-console` และ `dpo-console` เท่านั้น (ผู้ใช้จริงที่ login ผ่าน authorization code) — ตรวจ client แบบ service account กับ Keycloak 26.0 หลัง import แล้ว: token client-credentials ของ `check-broker` และ `mdm-worker` **มี `sub` อยู่แล้วโดยไม่ต้องมี `basic`** (Keycloak ใส่ให้เองสำหรับ service account) จึงไม่ได้ผูก `basic` ให้ ส่วน `mdm-portal` ไม่ได้ตรวจ (ขอ token ตอนตรวจไม่สำเร็จ: `Invalid client credentials`)
+- ตรวจแล้วว่า import ได้และ mapper อยู่ครบ (ดูวิธีเช็กด้านล่าง)
+
+**วิธีเช็กในอนาคต** (หลัง import realm ใหม่ทุกครั้ง หรือเมื่อมีการเพิ่ม/แก้ `clientScopes`):
+1. ดูว่า scope ที่ต้องมีอยู่จริง — `kcadm.sh` ต้อง login ก่อน:
+   ```bash
+   kcadm.sh config credentials --server http://localhost:8080 --realm master --user <admin> --password <password>
+   kcadm.sh get client-scopes -r lp-pao --fields name          # ต้องเห็น "basic" และ "roles"
+   ```
+   (ใน container: `docker exec <keycloak-container> /opt/keycloak/bin/kcadm.sh …`) รายการต้องตรงกับ `clientScopes` ใน `realm-export.json` + `offline_access` (ตอนตรวจใน T10 ได้ 21 รายการ)
+2. ดู mapper ของ `basic`: หา `id` จาก `kcadm.sh get client-scopes -r lp-pao --fields id,name` แล้ว `kcadm.sh get client-scopes/<id>/protocol-mappers/models -r lp-pao --fields name,protocolMapper` ต้องเห็น `sub` / `oidc-usermodel-property-mapper`
+3. ดู log ตอน import ว่าไม่มี WARN `Referenced client scope '…' doesn't exist` (มี = client อ้าง scope ที่ไม่ได้ประกาศ)
+4. ยืนยันที่ token จริง: Admin API `GET /admin/realms/lp-pao/clients/{client uuid}/evaluate-scopes/generate-example-access-token?userId=<uuid>&scope=openid` ต้องเห็น `sub` (และ `realm_access.roles`)
+
 ## T10: role `hr_master_data_admin` + scope `personnel:manage:reference` (จัดการ master data หน่วยงาน/ตำแหน่ง)
 
 - **role `hr_master_data_admin`** — เฉพาะเจ้าหน้าที่กองการเจ้าหน้าที่ (PS) ที่ได้รับมอบหมาย + เจ้าของระบบ **ไม่เป็น composite ของ `hr_officer`** (และไม่ให้ `hr_officer` ได้อัตโนมัติ) ผู้ใช้ต้องมี **ทั้งสอง role**: `hr_officer` เพื่อ login เข้า hr-console, `hr_master_data_admin` เพื่อเห็นและใช้หน้า "จัดการหน่วยงาน/ตำแหน่ง"
