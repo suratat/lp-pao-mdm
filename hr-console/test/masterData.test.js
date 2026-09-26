@@ -220,8 +220,8 @@ describe('ตำแหน่ง (positions)', () => {
     // ดึง pattern ที่ฝังใน HTML จริงมาทดสอบ (สิ่งที่เบราว์เซอร์ใช้)
     const attr = res.text.match(/<input name="positionNo"[\s\S]*?pattern="([^"]*)"/)[1].replace(/&amp;/g, '&');
     const re = new RegExp(attr);
-    for (const ok of ['52-1-07-3106-003', '52-1-07-3106-003 (ถ)', 'EX-001', '7', '12']) expect([ok, re.test(ok)]).toEqual([ok, true]);
-    for (const bad of ['', '52-1-07-3106', 'ex-001', '123', 'ABC', ' 52-1-07-3106-003', '52-1-07-3106-003(ถ)']) expect([bad, re.test(bad)]).toEqual([bad, false]);
+    for (const ok of ['52-1-07-3106-003', '52-1-07-3106-003 (ถ)', 'EX-001', '7', '12', '123', '999', '1000', '9999']) expect([ok, re.test(ok)]).toEqual([ok, true]);
+    for (const bad of ['', '52-1-07-3106', 'ex-001', '12345', 'ABC', ' 52-1-07-3106-003', '52-1-07-3106-003(ถ)', '12a', '-5']) expect([bad, re.test(bad)]).toEqual([bad, false]);
   });
 
   test('pattern ในฟอร์มคอมไพล์ได้ทั้งโหมด u และ v (pattern attribute ของเบราว์เซอร์ใหม่ใช้ v) และสคริปต์ inline ไม่มี syntax error', async () => {
@@ -238,6 +238,25 @@ describe('ตำแหน่ง (positions)', () => {
       const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
       expect(() => new Function(script)).not.toThrow(); // eslint-disable-line no-new-func
     }
+  });
+
+  test('เลขที่ตำแหน่งแบบเลขลำดับล้วน 3-4 หลัก (ลูกจ้างประจำ) สร้าง/แก้ผ่านคอนโซลได้ ส่วน 5 หลักขึ้นไปถูกปฏิเสธ', async () => {
+    const agent = await loginAdmin();
+    const { orgUnitId } = await createOrgViaConsole(agent);
+    let created = null;
+    for (let i = 0; i < 10 && !created; i += 1) {
+      const positionNo = String(crypto.randomInt(100, 10000)); // 3-4 หลัก (สุ่มชนของที่มีอยู่ได้ -> ลองใหม่)
+      // eslint-disable-next-line no-await-in-loop
+      const res = await agent.post('/hr/master-data/positions').type('form').send({ positionNo, titleTh: 'ลูกจ้างประจำทดสอบ', positionType: 'GENERAL', orgUnitId });
+      if (res.status === 302) created = positionNo;
+    }
+    expect(created).toMatch(/^\d{3,4}$/);
+    const { rows } = await adminPool.query('SELECT position_id FROM mdm.position WHERE position_no = $1', [created]);
+    expect(rows).toHaveLength(1);
+
+    const tooLong = await agent.post('/hr/master-data/positions').type('form').send({ positionNo: '12345', titleTh: 'x', positionType: 'GENERAL', orgUnitId });
+    expect(tooLong.status).toBe(422);
+    expect(tooLong.text).toContain('รูปแบบเลขที่ตำแหน่งไม่ถูกต้อง');
   });
 
   test('สร้างตำแหน่งได้จริง; เลขที่ซ้ำ -> 409 ข้อความ "เลขที่ตำแหน่งซ้ำ" พร้อมค่าที่กรอก (ไม่ใช่ 500)', async () => {

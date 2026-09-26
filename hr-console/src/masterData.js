@@ -2,10 +2,10 @@
 // ในหน้าฟอร์ม) และฝั่ง server ของ HR Console (ตรวจซ้ำก่อนเรียก MDM API) - MDM API ยังเป็นผู้ตัดสินสุดท้ายเสมอ
 
 // ต้องตรงกับ components.schemas.PositionNo ใน docs/design/personnel-mdm-openapi.yaml
-// 4 รูปแบบตามข้อมูลจริง: NN-N-NN-NNNN-NNN | NN-N-NN-NNNN-NNN (ถ) | EX-NNN | ตัวเลข 1-2 หลัก
-const POSITION_NO_PATTERN = '^(\\d{2}-\\d-\\d{2}-\\d{4}-\\d{3}( {1,2}\\(ถ\\))?|EX-\\d{3}|\\d{1,2})$';
+// 4 รูปแบบตามข้อมูลจริง: NN-N-NN-NNNN-NNN | NN-N-NN-NNNN-NNN (ถ) | EX-NNN | เลขลำดับล้วน 1-4 หลัก (ลูกจ้างประจำ)
+const POSITION_NO_PATTERN = '^(\\d{2}-\\d-\\d{2}-\\d{4}-\\d{3}( {1,2}\\(ถ\\))?|EX-\\d{3}|\\d{1,4})$';
 const POSITION_NO_MESSAGE =
-  'รูปแบบเลขที่ตำแหน่งไม่ถูกต้อง (เช่น 52-1-07-3106-003, 52-1-07-3106-003 (ถ), EX-001 หรือตัวเลข 1-2 หลัก)';
+  'รูปแบบเลขที่ตำแหน่งไม่ถูกต้อง (เช่น 52-1-07-3106-003, 52-1-07-3106-003 (ถ), EX-001 หรือเลขลำดับ 1-4 หลัก)';
 
 // ต้องตรงกับ components.schemas.OrgUnitCreate.code (ใน HTML ใช้ \- เพื่อให้ใช้ได้ทั้งโหมด u และ v ของ pattern attribute)
 const ORG_UNIT_CODE_PATTERN = '^[A-Za-z0-9_\\-]{1,50}$';

@@ -151,6 +151,7 @@ paths:
               schema: { $ref: '#/components/schemas/Person' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
         '409':
           description: มี record ของ pid นี้อยู่แล้ว
           content:
@@ -337,6 +338,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /persons/{personId}/deactivate:
     parameters:
@@ -401,6 +403,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Person' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /persons/{personId}/reverify:
     parameters:
@@ -728,6 +731,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ClaimRequest' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /reverify/stale:
     get:
@@ -1365,6 +1369,15 @@ components:
 
     PersonnelType:
       type: string
+      description: |
+        กฎเลขที่ตำแหน่ง (`positionId`) ตามประเภทบุคลากร - MDM API บังคับทุกเส้นทางที่เขียน employment
+        (POST /persons, PUT /persons/{id}/employment, POST /persons/{id}/reactivate, POST /claim-requests/{id}/resolve
+        action=PROVISION, POST /sync/hr/employment-batch) ผิดกฎ → `422`:
+        - **ต้องมี** (`position-required`): `CIVIL_SERVANT`, `TEACHER`, `PERMANENT_EMPLOYEE`, `TRANSFERRED_HEALTH`
+        - **ห้ามมี** (`position-not-allowed`): `CONTRACT_EMPLOYEE`, `GENERAL_EMPLOYEE`, `EXPERT_EMPLOYEE`,
+          `OUTSOURCE_INDIVIDUAL`, `POLITICAL_APPOINTEE`
+        - **ไม่บังคับ**: `OTHER` (และประเภทใหม่ที่ยังไม่ได้กำหนดกฎ)
+        batch import รายงานเป็น error รายแถว `code = POSITION_REQUIRED | POSITION_NOT_ALLOWED`
       enum:
         - CIVIL_SERVANT            # ข้าราชการองค์การบริหารส่วนจังหวัด
         - TEACHER                  # ข้าราชการครูและบุคลากรทางการศึกษา
@@ -1608,10 +1621,12 @@ components:
       type: string
       maxLength: 50
       # 4 รูปแบบตามข้อมูลจริง (migrate/data/position-seed-data.csv 1,025 แถว - ตรวจครบทุกแถวใน api/test):
-      #   NN-N-NN-NNNN-NNN | NN-N-NN-NNNN-NNN (ถ) (ถ่ายโอน รพ.สต.) | EX-NNN (เลขจำลองคณะผู้บริหาร) | ตัวเลข 1-2 หลัก
+      #   NN-N-NN-NNNN-NNN | NN-N-NN-NNNN-NNN (ถ) (ถ่ายโอน รพ.สต.) | EX-NNN (เลขจำลองคณะผู้บริหาร) | เลขลำดับล้วน 1-4 หลัก
+      # เลขลำดับล้วน (ลูกจ้างประจำ): เดิมรับ 1-2 หลักตามที่ seed มีอยู่ (เลข 2 และ 50) แก้เป็น 1-4 หลัก (ถึง 9999)
+      # ตามที่เจ้าของระบบสั่ง (ต้องรองรับอย่างน้อย 999 ไม่ hardcode ตามจำนวน seed ปัจจุบัน)
       # หมายเหตุ: ช่องว่างหน้า (ถ) ยอมรับ 1-2 ตัว เพราะมีแถวจริงที่ seed ไว้แล้ว 1 แถวที่มี 2 ช่องว่าง (ไม่งั้น PUT แถวนั้นจะไม่ผ่าน)
       # ต้องตรงกับ POSITION_NO_PATTERN ใน hr-console/src/routes/masterDataRoutes.js
-      pattern: '^(\d{2}-\d-\d{2}-\d{4}-\d{3}( {1,2}\(ถ\))?|EX-\d{3}|\d{1,2})$'
+      pattern: '^(\d{2}-\d-\d{2}-\d{4}-\d{3}( {1,2}\(ถ\))?|EX-\d{3}|\d{1,4})$'
       examples: ['52-1-07-3106-003']
 
     Employment:

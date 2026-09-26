@@ -71,9 +71,21 @@ string) เป็นพฤติกรรมที่ตั้งใจตาม
 surface ที่ pid จะไปโผล่ในที่ที่ไม่ตั้งใจ) `ClaimRequest` schema เองไม่มีฟิลด์ pid/pid_hash ให้แสดงในหน้า
 รายการเลย (แสดงได้แค่ `displayName` จาก ThaID) — จงใจตามสัญญา API เดิม ไม่ใช่ intentional gap ของงานนี้
 
-Reference lookups (org-unit/position picker) ในฟอร์ม approve ยังไม่ทำเหมือน Portal เดิม — ช่อง `orgUnitId`/`positionId`
-เป็น UUID พิมพ์เอง (client `hr-console` มี `personnel:read:basic` แล้ว และหน้า master data ของ T10 ใช้ dropdown จริง
-แต่ฟอร์ม approve ยังไม่ได้ปรับ)
+Reference lookups ในฟอร์ม approve: ช่องเลขที่ตำแหน่งกรอกเป็นเลขที่ตำแหน่งแล้ว (console แปลงเป็น UUID ให้) แต่ช่อง `orgUnitId`
+ยังเป็น UUID พิมพ์เอง (หน้า master data ของ T10 ใช้ dropdown จริง แต่ฟอร์ม approve ยังไม่ได้ปรับส่วนนี้)
+
+## ฟอร์ม approve claim: เลขที่ตำแหน่งตามประเภทบุคลากร
+
+ช่อง "เลขที่ตำแหน่ง" (`positionNo` — กรอกเป็นเลขที่ตำแหน่ง ไม่ใช่ UUID; console แปลงเป็น `positionId` ให้จากตำแหน่งที่ยังใช้งานอยู่) lock ตามประเภทบุคลากร
+(ค่าที่เจ้าของระบบยืนยัน, `src/personnelTypes.js` ↔ `api/src/services/personnelPositionRules.js` มี test เทียบสองฝั่ง):
+- **ห้ามมี** — พนักงานจ้าง 3 ประเภท (`CONTRACT/GENERAL/EXPERT_EMPLOYEE`), `OUTSOURCE_INDIVIDUAL`, `POLITICAL_APPOINTEE`: ช่องถูกล้างค่า + disable + ไม่ required
+- **ต้องมี** — `CIVIL_SERVANT`, `TEACHER`, `PERMANENT_EMPLOYEE`, `TRANSFERRED_HEALTH`: ช่อง enable + required
+- **ไม่บังคับ** — `OTHER`
+- สคริปต์ lock ทำงานตอนโหลดหน้า, ตอนเปลี่ยน dropdown, และตอน `pageshow` (กด Back แล้วเบราว์เซอร์คืนค่าเดิมโดยไม่ยิง `change`)
+- ฝั่ง client เป็น UX เท่านั้น: server ของ console ตรวจซ้ำ (422 ก่อนเรียก API) และ **MDM API บังคับทุกเส้นทางที่เขียน employment** (422
+  `position-required` / `position-not-allowed`, batch import = error รายแถว) — client แก้ผ่าน devtools ไม่ได้ผล
+- เลขที่ตำแหน่งแบบเลขลำดับล้วน (ลูกจ้างประจำ) รับ 1–4 หลัก (เดิม 1–2 หลักตาม seed) — ทั้งฟอร์มนี้และฟอร์ม master data ตำแหน่ง
+- ทดสอบสคริปต์ lock ในเบราว์เซอร์จริง (Google Chrome headless รัน script ตัวจริงของหน้า) แล้ว: 13 สถานการณ์ตามเกณฑ์ผ่านทั้งหมด
 
 ## T10: จัดการ master data หน่วยงาน/ตำแหน่ง (`/hr/master-data`)
 

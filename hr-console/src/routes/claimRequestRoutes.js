@@ -1,7 +1,8 @@
 const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
-const { PERSONNEL_TYPES } = require('../personnelTypes');
+const { PERSONNEL_TYPES, positionRuleFor } = require('../personnelTypes');
+const { POSITION_NO_PATTERN, POSITION_NO_MESSAGE } = require('../masterData');
 
 function fmt(value) {
   return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
@@ -43,8 +44,69 @@ function personnelTypeOptions() {
   return PERSONNEL_TYPES.map((t) => `<option value="${escapeHtml(t.value)}">${escapeHtml(t.label)}</option>`).join('\n');
 }
 
+function positionRules() {
+  return Object.fromEntries(PERSONNEL_TYPES.map((t) => [t.value, t.positionRule]));
+}
+
+// lock ช่องเลขที่ตำแหน่งตามประเภทบุคลากร (ฝั่ง client เพื่อ UX เท่านั้น - server ของ console และ MDM API ตรวจซ้ำเสมอ):
+//   FORBIDDEN -> ล้างค่า + disable + ไม่ required | REQUIRED -> enable + required | OPTIONAL -> enable ไม่ required
+// apply() รันตอนโหลดหน้า (select มีค่าเริ่มต้นอยู่แล้ว) + ทุกครั้งที่เปลี่ยนประเภท + ตอน pageshow (เบราว์เซอร์คืนค่าฟอร์มเดิมเมื่อกด
+// Back/bfcache โดยไม่ยิง change event - ถ้าไม่ apply ซ้ำ ช่องอาจค้างสถานะไม่ตรงกับประเภทที่เลือก)
+const POSITION_LOCK_SCRIPT = `<script>
+(function () {
+  var select = document.getElementById('personnelType');
+  var input = document.getElementById('positionNo');
+  var hint = document.getElementById('positionNoHint');
+  var rules = JSON.parse(select.getAttribute('data-position-rules'));
+  var re = new RegExp(input.getAttribute('data-pattern'));
+  var patternMessage = input.getAttribute('data-pattern-message');
+  var HINTS = { REQUIRED: '(จำเป็นต้องระบุ)', FORBIDDEN: '(ประเภทนี้ไม่มีเลขที่ตำแหน่ง - ช่องถูกปิด)', OPTIONAL: '(ไม่บังคับ)' };
+
+  function checkPattern() {
+    var v = input.value.trim();
+    input.setCustomValidity(v === '' || re.test(v) ? '' : patternMessage);
+  }
+  function apply() {
+    var rule = rules[select.value] || 'OPTIONAL';
+    if (rule === 'FORBIDDEN') {
+      input.value = '';
+      input.disabled = true;
+      input.required = false;
+      input.setCustomValidity('');
+    } else {
+      input.disabled = false;
+      input.required = rule === 'REQUIRED';
+      checkPattern();
+    }
+    hint.textContent = HINTS[rule];
+  }
+
+  select.addEventListener('change', apply);
+  input.addEventListener('input', checkPattern);
+  input.addEventListener('blur', function () { input.value = input.value.trim(); checkPattern(); });
+  window.addEventListener('pageshow', apply);
+  apply();
+})();
+</script>`;
+
+function renderFormErrors(errors) {
+  return `<ul class="error">${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+}
+
 function createClaimRequestRoutes({ mdmClient }) {
   const router = express.Router();
+
+  function sendFormErrors(res, req, claimRequestId, errors) {
+    return res
+      .status(422)
+      .send(
+        layout(
+          'อนุมัติคำขอเชื่อมตัวตน',
+          `${renderFormErrors(errors)}<p><a href="/hr/claim-requests/${encodeURIComponent(claimRequestId)}/approve">กรอกใหม่</a></p>`,
+          { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
+        )
+      );
+  }
 
   router.get('/hr/claim-requests', async (req, res, next) => {
     try {
@@ -85,11 +147,13 @@ function createClaimRequestRoutes({ mdmClient }) {
            <label>เลขบัตรประชาชน (employeeNo) <span class="hint">ต้องตรงกับที่บุคคลนี้ใช้ล็อกอิน ThaID - ห้ามเผยแพร่/บันทึกไว้นอกระบบนี้</span></label>
            <input name="employeeNo" required pattern="[0-9]{13}" maxlength="13" autocomplete="off" />
            <label>ประเภทบุคลากร</label>
-           <select name="personnelType" required>${personnelTypeOptions()}</select>
+           <select name="personnelType" id="personnelType" required data-position-rules="${escapeHtml(JSON.stringify(positionRules()))}">${personnelTypeOptions()}</select>
            <label>รหัสหน่วยงาน (orgUnitId, UUID) <span class="hint">ดูได้จากระบบ HR เดิมหรือฐานข้อมูล mdm.org_unit</span></label>
            <input name="orgUnitId" required pattern="[0-9a-fA-F-]{36}" />
-           <label>เลขที่ตำแหน่ง (positionId, UUID) <span class="hint">เว้นว่างได้สำหรับพนักงานจ้าง/จ้างเหมาที่ไม่มีเลขที่ตำแหน่ง</span></label>
-           <input name="positionId" pattern="[0-9a-fA-F-]{36}" />
+           <label>เลขที่ตำแหน่ง <span class="hint" id="positionNoHint"></span></label>
+           <input name="positionNo" id="positionNo" maxlength="50" autocomplete="off" placeholder="เช่น 52-1-07-3106-003 หรือเลขลำดับของลูกจ้างประจำ"
+                  pattern="${escapeHtml(POSITION_NO_PATTERN)}" data-pattern="${escapeHtml(POSITION_NO_PATTERN)}"
+                  data-pattern-message="${escapeHtml(POSITION_NO_MESSAGE)}" title="${escapeHtml(POSITION_NO_MESSAGE)}" />
            <label>วันเริ่มมีผล (effectiveFrom)</label>
            <input name="effectiveFrom" type="date" required />
            <label>วันบรรจุ (appointedDate)</label>
@@ -104,6 +168,7 @@ function createClaimRequestRoutes({ mdmClient }) {
            <textarea name="note" maxlength="500"></textarea>
            <button type="submit" style="margin-top:1rem">อนุมัติและสร้างบุคลากร</button>
          </form>
+         ${POSITION_LOCK_SCRIPT}
          <p><a href="/hr/claim-requests">ย้อนกลับ</a></p>`,
         { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
       )
@@ -113,15 +178,32 @@ function createClaimRequestRoutes({ mdmClient }) {
   router.post('/hr/claim-requests/:claimRequestId/approve', express.urlencoded({ extended: false }), async (req, res, next) => {
     const { claimRequestId } = req.params;
     try {
-      const { employeeNo, personnelType, orgUnitId, positionId, effectiveFrom, appointedDate, levelCode, emailWork, referenceDocument, note } =
-        req.body;
+      const { employeeNo, personnelType, orgUnitId, effectiveFrom, appointedDate, levelCode, emailWork, referenceDocument, note } = req.body;
+      const positionNo = String(req.body.positionNo || '').trim();
+
+      // ตรวจกฎเลขที่ตำแหน่งซ้ำที่ server ของ console (ช่องที่ disable ฝั่ง client แก้ผ่าน devtools ได้ - MDM API ตรวจอีกชั้นเสมอ)
+      const rule = positionRuleFor(personnelType);
+      const errors = [];
+      if (rule === 'FORBIDDEN' && positionNo) errors.push('ประเภทบุคลากรนี้ไม่มีเลขที่ตำแหน่ง ห้ามระบุเลขที่ตำแหน่ง');
+      if (rule === 'REQUIRED' && !positionNo) errors.push('ประเภทบุคลากรนี้ต้องระบุเลขที่ตำแหน่ง');
+      if (errors.length > 0) return sendFormErrors(res, req, claimRequestId, errors);
+
+      // แปลงเลขที่ตำแหน่งที่กรอก (ข้อความ) เป็น positionId (UUID) ที่ MDM API ต้องการ - ต้องเป็นตำแหน่งที่ยังใช้งานอยู่
+      let positionId;
+      if (positionNo) {
+        const positions = await mdmClient.listPositions(req.hrAuth.accessToken, { activeOnly: true });
+        const found = positions.find((p) => p.positionNo === positionNo);
+        if (!found) return sendFormErrors(res, req, claimRequestId, [`ไม่พบเลขที่ตำแหน่ง "${positionNo}" ที่ยังใช้งานอยู่`]);
+        positionId = found.positionId;
+      }
+
       await mdmClient.resolveClaimRequest(req.hrAuth.accessToken, claimRequestId, {
         action: 'PROVISION',
         employment: {
           employeeNo,
           personnelType,
           orgUnitId,
-          positionId: positionId || undefined,
+          positionId,
           effectiveFrom,
           appointedDate: appointedDate || undefined,
           levelCode: levelCode || undefined,
