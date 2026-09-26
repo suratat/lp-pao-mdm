@@ -62,7 +62,7 @@ describe('DPO Console auth flow ผ่าน Keycloak (integration, mock Keycloa
     const callback = await agent.get('/auth/callback').query({ code: 'no-role-code', state });
     expect(callback.status).toBe(403);
     expect(callback.text).toContain('dpo');
-    expect((callback.headers['set-cookie'] || []).some((c) => c.startsWith('dpo_console_session='))).toBe(false);
+    expect((callback.headers['set-cookie'] || []).some((c) => c.startsWith('dpo_console_sid='))).toBe(false);
 
     const list = await agent.get('/dpo/access-logs');
     expect(list.status).toBe(302);
@@ -75,7 +75,7 @@ describe('DPO Console auth flow ผ่าน Keycloak (integration, mock Keycloa
 
     const res = await agent.get('/auth/callback').query({ code: 'good-dpo-code', state: 'wrong-state-value' });
     expect(res.status).toBe(400);
-    expect((res.headers['set-cookie'] || []).some((c) => c.startsWith('dpo_console_session='))).toBe(false);
+    expect((res.headers['set-cookie'] || []).some((c) => c.startsWith('dpo_console_sid='))).toBe(false);
   });
 
   test('callback: ไม่มี code -> 400 ไม่ crash', async () => {
@@ -104,7 +104,8 @@ describe('DPO Console auth flow ผ่าน Keycloak (integration, mock Keycloa
     // expiresIn=1s < REFRESH_BUFFER_MS (15s) ของ authGate เสมอ -> request แรกหลัง login ต้อง refresh ทันที
     const res = await agent.get('/dpo/access-logs');
     expect(res.status).toBe(200);
-    expect(res.headers['set-cookie']).toBeDefined(); // authGate ต้อง set session cookie ใหม่หลัง refresh
+    // token ใหม่อยู่ใน sessionStore ฝั่งเซิร์ฟเวอร์ - ไม่ต้องส่ง Set-Cookie อะไรกลับไปเลย (cookie คือ session id เดิม)
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
 
   test('access token หมดอายุและไม่มี refresh_token -> redirect ไป login', async () => {

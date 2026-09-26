@@ -1,18 +1,20 @@
 const express = require('express');
 const { createAuthGate } = require('./session/authGate');
+const { createSessionStore } = require('./session/sessionStore');
 const { createAuthRoutes } = require('./routes/authRoutes');
 const { createAuditRoutes } = require('./routes/auditRoutes');
 const { layout } = require('./views/html');
 
-// config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionSecret, isProduction }
+// config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionStore, isProduction }
+// sessionStore: ดู session/sessionStore.js (ไม่ส่ง = สร้างใหม่ในหน่วยความจำ)
 // (โครงสร้างเหมือน hr-console/src/app.js ทุกประการ ต่างกันแค่ prefix /dpo/ แทน /hr/)
-function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionSecret, isProduction = false }) {
+function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore = createSessionStore(), isProduction = false }) {
   const app = express();
   app.disable('x-powered-by');
 
-  app.use(createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionSecret, isProduction }));
+  app.use(createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction }));
 
-  const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionSecret, isProduction });
+  const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction });
   app.use((req, res, next) => (req.path === '/dpo' || req.path.startsWith('/dpo/') ? authGate(req, res, next) : next()));
   app.use(createAuditRoutes({ mdmClient }));
 

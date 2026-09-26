@@ -7,11 +7,22 @@ const { SignJWT } = require('jose');
 //
 // เซ็น id_token/access_token ด้วย private key เดียวกับที่ MDM API test instance เชื่อ (ctx.auth จาก
 // api/test/testJwks.js) เพื่อให้ access_token ที่ DPO Console ส่งต่อไป MDM API จริงในเทสตรวจผ่านได้จริง -
-// ไม่ใส่ kid ใน header ของ id_token (jose จับคู่คีย์ด้วย alg ได้เองเมื่อ JWKS มีคีย์ที่ตรง alg เพียงตัวเดียว)
+// ไม่ใส่ kid ใน header ของ id_token (jose จับคู่คีย์ด้วย alg ได้เองเมื่อ JWKS มีคีย์ที่ตรง alg เพียงตัวเดียว
+// ทำให้ไม่ต้องผูกกับค่าคงที่ภายในของ testJwks.js)
+//
+// ตัวเลือกต่อ scenario (เพิ่มใน T10-fix เพื่อทดสอบ session/refresh):
+//   padRoles: N     เพิ่ม realm role ปลอม N ตัวใน id_token/access_token (จำลอง token ใหญ่ผิดปกติ)
+//   rotateRefresh   เลียนแบบ realm ที่ revokeRefreshToken=true: refresh token ใช้ได้ครั้งเดียว ใช้ซ้ำ -> invalid_grant
+//   refreshDelayMs  หน่วงตอบ refresh_token grant (ขยายช่วงเวลาที่ request พร้อมกันจะชนกัน)
 function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSecret, scenarios }) {
+  const stats = { refreshGrants: 0, invalidGrants: 0 };
+  const validRefreshTokens = new Set(); // ใช้กับ rotateRefresh
+  let refreshSeq = 0;
+
+  const rolesOf = (def) => [...def.roles, ...Array.from({ length: def.padRoles ?? 0 }, (_, i) => `padding-role-${String(i).padStart(4, '0')}`)];
   async function signIdToken(scenarioDef) {
     let jwt = new SignJWT({
-      realm_access: { roles: scenarioDef.roles },
+      realm_access: { roles: rolesOf(scenarioDef) },
       name: scenarioDef.displayName,
       preferred_username: scenarioDef.username,
     })
@@ -24,6 +35,14 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
     return jwt.sign(auth.privateKey);
   }
 
+  function issueRefreshToken(scenarioName, def) {
+    if (!def.rotateRefresh) return `refresh-for-${scenarioName}`;
+    refreshSeq += 1;
+    const token = `refresh-for-${scenarioName}~${refreshSeq}`;
+    validRefreshTokens.add(token);
+    return token;
+  }
+
   async function mintTokens(scenarioName) {
     const def = scenarios[scenarioName];
     if (!def) return null;
@@ -31,11 +50,13 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
       scope: def.scope,
       sub: def.username || 'dpo-user',
       azp: dpoConsoleClientId,
+      // Keycloak client scope "roles" ใส่ realm_access.roles ใน access token ด้วย (ยืนยันกับ Keycloak 26 จริงแล้ว)
+      realmRoles: rolesOf(def),
       expiresIn: `${def.expiresIn ?? 300}s`,
     });
     return {
       access_token: accessToken,
-      refresh_token: def.refreshable === false ? undefined : `refresh-for-${scenarioName}`,
+      refresh_token: def.refreshable === false ? undefined : issueRefreshToken(scenarioName, def),
       id_token: def.omitIdToken ? undefined : await signIdToken(def),
       expires_in: def.expiresIn ?? 300,
       token_type: 'Bearer',
@@ -64,12 +85,20 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
         if (grantType === 'authorization_code') {
           scenarioName = params.get('code');
         } else if (grantType === 'refresh_token') {
+          stats.refreshGrants += 1;
           const refreshToken = params.get('refresh_token') || '';
-          scenarioName = refreshToken.startsWith('refresh-for-') ? refreshToken.slice('refresh-for-'.length) : null;
+          scenarioName = refreshToken.startsWith('refresh-for-') ? refreshToken.slice('refresh-for-'.length).split('~')[0] : null;
+          const def = scenarioName ? scenarios[scenarioName] : null;
+          if (def?.refreshDelayMs) await new Promise((resolve) => setTimeout(resolve, def.refreshDelayMs));
+          if (def?.rotateRefresh) {
+            // revokeRefreshToken=true: ใช้ได้ครั้งเดียว ตัวที่ถูกใช้แล้ว/ไม่รู้จัก -> invalid_grant
+            if (!validRefreshTokens.delete(refreshToken)) scenarioName = null;
+          }
         }
 
         const tokens = scenarioName ? await mintTokens(scenarioName) : null;
         if (!tokens) {
+          stats.invalidGrants += 1;
           res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'invalid_grant' }));
           return;
         }
@@ -81,6 +110,7 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
   });
 
   return {
+    stats,
     async listen() {
       await new Promise((resolve) => server.listen(0, resolve));
       const { port } = server.address();

@@ -14,6 +14,15 @@ Express app แยกจาก `api/`, `worker/`, `portal/`, `hr-console/` — �
   `ChangeLogEntry` schema ไม่มี `x-required-scope` บนฟิลด์ใดเลย จึง scope `audit:read` เพียงตัวเดียวก็เห็น
   ข้อมูลครบตามที่ endpoint คืนมา (ตรวจสอบแล้วก่อนเริ่มงานนี้ ไม่ต้องเดา)
 
+
+## Session (T10-fix)
+
+เหมือน `hr-console` ทุกประการ: token เก็บใน **session ฝั่งเซิร์ฟเวอร์** (in-memory, `src/session/sessionStore.js`) cookie
+`dpo_console_sid` เก็บแค่ session id (Set-Cookie ~106 ไบต์ ไม่ขึ้นกับขนาด token) — เดิมเก็บ access+refresh+id token ใน cookie JWE
+เดียว ซึ่งเสี่ยงเกินเพดาน 4096 ไบต์ของ cookie (ดู `hr-console/README.md` ข้อ 4) refresh เป็น single-flight ต่อ session
+(realm ตั้ง `revokeRefreshToken=true`) **ข้อจำกัดที่ตั้งใจ:** instance เดียว และ session หายเมื่อ restart/deploy
+`DPO_CONSOLE_SESSION_SECRET` ไม่ใช้แล้ว
+
 ## หน้าจอ
 
 1. `GET /dpo/access-logs` — รายการ access log (`audit.access_log` ผ่าน `GET /audit/access-logs`)
