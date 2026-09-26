@@ -1,20 +1,22 @@
 const express = require('express');
 const { createAuthGate } = require('./session/authGate');
+const { createSessionStore } = require('./session/sessionStore');
 const { createAuthRoutes } = require('./routes/authRoutes');
 const { createClaimRequestRoutes } = require('./routes/claimRequestRoutes');
 const { createReverifyRoutes } = require('./routes/reverifyRoutes');
 const { createMasterDataRoutes } = require('./routes/masterDataRoutes');
 const { layout } = require('./views/html');
 
-// config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionSecret, isProduction }
-function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionSecret, isProduction = false }) {
+// config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionStore, isProduction }
+// sessionStore: ดู session/sessionStore.js (ไม่ส่ง = สร้างใหม่ในหน่วยความจำ)
+function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore = createSessionStore(), isProduction = false }) {
   const app = express();
   app.disable('x-powered-by');
 
-  app.use(createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionSecret, isProduction }));
+  app.use(createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction }));
 
   // ใช้เงื่อนไข path เองแทนการพึ่ง Express path routing กับ prefix (แนวทางเดียวกับ portal/src/app.js)
-  const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionSecret, isProduction });
+  const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction });
   app.use((req, res, next) => (req.path === '/hr' || req.path.startsWith('/hr/') ? authGate(req, res, next) : next()));
   app.use(createClaimRequestRoutes({ mdmClient }));
   app.use(createReverifyRoutes({ mdmClient }));

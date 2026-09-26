@@ -1,11 +1,12 @@
 const express = require('express');
 const { randomState } = require('../security/keycloakAuthClient');
 const {
+  COOKIE_NAME,
   STATE_COOKIE_NAME,
   parseCookies,
-  createSessionCookieValue,
   setSessionCookie,
   clearSessionCookie,
+  clearLegacySessionCookie,
   setOauthStateCookie,
   clearOauthStateCookie,
 } = require('../session/sessionCookie');
@@ -17,7 +18,7 @@ function errorPage(message) {
 
 // login เป็น Keycloak authorization code flow เท่านั้น (ไม่มี dev-login stub แบบ Portal - HR Console
 // เป็นเครื่องมือของเจ้าหน้าที่ที่ต้องมี realm role hr_officer เท่านั้น ไม่ควรมีทางลัดข้ามการตรวจ role)
-function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionSecret, isProduction }) {
+function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction }) {
   const router = express.Router();
 
   router.get('/auth/login', (req, res) => {
@@ -66,18 +67,17 @@ function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionSecret, is
         return res.status(403).send(errorPage('บัญชีนี้ไม่มีสิทธิ์เจ้าหน้าที่ฝ่ายบุคคล (role hr_officer) กรุณาติดต่อผู้ดูแลระบบ'));
       }
 
-      const cookieToken = await createSessionCookieValue(
-        {
-          accessToken,
-          refreshToken,
-          idToken,
-          accessTokenExpiresAt: Date.now() + expiresIn * 1000,
-          displayName: identity.displayName,
-          isMasterDataAdmin: identity.isMasterDataAdmin,
-        },
-        sessionSecret
-      );
-      setSessionCookie(res, cookieToken, { secure: req.protocol === 'https' || isProduction });
+      // เก็บ token ไว้ใน sessionStore ฝั่งเซิร์ฟเวอร์ ส่ง cookie แค่ session id (id_token ตรวจแล้วทิ้ง ไม่เก็บ)
+      const secure = req.protocol === 'https' || isProduction;
+      const sid = sessionStore.create({
+        accessToken,
+        refreshToken,
+        accessTokenExpiresAt: Date.now() + expiresIn * 1000,
+        displayName: identity.displayName,
+        isMasterDataAdmin: identity.isMasterDataAdmin,
+      });
+      clearLegacySessionCookie(res, { secure }); // ล้าง cookie JWE รุ่นเก่าที่อาจค้างในเบราว์เซอร์
+      setSessionCookie(res, sid, { secure });
       return res.redirect(302, '/hr/claim-requests');
     } catch (err) {
       return next(err);
@@ -85,7 +85,11 @@ function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionSecret, is
   });
 
   router.get('/auth/logout', (req, res) => {
-    clearSessionCookie(res, { secure: req.protocol === 'https' || isProduction });
+    const secure = req.protocol === 'https' || isProduction;
+    // ลบ session ฝั่งเซิร์ฟเวอร์ด้วย (ไม่ใช่แค่ล้าง cookie) - cookie ที่รั่วออกไปแล้วจะใช้ต่อไม่ได้
+    sessionStore.delete(parseCookies(req.headers.cookie)[COOKIE_NAME]);
+    clearSessionCookie(res, { secure });
+    clearLegacySessionCookie(res, { secure });
     const logoutUrl = keycloakAuthClient.buildLogoutUrl();
     res.redirect(302, logoutUrl || '/auth/login');
   });

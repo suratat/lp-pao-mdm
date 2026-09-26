@@ -23,15 +23,22 @@ code flow มาตรฐานกับ client Keycloak ของตัวเ�
    `aud = HR_CONSOLE_CLIENT_ID` (client id ของ hr-console เอง — คนละ audience กับ `access_token` ที่จะ
    ส่งต่อให้ MDM API ซึ่งต้องมี `aud=mdm-api` แทน) อ่าน `realm_access.roles` จาก id_token — ปฏิเสธ
    (403) ถ้าไม่มี `hr_officer`
-4. `access_token`/`refresh_token` เก็บใน session cookie ของ HR Console เอง **แบบเข้ารหัส** (JWE,
-   `alg=dir`/`enc=A256GCM`, key มาจาก `HR_CONSOLE_SESSION_SECRET`) ต่างจาก `portal_session` ของ Portal
-   ที่เก็บแค่ `personId` (ไม่ sensitive) จึงแค่เซ็นด้วย JWS เฉย ๆ — คุกกี้นี้พก bearer token จริงจึงต้อง
-   เข้ารหัสไม่ใช่แค่เซ็น
+4. `access_token`/`refresh_token` เก็บใน **session ฝั่งเซิร์ฟเวอร์** (in-memory, `src/session/sessionStore.js`) ส่วน cookie
+   `hr_console_sid` เก็บแค่ session id สุ่ม 32 ไบต์ (Set-Cookie ~105 ไบต์ ไม่ขึ้นกับขนาด token) — เดิมเก็บ token ทั้งชุด
+   ใน cookie JWE เดียว จนเกิน 4096 ไบต์เมื่อ token โตขึ้น (T10 เพิ่ม role/scope) เบราว์เซอร์ทิ้ง Set-Cookie เงียบๆ
+   ทำให้ login วนลูป (`ERR_TOO_MANY_REDIRECTS`/`invalid_grant`) — `id_token` ตรวจแล้วทิ้ง ไม่เก็บ
+   - อายุ session absolute 12 ชม., มี sweep ทุก 5 นาที และเพดาน 5,000 session (เต็มแล้วตัดตัวที่ **ไม่ได้ใช้นานสุด** แบบ LRU ไม่ใช่ตัวที่ login ก่อน)
+   - login ออก sid ใหม่ทุกครั้ง (กัน session fixation) และล้าง cookie รุ่นเก่า `hr_console_session`; logout ลบ session ฝั่ง server ด้วย
+   - **ข้อจำกัดที่ตั้งใจ:** รันได้แค่ **instance เดียว** และ **session หายเมื่อ restart/deploy** (ผู้ใช้ถูกส่งไป Keycloak แล้วกลับมาเอง
+     ถ้า SSO session ยังอยู่) ถ้าจะรันหลาย instance ต้องเปลี่ยน store เป็น Redis (คง interface `create/get/update/delete`)
+   - `HR_CONSOLE_SESSION_SECRET` ไม่ใช้แล้ว (ไม่ต้องตั้ง)
 5. ทุก request ไป MDM API แนบ `access_token` ของผู้ใช้ตรง ๆ เป็น `Authorization: Bearer` (ไม่มี
    `X-Acting-Person` เหมือน Portal เพราะ scope ของ HR (`personnel:provision` ฯลฯ) ไม่ใช่ user context
    `personnel:self` ที่ต้องมี person_id ผูกอยู่)
 6. access token ใกล้หมดอายุ (ภายใน 15 วินาที) → `authGate` refresh อัตโนมัติด้วย `refresh_token`
-   (silent refresh) ถ้า Keycloak ส่ง `id_token` ใหม่มาด้วยตอน refresh จะตรวจ role `hr_officer` ซ้ำ
+   (silent refresh, อัปเดตใน store ไม่ต้อง Set-Cookie ใหม่) แบบ **single-flight ต่อ session**: realm ตั้ง
+   `revokeRefreshToken=true` (refresh token ใช้ได้ครั้งเดียว) request พร้อมกันจึงรอผล refresh ครั้งเดียวกัน
+   แทนที่จะแย่งกัน refresh แล้วได้ `invalid_grant` ถ้า Keycloak ส่ง `id_token` ใหม่มาด้วยตอน refresh จะตรวจ role `hr_officer` ซ้ำ
    (เผื่อถูกถอด role ระหว่าง session ยังไม่หมดอายุ) ถ้า refresh ไม่สำเร็จ/ไม่มี refresh_token →
    ล้าง session แล้ว redirect ไป `/auth/login`
 

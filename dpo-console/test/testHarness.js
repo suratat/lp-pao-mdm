@@ -5,17 +5,41 @@ const { createKeycloakAuthClient } = require('../src/security/keycloakAuthClient
 const { createIdTokenVerifier } = require('../src/security/idTokenVerifier');
 const { createMdmClient } = require('../src/mdmClient');
 const { createMockKeycloakServer } = require('./mockKeycloakServer');
+const { createSessionStore } = require('../src/session/sessionStore');
 
 const DPO_CONSOLE_CLIENT_ID = 'dpo-console-test';
 const DPO_CONSOLE_CLIENT_SECRET = 'dpo-console-test-secret';
 const REDIRECT_URI = 'http://dpo-console.test/auth/callback';
-const SESSION_SECRET = 'dpo-console-test-session-secret';
 const DPO_SCOPE = 'openid audit:read events:read';
+
+// role/scope ทั้งหมดที่มีใน realm จริง (อ่านจาก infra/keycloak/realm-export.json) - ใช้จำลองผู้ใช้ที่มีครบทุกอย่าง
+const REALM_EXPORT = require('../../infra/keycloak/realm-export.json');
+const ALL_REALM_ROLES = REALM_EXPORT.roles.realm.map((r) => r.name);
+const ALL_CLIENT_SCOPES = REALM_EXPORT.clientScopes.map((c) => c.name);
 
 function defaultScenarios() {
   return {
     'good-dpo-code': { roles: ['dpo'], displayName: 'DPO หนึ่ง', username: 'dpo.one', scope: DPO_SCOPE },
     'good-auditor-code': { roles: ['auditor'], displayName: 'ผู้ตรวจสอบหนึ่ง', username: 'auditor.one', scope: DPO_SCOPE },
+    // T10-fix: token ใหญ่ผิดปกติ (ผู้ใช้มีทุก realm role และทุก scope ของระบบ + role ปลอม 300 ตัว) - ดู test/session.test.js
+    'huge-token-code': {
+      roles: ALL_REALM_ROLES,
+      padRoles: 300,
+      displayName: 'ผู้ใช้ token ใหญ่มาก',
+      username: 'dpo.huge',
+      scope: `openid ${ALL_CLIENT_SCOPES.join(' ')}`,
+      expiresIn: 1,
+    },
+    // เลียนแบบ revokeRefreshToken=true (refresh token ใช้ได้ครั้งเดียว) + หน่วงตอบ เพื่อให้ request พร้อมกันชนกัน
+    'rotating-code': {
+      roles: ['dpo'],
+      displayName: 'DPO refresh token หมุนเวียน',
+      username: 'dpo.rotating',
+      scope: DPO_SCOPE,
+      expiresIn: 1,
+      rotateRefresh: true,
+      refreshDelayMs: 150,
+    },
     'no-role-code': { roles: ['staff'], displayName: 'พนักงานทั่วไป', username: 'staff.user', scope: 'personnel:self' },
     'no-id-token-code': { roles: ['dpo'], omitIdToken: true, scope: DPO_SCOPE },
     'short-lived-code': { roles: ['dpo'], displayName: 'DPO หมดอายุเร็ว', username: 'dpo.shortlived', scope: DPO_SCOPE, expiresIn: 1 },
@@ -66,17 +90,20 @@ async function buildIntegrationHarness({ scenarios } = {}) {
 
   const mdmClient = createMdmClient({ baseUrl: apiBaseUrl });
 
+  const sessionStore = createSessionStore();
   const dpoConsoleApp = createDpoConsoleApp({
     keycloakAuthClient,
     verifyIdToken,
     mdmClient,
-    sessionSecret: SESSION_SECRET,
+    sessionStore,
     isProduction: false,
   });
 
   return {
     apiCtx,
     dpoConsoleApp,
+    sessionStore,
+    mockKeycloak,
     async close() {
       await mockKeycloak.close();
       await new Promise((resolve) => apiServer.close(resolve));
@@ -94,4 +121,4 @@ async function loginAsDpo(app, code = 'good-dpo-code') {
   return agent;
 }
 
-module.exports = { buildIntegrationHarness, loginAsDpo, DPO_CONSOLE_CLIENT_ID, DPO_CONSOLE_CLIENT_SECRET, REDIRECT_URI };
+module.exports = { ALL_REALM_ROLES, ALL_CLIENT_SCOPES, buildIntegrationHarness, loginAsDpo, DPO_CONSOLE_CLIENT_ID, DPO_CONSOLE_CLIENT_SECRET, REDIRECT_URI };
