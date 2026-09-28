@@ -2,6 +2,8 @@
 // (reactivate, resolveClaimRequest PROVISION/LINK) - diff รายฟิลด์ + map error จาก constraint ของ DB
 // เป็นรหัสที่ผู้เรียกอ่านเข้าใจได้ (แทน error ดิบของ Postgres)
 
+const { assertPositionMatchesPersonnelType } = require('./personnelPositionRules');
+
 const FIELD_MAP = {
   employeeNo: { column: 'employee_no', fieldKey: 'employment.employee_no' },
   personnelType: { column: 'personnel_type', fieldKey: 'employment.personnel_type' },
@@ -48,6 +50,10 @@ function mapEmploymentConstraintError(err) {
 // ปิด record เดิม (ถ้ามี) เปิดใหม่ - คืน employment_id ใหม่ + รายการ field ที่เปลี่ยน (ว่างถ้าไม่มีอะไรเปลี่ยน)
 // updatedBy: 'HR' (endpoint ปกติ) หรือ 'HR_IMPORT' (batch import) - ใช้ค่าเดียวกับ employment.updated_by
 async function closeAndOpenEmployment(client, personId, incoming, updatedBy = 'HR') {
+  // ทางผ่านเดียวของทุกเส้นทางที่เขียน employment (provision, PUT employment, resolve claim, reactivate, import) -
+  // ตรวจกฎตำแหน่งตามประเภทบุคลากรที่นี่ที่เดียว ก่อนแตะ DB (422 ถ้าผิดกฎ)
+  assertPositionMatchesPersonnelType(incoming.personnelType, incoming.positionId);
+
   const { rows } = await client.query(`SELECT * FROM mdm.employment WHERE person_id = $1 AND is_current = true`, [
     personId,
   ]);

@@ -10,12 +10,14 @@ let harness;
 let adminPool;
 let orgUnitId;
 let positionId;
+let positionNo; // เลขที่ตำแหน่งของ fixture - ฟอร์ม approve รับ "เลขที่ตำแหน่ง" (ข้อความ) ไม่ใช่ UUID แล้ว
 
 beforeAll(async () => {
   harness = await buildIntegrationHarness();
   adminPool = new Pool({ connectionString: MIGRATOR_DATABASE_URL });
   orgUnitId = await insertFixtureOrgUnit(adminPool);
   positionId = await insertFixturePosition(adminPool, orgUnitId);
+  ({ rows: [{ position_no: positionNo }] } = await adminPool.query('SELECT position_no FROM mdm.position WHERE position_id = $1', [positionId]));
 });
 
 afterAll(async () => {
@@ -55,7 +57,7 @@ describe('HR Console: claim requests', () => {
         employeeNo: makeFakePid(),
         personnelType: 'CIVIL_SERVANT',
         orgUnitId,
-        positionId,
+        positionNo,
         effectiveFrom: '2024-01-01',
         note: 'สร้างโดยเทส HR Console',
       });
@@ -87,6 +89,7 @@ describe('HR Console: claim requests', () => {
         employeeNo: makeFakePid(),
         personnelType: 'CIVIL_SERVANT',
         orgUnitId: crypto.randomUUID(),
+        positionNo, // ต้องมีเพราะ CIVIL_SERVANT บังคับมีตำแหน่ง - ให้ผ่านกฎนี้แล้วไปชน orgUnitId ที่ไม่มีจริงที่ MDM API
         effectiveFrom: '2024-01-01',
       });
 

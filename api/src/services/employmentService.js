@@ -54,6 +54,7 @@ async function upsertEmployment(pool, personId, body) {
       ({ employmentId, changes } = await closeAndOpenEmployment(client, personId, body, 'HR'));
     } catch (err) {
       // closeAndOpenEmployment ห่อ error ของ Postgres ด้วย mapEmploymentConstraintError ให้แล้ว (มี .code)
+      if (err instanceof HttpProblem) throw err; // เช่น 422 position-not-allowed/required จากกฎประเภทบุคลากร
       if (err.code) throw new HttpProblem(409, err.code, err.message);
       throw err;
     }
