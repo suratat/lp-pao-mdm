@@ -2,7 +2,9 @@ const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
 const { PERSONNEL_TYPES, positionRuleFor } = require('../personnelTypes');
-const { POSITION_NO_PATTERN, POSITION_NO_MESSAGE } = require('../masterData');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const naturalCompare = (a, b) => String(a).localeCompare(String(b), 'th', { numeric: true });
 
 function fmt(value) {
   return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
@@ -48,42 +50,68 @@ function positionRules() {
   return Object.fromEntries(PERSONNEL_TYPES.map((t) => [t.value, t.positionRule]));
 }
 
-// lock ช่องเลขที่ตำแหน่งตามประเภทบุคลากร (ฝั่ง client เพื่อ UX เท่านั้น - server ของ console และ MDM API ตรวจซ้ำเสมอ):
+// dropdown หน่วยงาน "รหัส — ชื่อ" (เฉพาะที่ active) ค่าที่ส่งคือ orgUnitId
+function orgUnitOptions(orgUnits) {
+  return [...orgUnits]
+    .filter((o) => o.isActive)
+    .sort((a, b) => naturalCompare(a.code, b.code))
+    .map((o) => `<option value="${escapeHtml(o.orgUnitId)}">${escapeHtml(o.code)} — ${escapeHtml(o.nameTh)}</option>`)
+    .join('\n');
+}
+
+// dropdown ตำแหน่ง "เลขที่ตำแหน่ง — ชื่อตำแหน่ง · ประเภทตำแหน่ง (ชื่อไทย)" (เฉพาะที่ active) ไม่แสดงระดับ/สายงาน
+// (ระดับเป็นของ employment.level_code, สายงานเราไม่เก็บ) ทุก option พก data-org-unit ไว้ให้สคริปต์กรองตามหน่วยงานที่เลือก
+function positionOptions(positions, positionTypes) {
+  const typeName = new Map(positionTypes.map((t) => [t.code, t.nameTh]));
+  return [...positions]
+    .filter((p) => p.isActive)
+    .sort((a, b) => naturalCompare(a.positionNo, b.positionNo))
+    .map(
+      (p) =>
+        `<option value="${escapeHtml(p.positionId)}" data-org-unit="${escapeHtml(p.orgUnitId)}">${escapeHtml(p.positionNo)} — ${escapeHtml(p.titleTh)} · ${escapeHtml(typeName.get(p.positionType) || p.positionType)}</option>`
+    )
+    .join('\n');
+}
+
+// lock ช่องตำแหน่งตามประเภทบุคลากร + กรองตำแหน่งตามหน่วยงาน (ฝั่ง client เพื่อ UX เท่านั้น - server ของ console และ MDM API ตรวจซ้ำเสมอ):
 //   FORBIDDEN -> ล้างค่า + disable + ไม่ required | REQUIRED -> enable + required | OPTIONAL -> enable ไม่ required
-// apply() รันตอนโหลดหน้า (select มีค่าเริ่มต้นอยู่แล้ว) + ทุกครั้งที่เปลี่ยนประเภท + ตอน pageshow (เบราว์เซอร์คืนค่าฟอร์มเดิมเมื่อกด
-// Back/bfcache โดยไม่ยิง change event - ถ้าไม่ apply ซ้ำ ช่องอาจค้างสถานะไม่ตรงกับประเภทที่เลือก)
+//   (ยังไม่เลือกหน่วยงาน = ช่องตำแหน่งถูก disable เพราะยังไม่มีรายการให้เลือก)
+// apply() รันตอนโหลดหน้า (select มีค่าเริ่มต้นอยู่แล้ว) + ทุกครั้งที่เปลี่ยนประเภทหรือหน่วยงาน + ตอน pageshow (เบราว์เซอร์คืนค่าฟอร์มเดิมเมื่อ
+// กด Back/bfcache โดยไม่ยิง change event - ถ้าไม่ apply ซ้ำ ช่องอาจค้างสถานะไม่ตรงกับประเภท/หน่วยงานที่เลือก)
 const POSITION_LOCK_SCRIPT = `<script>
 (function () {
-  var select = document.getElementById('personnelType');
-  var input = document.getElementById('positionNo');
-  var hint = document.getElementById('positionNoHint');
-  var rules = JSON.parse(select.getAttribute('data-position-rules'));
-  var re = new RegExp(input.getAttribute('data-pattern'));
-  var patternMessage = input.getAttribute('data-pattern-message');
-  var HINTS = { REQUIRED: '(จำเป็นต้องระบุ)', FORBIDDEN: '(ประเภทนี้ไม่มีเลขที่ตำแหน่ง - ช่องถูกปิด)', OPTIONAL: '(ไม่บังคับ)' };
+  var typeSelect = document.getElementById('personnelType');
+  var orgSelect = document.getElementById('orgUnitId');
+  var posSelect = document.getElementById('positionId');
+  var hint = document.getElementById('positionHint');
+  var rules = JSON.parse(typeSelect.getAttribute('data-position-rules'));
+  var HINTS = { REQUIRED: '(จำเป็นต้องระบุ)', FORBIDDEN: '(ประเภทนี้ไม่มีตำแหน่ง - ช่องถูกปิด)', OPTIONAL: '(ไม่บังคับ)' };
+  var all = Array.prototype.slice.call(posSelect.options);
+  var placeholder = all.shift();
 
-  function checkPattern() {
-    var v = input.value.trim();
-    input.setCustomValidity(v === '' || re.test(v) ? '' : patternMessage);
-  }
   function apply() {
-    var rule = rules[select.value] || 'OPTIONAL';
+    var rule = rules[typeSelect.value] || 'OPTIONAL';
+    var orgId = orgSelect.value;
+    var keep = posSelect.value;
+    var visible = all.filter(function (o) { return orgId && o.getAttribute('data-org-unit') === orgId; });
+    while (posSelect.firstChild) posSelect.removeChild(posSelect.firstChild);
+    posSelect.appendChild(placeholder);
+    visible.forEach(function (o) { posSelect.appendChild(o); });
+    placeholder.textContent = !orgId ? '— เลือกหน่วยงานก่อน —' : visible.length === 0 ? '— หน่วยงานนี้ไม่มีตำแหน่งที่ใช้งานอยู่ —' : '— เลือกตำแหน่ง —';
     if (rule === 'FORBIDDEN') {
-      input.value = '';
-      input.disabled = true;
-      input.required = false;
-      input.setCustomValidity('');
+      posSelect.value = '';
+      posSelect.disabled = true;
+      posSelect.required = false;
     } else {
-      input.disabled = false;
-      input.required = rule === 'REQUIRED';
-      checkPattern();
+      posSelect.value = visible.some(function (o) { return o.value === keep; }) ? keep : '';
+      posSelect.disabled = !orgId;
+      posSelect.required = rule === 'REQUIRED';
     }
     hint.textContent = HINTS[rule];
   }
 
-  select.addEventListener('change', apply);
-  input.addEventListener('input', checkPattern);
-  input.addEventListener('blur', function () { input.value = input.value.trim(); checkPattern(); });
+  typeSelect.addEventListener('change', apply);
+  orgSelect.addEventListener('change', apply);
   window.addEventListener('pageshow', apply);
   apply();
 })();
@@ -136,24 +164,35 @@ function createClaimRequestRoutes({ mdmClient }) {
     }
   });
 
-  router.get('/hr/claim-requests/:claimRequestId/approve', (req, res) => {
+  router.get('/hr/claim-requests/:claimRequestId/approve', async (req, res, next) => {
     const { claimRequestId } = req.params;
-    res.send(
-      layout(
-        'อนุมัติคำขอเชื่อมตัวตน',
-        `<h1>อนุมัติ - สร้างบุคลากรใหม่</h1>
+    try {
+      const token = req.hrAuth.accessToken;
+      const [orgUnits, positions, positionTypes] = await Promise.all([
+        mdmClient.listOrgUnits(token, { activeOnly: true }),
+        mdmClient.listPositions(token, { activeOnly: true }),
+        mdmClient.listPositionTypes(token, { activeOnly: false }), // ตำแหน่ง active อาจอยู่ในหมวดที่ปิดแล้ว - ยังต้องแสดงชื่อไทย
+      ]);
+      res.send(
+        layout(
+          'อนุมัติคำขอเชื่อมตัวตน',
+          `<h1>อนุมัติ - สร้างบุคลากรใหม่</h1>
          <p>ระบบจะสร้าง record บุคคลใหม่และเชื่อมกับการล็อกอิน ThaID ครั้งนี้ (ใช้ pid ที่บันทึกไว้ตอน login โดยอัตโนมัติ)</p>
          <form method="post" action="/hr/claim-requests/${encodeURIComponent(claimRequestId)}/approve">
            <label>เลขบัตรประชาชน (employeeNo) <span class="hint">ต้องตรงกับที่บุคคลนี้ใช้ล็อกอิน ThaID - ห้ามเผยแพร่/บันทึกไว้นอกระบบนี้</span></label>
            <input name="employeeNo" required pattern="[0-9]{13}" maxlength="13" autocomplete="off" />
            <label>ประเภทบุคลากร</label>
            <select name="personnelType" id="personnelType" required data-position-rules="${escapeHtml(JSON.stringify(positionRules()))}">${personnelTypeOptions()}</select>
-           <label>รหัสหน่วยงาน (orgUnitId, UUID) <span class="hint">ดูได้จากระบบ HR เดิมหรือฐานข้อมูล mdm.org_unit</span></label>
-           <input name="orgUnitId" required pattern="[0-9a-fA-F-]{36}" />
-           <label>เลขที่ตำแหน่ง <span class="hint" id="positionNoHint"></span></label>
-           <input name="positionNo" id="positionNo" maxlength="50" autocomplete="off" placeholder="เช่น 52-1-07-3106-003 หรือเลขลำดับของลูกจ้างประจำ"
-                  pattern="${escapeHtml(POSITION_NO_PATTERN)}" data-pattern="${escapeHtml(POSITION_NO_PATTERN)}"
-                  data-pattern-message="${escapeHtml(POSITION_NO_MESSAGE)}" title="${escapeHtml(POSITION_NO_MESSAGE)}" />
+           <label>หน่วยงาน</label>
+           <select name="orgUnitId" id="orgUnitId" required>
+             <option value="">— เลือกหน่วยงาน —</option>
+             ${orgUnitOptions(orgUnits)}
+           </select>
+           <label>ตำแหน่ง <span class="hint" id="positionHint"></span></label>
+           <select name="positionId" id="positionId">
+             <option value="">— เลือกตำแหน่ง —</option>
+             ${positionOptions(positions, positionTypes)}
+           </select>
            <label>วันเริ่มมีผล (effectiveFrom)</label>
            <input name="effectiveFrom" type="date" required />
            <label>วันบรรจุ (appointedDate)</label>
@@ -170,32 +209,55 @@ function createClaimRequestRoutes({ mdmClient }) {
          </form>
          ${POSITION_LOCK_SCRIPT}
          <p><a href="/hr/claim-requests">ย้อนกลับ</a></p>`,
-        { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
-      )
-    );
+          { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }
+        )
+      );
+    } catch (err) {
+      if (err instanceof MdmApiError) {
+        return res
+          .status(err.status)
+          .send(layout('อนุมัติคำขอเชื่อมตัวตน', renderApiError(err), { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin }));
+      }
+      next(err);
+    }
   });
 
   router.post('/hr/claim-requests/:claimRequestId/approve', express.urlencoded({ extended: false }), async (req, res, next) => {
     const { claimRequestId } = req.params;
     try {
-      const { employeeNo, personnelType, orgUnitId, effectiveFrom, appointedDate, levelCode, emailWork, referenceDocument, note } = req.body;
-      const positionNo = String(req.body.positionNo || '').trim();
+      const { employeeNo, personnelType, effectiveFrom, appointedDate, levelCode, emailWork, referenceDocument, note } = req.body;
+      const orgUnitId = String(req.body.orgUnitId || '').trim();
+      const positionId = String(req.body.positionId || '').trim();
+      const token = req.hrAuth.accessToken;
 
-      // ตรวจกฎเลขที่ตำแหน่งซ้ำที่ server ของ console (ช่องที่ disable ฝั่ง client แก้ผ่าน devtools ได้ - MDM API ตรวจอีกชั้นเสมอ)
-      const rule = positionRuleFor(personnelType);
+      // ตรวจซ้ำที่ server ของ console (ช่องที่ disable/กรองฝั่ง client แก้ผ่าน devtools/curl ได้ - MDM API ตรวจอีกชั้นเสมอ)
       const errors = [];
-      if (rule === 'FORBIDDEN' && positionNo) errors.push('ประเภทบุคลากรนี้ไม่มีเลขที่ตำแหน่ง ห้ามระบุเลขที่ตำแหน่ง');
-      if (rule === 'REQUIRED' && !positionNo) errors.push('ประเภทบุคลากรนี้ต้องระบุเลขที่ตำแหน่ง');
-      if (errors.length > 0) return sendFormErrors(res, req, claimRequestId, errors);
+      const rule = positionRuleFor(personnelType);
+      if (rule === 'FORBIDDEN' && positionId) errors.push('ประเภทบุคลากรนี้ไม่มีเลขที่ตำแหน่ง ห้ามระบุเลขที่ตำแหน่ง');
+      if (rule === 'REQUIRED' && !positionId) errors.push('ประเภทบุคลากรนี้ต้องระบุเลขที่ตำแหน่ง');
 
-      // แปลงเลขที่ตำแหน่งที่กรอก (ข้อความ) เป็น positionId (UUID) ที่ MDM API ต้องการ - ต้องเป็นตำแหน่งที่ยังใช้งานอยู่
-      let positionId;
-      if (positionNo) {
-        const positions = await mdmClient.listPositions(req.hrAuth.accessToken, { activeOnly: true });
-        const found = positions.find((p) => p.positionNo === positionNo);
-        if (!found) return sendFormErrors(res, req, claimRequestId, [`ไม่พบเลขที่ตำแหน่ง "${positionNo}" ที่ยังใช้งานอยู่`]);
-        positionId = found.positionId;
+      // หน่วยงานต้องมีอยู่จริงและ active
+      if (!orgUnitId) {
+        errors.push('กรุณาเลือกหน่วยงาน');
+      } else if (!UUID_RE.test(orgUnitId)) {
+        errors.push('หน่วยงานที่เลือกไม่ถูกต้อง');
+      } else {
+        const orgUnits = await mdmClient.listOrgUnits(token, { activeOnly: true });
+        if (!orgUnits.some((o) => o.orgUnitId === orgUnitId && o.isActive)) errors.push('ไม่พบหน่วยงานที่เลือก หรือหน่วยงานถูกปิดใช้งานแล้ว');
       }
+
+      // ตำแหน่ง (ถ้าส่งมา) ต้องมีอยู่จริง active และอยู่ในหน่วยงานที่เลือก - ตรวจเฉพาะเมื่อกฎประเภทบุคลากรไม่ได้ปฏิเสธไปแล้ว
+      if (positionId && rule !== 'FORBIDDEN') {
+        if (!UUID_RE.test(positionId)) {
+          errors.push('ตำแหน่งที่เลือกไม่ถูกต้อง');
+        } else {
+          const positions = await mdmClient.listPositions(token, { activeOnly: true });
+          const found = positions.find((p) => p.positionId === positionId && p.isActive);
+          if (!found) errors.push('ไม่พบตำแหน่งที่เลือก หรือตำแหน่งถูกปิดใช้งานแล้ว');
+          else if (found.orgUnitId !== orgUnitId) errors.push('ตำแหน่งที่เลือกไม่อยู่ในหน่วยงานที่เลือก');
+        }
+      }
+      if (errors.length > 0) return sendFormErrors(res, req, claimRequestId, errors);
 
       await mdmClient.resolveClaimRequest(req.hrAuth.accessToken, claimRequestId, {
         action: 'PROVISION',
@@ -203,7 +265,7 @@ function createClaimRequestRoutes({ mdmClient }) {
           employeeNo,
           personnelType,
           orgUnitId,
-          positionId,
+          positionId: positionId || undefined,
           effectiveFrom,
           appointedDate: appointedDate || undefined,
           levelCode: levelCode || undefined,
@@ -244,4 +306,5 @@ function createClaimRequestRoutes({ mdmClient }) {
   return router;
 }
 
-module.exports = { createClaimRequestRoutes };
+// orgUnitOptions/positionOptions export ไว้ให้ unit test (ตัวกรอง isActive ซ้ำกับ activeOnly ของ API โดยตั้งใจ - กันไว้อีกชั้น)
+module.exports = { createClaimRequestRoutes, orgUnitOptions, positionOptions };

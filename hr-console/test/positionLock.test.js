@@ -1,14 +1,14 @@
 const crypto = require('node:crypto');
-const vm = require('node:vm');
 const { Pool } = require('pg');
 const { buildIntegrationHarness, loginAsHrOfficer } = require('./testHarness');
+const { loadApproveForm } = require('./approveFormDom');
 const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
 const { makeFakePid } = require('../../api/src/security/pid');
 const { insertFixtureOrgUnit } = require('../../api/test/fixtures');
 const { POSITION_RULES: API_RULES } = require('../../api/src/services/personnelPositionRules');
 const { PERSONNEL_TYPES, positionRuleFor } = require('../src/personnelTypes');
 
-// ฟอร์ม approve claim: ช่อง "เลขที่ตำแหน่ง" lock ตามประเภทบุคลากร (พนักงานจ้าง/จ้างเหมา/ฝ่ายการเมือง = ห้ามมี, ข้าราชการ/ครู/
+// ฟอร์ม approve claim: dropdown "ตำแหน่ง" (positionId) lock ตามประเภทบุคลากร (พนักงานจ้าง/จ้างเหมา/ฝ่ายการเมือง = ห้ามมี, ข้าราชการ/ครู/
 // ลูกจ้างประจำ/ถ่ายโอน = ต้องมี, อื่นๆ = ไม่บังคับ) + ตรวจซ้ำที่ server (ไม่พึ่ง disabled ฝั่ง client)
 let harness;
 let adminPool;
@@ -71,131 +71,94 @@ describe('กฎในโค้ด hr-console ตรงกับ MDM API (กั
 });
 
 describe('หน้าฟอร์ม approve: โครงสร้าง HTML', () => {
-  test('ช่องเลขที่ตำแหน่งเป็น text (positionNo) ไม่ใช่ UUID, มี pattern + กฎครบทุกประเภทฝังใน select, ไม่มีช่อง positionId เหลือ', async () => {
+  test('ช่องตำแหน่งเป็น select (positionId) ไม่ใช่ช่องพิมพ์, มีกฎครบทุกประเภทฝังใน select ประเภทบุคลากร', async () => {
     const agent = await loginAsHrOfficer(harness.hrConsoleApp);
     const res = await agent.get(`/hr/claim-requests/${await makeClaim()}/approve`);
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/<input name="positionNo" id="positionNo"/);
-    expect(res.text).not.toContain('name="positionId"');
+    expect(res.text).toMatch(/<select name="positionId" id="positionId"/);
+    expect(res.text).not.toContain('name="positionNo"');
     const rules = JSON.parse(res.text.match(/data-position-rules="([^"]*)"/)[1].replace(/&quot;/g, '"'));
     expect(rules).toEqual(API_RULES);
-    const pattern = res.text.match(/<input name="positionNo"[\s\S]*?pattern="([^"]*)"/)[1];
-    expect(() => new RegExp(pattern, 'v')).not.toThrow();
-    for (const ok of ['1', '50', '123', '9999', '52-1-07-3106-003']) expect([ok, new RegExp(pattern).test(ok)]).toEqual([ok, true]);
   });
 });
 
-// รัน "สคริปต์ inline จริง" จากหน้าที่ render ใน sandbox ด้วย DOM จำลองแบบเรียบง่าย (ไม่มี jsdom ในรายการ dependency) - พิสูจน์ logic
-// การ lock/unlock ตอนโหลด, ตอนเปลี่ยน dropdown และตอน pageshow (คืนค่าฟอร์มเมื่อกด Back)
+// รัน "สคริปต์ inline จริง" ของหน้าใน DOM จำลอง (ดู approveFormDom.js) - พิสูจน์ logic การ lock/unlock ตอนโหลด, ตอนเปลี่ยน dropdown
+// และตอน pageshow (คืนค่าฟอร์มเมื่อกด Back) โดยสร้างตำแหน่งใต้ orgUnitId ของเทสต์ไว้ก่อนโหลดหน้า
 async function loadFormScript() {
+  const position = await makePosition();
   const agent = await loginAsHrOfficer(harness.hrConsoleApp);
   const html = (await agent.get(`/hr/claim-requests/${await makeClaim()}/approve`)).text;
-  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  const rulesAttr = html.match(/data-position-rules="([^"]*)"/)[1].replace(/&quot;/g, '"');
-  const patternAttr = html.match(/data-pattern="([^"]*)"/)[1];
-  const messageAttr = html.match(/data-pattern-message="([^"]*)"/)[1];
-
-  const makeEl = (attrs = {}) => {
-    const handlers = {};
-    return {
-      attrs, handlers, value: '', disabled: false, required: false, textContent: '', validity: '',
-      getAttribute(n) { return this.attrs[n]; },
-      addEventListener(type, fn) { (handlers[type] ||= []).push(fn); },
-      setCustomValidity(m) { this.validity = m; },
-      fire(type) { (handlers[type] || []).forEach((fn) => fn()); },
-    };
-  };
-  const select = makeEl({ 'data-position-rules': rulesAttr });
-  select.value = 'CIVIL_SERVANT'; // ค่าเริ่มต้นของ dropdown = ตัวแรก (ข้าราชการ)
-  const input = makeEl({ 'data-pattern': patternAttr.replace(/&amp;/g, '&'), 'data-pattern-message': messageAttr });
-  const hint = makeEl();
-  const win = makeEl();
-  const doc = { getElementById: (id) => ({ personnelType: select, positionNo: input, positionNoHint: hint })[id] };
-  vm.runInNewContext(script, { document: doc, window: win, RegExp, JSON });
-  return { select, input, hint, win };
+  const form = loadApproveForm(html);
+  return { ...form, position, select: form.typeSelect, field: form.posSelect };
 }
 
-describe('สคริปต์ lock ช่องเลขที่ตำแหน่ง (รัน script จริง ใน DOM จำลอง)', () => {
-  test('ตอนโหลดหน้า (ค่าเริ่มต้น = ข้าราชการ): ช่อง enable + required', async () => {
-    const { input, hint } = await loadFormScript();
-    expect([input.disabled, input.required]).toEqual([false, true]);
+describe('สคริปต์ lock ช่องตำแหน่ง (รัน script จริง ใน DOM จำลอง)', () => {
+  test('ตอนโหลดหน้า (ค่าเริ่มต้น = ข้าราชการ, ยังไม่เลือกหน่วยงาน): ช่อง disabled จนกว่าจะเลือกหน่วยงาน แต่ required', async () => {
+    const { field, hint } = await loadFormScript();
+    expect([field.disabled, field.required]).toEqual([true, true]);
     expect(hint.textContent).toContain('จำเป็นต้องระบุ');
   });
 
-  test.each(FORBIDDEN)('เลือก %s: ล้างค่า + disable + ไม่ required', async (type) => {
-    const { select, input, hint } = await loadFormScript();
-    input.value = '12345';
-    select.value = type;
-    select.fire('change');
-    expect([input.value, input.disabled, input.required, input.validity]).toEqual(['', true, false, '']);
-    expect(hint.textContent).toContain('ไม่มีเลขที่ตำแหน่ง');
+  test('เลือกหน่วยงานแล้ว (ข้าราชการ): ช่อง enable + required', async () => {
+    const { field, chooseOrg } = await loadFormScript();
+    chooseOrg(orgUnitId);
+    expect([field.disabled, field.required]).toEqual([false, true]);
   });
 
-  test.each(REQUIRED)('เลือก %s: enable + required และรับ input ได้', async (type) => {
-    const { select, input } = await loadFormScript();
-    select.value = 'GENERAL_EMPLOYEE';
-    select.fire('change'); // ปิดก่อน แล้วเปลี่ยนกลับ - ต้องเปิดกลับได้
-    select.value = type;
-    select.fire('change');
-    expect([input.disabled, input.required]).toEqual([false, true]);
-    input.value = '123';
-    input.fire('input');
-    expect(input.validity).toBe('');
+  test.each(FORBIDDEN)('เลือก %s: ล้างค่า + disable + ไม่ required (แม้เลือกตำแหน่งไว้แล้ว)', async (type) => {
+    const { field, hint, position, chooseOrg, chooseType } = await loadFormScript();
+    chooseOrg(orgUnitId);
+    field.value = position.id;
+    chooseType(type);
+    expect([field.value, field.disabled, field.required]).toEqual(['', true, false]);
+    expect(hint.textContent).toContain('ไม่มีตำแหน่ง');
+  });
+
+  test.each(REQUIRED)('เลือก %s: enable + required และเลือกตำแหน่งได้', async (type) => {
+    const { field, position, chooseOrg, chooseType } = await loadFormScript();
+    chooseOrg(orgUnitId);
+    chooseType('GENERAL_EMPLOYEE'); // ปิดก่อน แล้วเปลี่ยนกลับ - ต้องเปิดกลับได้
+    expect(field.disabled).toBe(true);
+    chooseType(type);
+    expect([field.disabled, field.required]).toEqual([false, true]);
+    expect(field.children.some((o) => o.value === position.id)).toBe(true);
   });
 
   test('OTHER: enable แต่ไม่ required', async () => {
-    const { select, input } = await loadFormScript();
-    select.value = 'OTHER';
-    select.fire('change');
-    expect([input.disabled, input.required]).toEqual([false, false]);
-  });
-
-  test('เลขลำดับ 1-4 หลักผ่าน pattern, รูปแบบผิดได้ข้อความ error (setCustomValidity), ช่องว่างหัวท้ายถูกตัดตอน blur', async () => {
-    const { select, input } = await loadFormScript();
-    select.value = 'PERMANENT_EMPLOYEE';
-    select.fire('change');
-    for (const ok of ['7', '50', '123', '9999']) {
-      input.value = ok;
-      input.fire('input');
-      expect([ok, input.validity]).toEqual([ok, '']);
-    }
-    for (const bad of ['12345', 'abc', '12a']) {
-      input.value = bad;
-      input.fire('input');
-      expect(input.validity).toContain('รูปแบบเลขที่ตำแหน่งไม่ถูกต้อง');
-    }
-    input.value = '  123  ';
-    input.fire('blur');
-    expect([input.value, input.validity]).toEqual(['123', '']);
+    const { field, chooseOrg, chooseType } = await loadFormScript();
+    chooseOrg(orgUnitId);
+    chooseType('OTHER');
+    expect([field.disabled, field.required]).toEqual([false, false]);
   });
 
   test('pageshow (กด Back แล้วเบราว์เซอร์คืนค่าฟอร์มเดิมโดยไม่ยิง change): สถานะช่องต้องกลับมาตรงกับประเภทที่เลือกอยู่', async () => {
-    const { select, input, win } = await loadFormScript();
-    select.value = 'GENERAL_EMPLOYEE'; // เบราว์เซอร์คืนค่า select แต่ช่องยัง enable + มีค่าเก่าค้าง
-    input.disabled = false;
-    input.value = '999';
+    const { select, field, position, orgSelect, win } = await loadFormScript();
+    orgSelect.value = orgUnitId; // เบราว์เซอร์คืนค่า select ทั้งสอง แต่ช่องตำแหน่งยัง enable + มีค่าเก่าค้าง
+    select.value = 'GENERAL_EMPLOYEE';
+    field.disabled = false;
+    field.value = position.id;
     win.fire('pageshow');
-    expect([input.value, input.disabled, input.required]).toEqual(['', true, false]);
+    expect([field.value, field.disabled, field.required]).toEqual(['', true, false]);
 
     select.value = 'TEACHER';
-    input.disabled = true; // สภาพตรงข้าม: คืนค่า select เป็นประเภทที่ต้องมี แต่ช่องค้าง disabled
+    field.disabled = true; // สภาพตรงข้าม: คืนค่า select เป็นประเภทที่ต้องมี แต่ช่องค้าง disabled
     win.fire('pageshow');
-    expect([input.disabled, input.required]).toEqual([false, true]);
+    expect([field.disabled, field.required]).toEqual([false, true]);
   });
 });
 
 describe('ตรวจซ้ำที่ server (ข้าม client ผ่าน devtools/curl): ไม่เรียก API และไม่เปลี่ยน claim', () => {
-  test.each(FORBIDDEN)('%s + ส่ง positionNo มา -> 422 และ claim ยังรอ HR', async (type) => {
+  test.each(FORBIDDEN)('%s + ส่ง positionId มา -> 422 และ claim ยังรอ HR', async (type) => {
     const agent = await loginAsHrOfficer(harness.hrConsoleApp);
     const position = await makePosition();
     const claimId = await makeClaim();
-    const res = await approve(agent, claimId, { personnelType: type, positionNo: position.no });
+    const res = await approve(agent, claimId, { personnelType: type, positionId: position.id });
     expect(res.status).toBe(422);
     expect(res.text).toContain('ห้ามระบุเลขที่ตำแหน่ง');
     expect(await claimStatus(claimId)).toBe('PENDING_HR');
   });
 
-  test.each(REQUIRED)('%s + ไม่ส่ง positionNo -> 422 และ claim ยังรอ HR', async (type) => {
+  test.each(REQUIRED)('%s + ไม่ส่ง positionId -> 422 และ claim ยังรอ HR', async (type) => {
     const agent = await loginAsHrOfficer(harness.hrConsoleApp);
     const claimId = await makeClaim();
     const res = await approve(agent, claimId, { personnelType: type });
@@ -203,29 +166,15 @@ describe('ตรวจซ้ำที่ server (ข้าม client ผ่า�
     expect(res.text).toContain('ต้องระบุเลขที่ตำแหน่ง');
     expect(await claimStatus(claimId)).toBe('PENDING_HR');
   });
-
-  test('เลขที่ตำแหน่งที่ไม่มีอยู่ / ตำแหน่งที่ปิดใช้งานแล้ว -> 422 "ไม่พบเลขที่ตำแหน่ง" (ไม่ใช่ 500)', async () => {
-    const agent = await loginAsHrOfficer(harness.hrConsoleApp);
-    const inactive = await makePosition({ isActive: false });
-    for (const no of ['99999', inactive.no]) {
-      const claimId = await makeClaim();
-      // eslint-disable-next-line no-await-in-loop
-      const res = await approve(agent, claimId, { personnelType: 'PERMANENT_EMPLOYEE', positionNo: no });
-      expect(res.status).toBe(422);
-      expect(res.text).toContain('ไม่พบเลขที่ตำแหน่ง');
-      // eslint-disable-next-line no-await-in-loop
-      expect(await claimStatus(claimId)).toBe('PENDING_HR');
-    }
-  });
 });
 
 describe('บันทึกผ่านจริง', () => {
-  test('ลูกจ้างประจำ + เลขที่ตำแหน่งเป็นเลขลำดับ (3-4 หลัก) -> บันทึกผ่าน และ employment ผูกตำแหน่งนั้นจริง', async () => {
+  test('ลูกจ้างประจำ + ตำแหน่งเลขลำดับ (3-4 หลัก) ในหน่วยงานเดียวกัน -> บันทึกผ่าน และ employment ผูกตำแหน่งนั้นจริง', async () => {
     const agent = await loginAsHrOfficer(harness.hrConsoleApp);
     const position = await makePosition();
     expect(position.no).toMatch(/^\d{4}$/);
     const claimId = await makeClaim();
-    const res = await approve(agent, claimId, { personnelType: 'PERMANENT_EMPLOYEE', positionNo: position.no });
+    const res = await approve(agent, claimId, { personnelType: 'PERMANENT_EMPLOYEE', positionId: position.id });
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/hr/claim-requests?resolved=approved');
     const { rows } = await adminPool.query(
@@ -236,7 +185,7 @@ describe('บันทึกผ่านจริง', () => {
     expect(rows).toEqual([{ personnel_type: 'PERMANENT_EMPLOYEE', position_id: position.id }]);
   });
 
-  test.each(FORBIDDEN)('%s ไม่มีเลขที่ตำแหน่ง -> บันทึกผ่าน และ position_id เป็น NULL', async (type) => {
+  test.each(FORBIDDEN)('%s ไม่มีตำแหน่ง -> บันทึกผ่าน และ position_id เป็น NULL', async (type) => {
     const agent = await loginAsHrOfficer(harness.hrConsoleApp);
     const claimId = await makeClaim();
     const res = await approve(agent, claimId, { personnelType: type });
@@ -248,10 +197,10 @@ describe('บันทึกผ่านจริง', () => {
     expect(rows).toEqual([{ position_id: null }]);
   });
 
-  test('OTHER: มีหรือไม่มีเลขที่ตำแหน่งก็ผ่าน', async () => {
+  test('OTHER: มีหรือไม่มีตำแหน่งก็ผ่าน', async () => {
     const agent = await loginAsHrOfficer(harness.hrConsoleApp);
     expect((await approve(agent, await makeClaim(), { personnelType: 'OTHER' })).status).toBe(302);
     const position = await makePosition();
-    expect((await approve(agent, await makeClaim(), { personnelType: 'OTHER', positionNo: position.no })).status).toBe(302);
+    expect((await approve(agent, await makeClaim(), { personnelType: 'OTHER', positionId: position.id })).status).toBe(302);
   });
 });

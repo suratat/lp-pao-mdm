@@ -72,8 +72,9 @@ function createMdmClient({ baseUrl }) {
     return call('GET', `/api/v1/positions${query ? `?${query}` : ''}`, accessToken);
   }
 
-  function listPositionTypes(accessToken) {
-    return call('GET', '/api/v1/position-types', accessToken);
+  function listPositionTypes(accessToken, { activeOnly } = {}) {
+    const query = activeOnly === undefined ? '' : `?activeOnly=${activeOnly ? 'true' : 'false'}`;
+    return call('GET', `/api/v1/position-types${query}`, accessToken);
   }
 
   function createOrgUnit(accessToken, body) {
