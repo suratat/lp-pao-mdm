@@ -71,12 +71,17 @@ string) เป็นพฤติกรรมที่ตั้งใจตาม
 surface ที่ pid จะไปโผล่ในที่ที่ไม่ตั้งใจ) `ClaimRequest` schema เองไม่มีฟิลด์ pid/pid_hash ให้แสดงในหน้า
 รายการเลย (แสดงได้แค่ `displayName` จาก ThaID) — จงใจตามสัญญา API เดิม ไม่ใช่ intentional gap ของงานนี้
 
-Reference lookups ในฟอร์ม approve: ช่องเลขที่ตำแหน่งกรอกเป็นเลขที่ตำแหน่งแล้ว (console แปลงเป็น UUID ให้) แต่ช่อง `orgUnitId`
-ยังเป็น UUID พิมพ์เอง (หน้า master data ของ T10 ใช้ dropdown จริง แต่ฟอร์ม approve ยังไม่ได้ปรับส่วนนี้)
+Reference lookups ในฟอร์ม approve: หน่วยงาน (`orgUnitId`) และตำแหน่ง (`positionId`) เป็น dropdown จาก `GET /org-units`, `GET /positions`,
+`GET /position-types` (scope `personnel:read:basic` ที่ client `hr-console` มีอยู่แล้ว) — ดูหัวข้อถัดไป
 
-## ฟอร์ม approve claim: เลขที่ตำแหน่งตามประเภทบุคลากร
+## ฟอร์ม approve claim: dropdown หน่วยงาน/ตำแหน่ง + lock ตามประเภทบุคลากร
 
-ช่อง "เลขที่ตำแหน่ง" (`positionNo` — กรอกเป็นเลขที่ตำแหน่ง ไม่ใช่ UUID; console แปลงเป็น `positionId` ให้จากตำแหน่งที่ยังใช้งานอยู่) lock ตามประเภทบุคลากร
+- **หน่วยงาน** (`orgUnitId`): dropdown "รหัสหน่วยงาน — ชื่อหน่วย" เฉพาะที่ active (ค่าที่ส่งเป็น UUID)
+- **ตำแหน่ง** (`positionId`): dropdown "เลขที่ตำแหน่ง — ชื่อตำแหน่ง · ประเภทตำแหน่ง (ชื่อไทย)" เฉพาะที่ active และกรองตามหน่วยงานที่เลือก
+  (ไม่แสดงระดับ/สายงาน: ระดับเป็นของ `employment.level_code` ไม่ใช่ของตำแหน่ง) — ช่องระดับ/ชั้น (`levelCode`) ยังเป็นช่องพิมพ์เอง
+- server ของ console ตรวจซ้ำก่อนเรียก API: หน่วยงาน/ตำแหน่งมีอยู่จริงและ active, ตำแหน่งอยู่ในหน่วยงานที่เลือก (MDM API ไม่ตรวจข้อนี้)
+
+ช่องตำแหน่ง lock ตามประเภทบุคลากร
 (ค่าที่เจ้าของระบบยืนยัน, `src/personnelTypes.js` ↔ `api/src/services/personnelPositionRules.js` มี test เทียบสองฝั่ง):
 - **ห้ามมี** — พนักงานจ้าง 3 ประเภท (`CONTRACT/GENERAL/EXPERT_EMPLOYEE`), `OUTSOURCE_INDIVIDUAL`, `POLITICAL_APPOINTEE`: ช่องถูกล้างค่า + disable + ไม่ required
 - **ต้องมี** — `CIVIL_SERVANT`, `TEACHER`, `PERMANENT_EMPLOYEE`, `TRANSFERRED_HEALTH`: ช่อง enable + required
@@ -85,7 +90,8 @@ Reference lookups ในฟอร์ม approve: ช่องเลขที่�
 - ฝั่ง client เป็น UX เท่านั้น: server ของ console ตรวจซ้ำ (422 ก่อนเรียก API) และ **MDM API บังคับทุกเส้นทางที่เขียน employment** (422
   `position-required` / `position-not-allowed`, batch import = error รายแถว) — client แก้ผ่าน devtools ไม่ได้ผล
 - เลขที่ตำแหน่งแบบเลขลำดับล้วน (ลูกจ้างประจำ) รับ 1–4 หลัก (เดิม 1–2 หลักตาม seed) — ทั้งฟอร์มนี้และฟอร์ม master data ตำแหน่ง
-- ทดสอบสคริปต์ lock ในเบราว์เซอร์จริง (Google Chrome headless รัน script ตัวจริงของหน้า) แล้ว: 13 สถานการณ์ตามเกณฑ์ผ่านทั้งหมด
+- ทดสอบสคริปต์ lock ในเบราว์เซอร์จริง (Google Chrome headless รัน script ตัวจริงของหน้า) แล้ว: 13 สถานการณ์ตามเกณฑ์ผ่านทั้งหมด (ก่อนเปลี่ยนเป็น dropdown; สคริปต์ปัจจุบันตรวจซ้ำใน Chrome headless แล้วเช่นกัน — ดู PR)
+- ยังไม่ได้ยืนยัน: เบราว์เซอร์จริงที่ session จริงบน staging (ดู checklist ใน PR)
 
 ## T10: จัดการ master data หน่วยงาน/ตำแหน่ง (`/hr/master-data`)
 
