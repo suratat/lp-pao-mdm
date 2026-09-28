@@ -87,7 +87,7 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- PR #34 (fix/position-number-lock, T10-fix): OPEN, mergeable, no CI configured — BLOCKED on staging checklist. Done: item 3 (422 rules) verified on LOCAL docker stack only, 4 cases matched (2026-09-28); still needs re-run on real staging (a-c only, skip case d). Remaining: item 1 browser test approve form, item 2 Back-button/pageshow, item 4 DRY_RUN with real HR CSV, item 5 deploy.sh on staging
+- PR #34 (fix/position-number-lock, T10-fix): MERGED (2026-09-28) — deployed on VPN-MDM (api1/api2/hr-console). Verified: approve form lock + Back-button on real hr-console, 422 rules on local stack. Remaining: DRY_RUN with real HR CSV (non-blocking)
 - PR #33 (docs/keycloak-basic-scope-note, T10 docs): OPEN, mergeable — documents basic client scope loss on --import-realm (2026-09-26)
 - T9 (Portal, HR Console, DPO Console): DONE, merged to main
 - T8 (stg_hr schema + HR migrate runner): DONE, merged to main
