@@ -3,6 +3,7 @@
 // เป็นรหัสที่ผู้เรียกอ่านเข้าใจได้ (แทน error ดิบของ Postgres)
 
 const { assertPositionMatchesPersonnelType } = require('./personnelPositionRules');
+const { validateJobTitleText, assertJobTitleMatchesPersonnelType } = require('./jobTitleText');
 
 const FIELD_MAP = {
   employeeNo: { column: 'employee_no', fieldKey: 'employment.employee_no' },
@@ -12,6 +13,7 @@ const FIELD_MAP = {
   levelCode: { column: 'level_code', fieldKey: 'employment.level_code' },
   appointedDate: { column: 'appointed_date', fieldKey: 'employment.appointed_date' },
   emailWork: { column: 'email_work', fieldKey: 'employment.email_work' },
+  jobTitleText: { column: 'job_title_text', fieldKey: 'employment.job_title_text' },
 };
 
 function serviceError(code, message) {
@@ -49,10 +51,15 @@ function mapEmploymentConstraintError(err) {
 
 // ปิด record เดิม (ถ้ามี) เปิดใหม่ - คืน employment_id ใหม่ + รายการ field ที่เปลี่ยน (ว่างถ้าไม่มีอะไรเปลี่ยน)
 // updatedBy: 'HR' (endpoint ปกติ) หรือ 'HR_IMPORT' (batch import) - ใช้ค่าเดียวกับ employment.updated_by
-async function closeAndOpenEmployment(client, personId, incoming, updatedBy = 'HR') {
+async function closeAndOpenEmployment(client, personId, rawIncoming, updatedBy = 'HR') {
   // ทางผ่านเดียวของทุกเส้นทางที่เขียน employment (provision, PUT employment, resolve claim, reactivate, import) -
   // ตรวจกฎตำแหน่งตามประเภทบุคลากรที่นี่ที่เดียว ก่อนแตะ DB (422 ถ้าผิดกฎ)
-  assertPositionMatchesPersonnelType(incoming.personnelType, incoming.positionId);
+  assertPositionMatchesPersonnelType(rawIncoming.personnelType, rawIncoming.positionId);
+  // ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ): normalize (ตัด control/bidi, บรรทัดเดียว, trim) + ปฏิเสธเลขบัตร/ยาวเกิน + กฎตามประเภท
+  // ใช้ค่าที่ normalize แล้วทั้งตอน diff และ INSERT (ข้อความว่าง = null = ไม่มีข้อความ)
+  const jobTitleText = validateJobTitleText(rawIncoming.jobTitleText);
+  assertJobTitleMatchesPersonnelType(rawIncoming.personnelType, rawIncoming.positionId, jobTitleText);
+  const incoming = { ...rawIncoming, jobTitleText };
 
   const { rows } = await client.query(`SELECT * FROM mdm.employment WHERE person_id = $1 AND is_current = true`, [
     personId,
@@ -75,8 +82,8 @@ async function closeAndOpenEmployment(client, personId, incoming, updatedBy = 'H
     const { rows: inserted } = await client.query(
       `INSERT INTO mdm.employment
         (person_id, employee_no, personnel_type, position_id, org_unit_id, level_code, appointed_date,
-         effective_from, is_current, employment_status, email_work, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, 'ACTIVE', $9, $10)
+         effective_from, is_current, employment_status, email_work, updated_by, job_title_text)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, 'ACTIVE', $9, $10, $11)
        RETURNING employment_id`,
       [
         personId,
@@ -89,6 +96,7 @@ async function closeAndOpenEmployment(client, personId, incoming, updatedBy = 'H
         incoming.effectiveFrom,
         incoming.emailWork ?? null,
         updatedBy,
+        incoming.jobTitleText,
       ]
     );
 

@@ -58,6 +58,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // claim ที่ค้าง PENDING_HR จากเทสต์นี้ต้องไม่ไปดันรายการของเทสต์อื่นหลุดหน้าแรก (หน้ารายการดึงทีละ 50 รายการ)
+  await adminPool.query(`UPDATE mdm.claim_request SET status = 'REJECTED' WHERE display_name = $1 AND status = 'PENDING_HR'`, ['นายทดสอบ ดรอปดาวน์']);
   await harness.close();
   await adminPool.end();
 });

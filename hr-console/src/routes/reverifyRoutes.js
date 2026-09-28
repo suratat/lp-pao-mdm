@@ -14,7 +14,7 @@ function renderStaleTable(persons) {
       const name = `${basic.titleTh || ''}${basic.firstNameTh || ''} ${basic.lastNameTh || ''}`.trim() || '(ไม่มีชื่อในสิทธิ์ที่เห็น)';
       return `<tr>
         <td>${escapeHtml(name)}</td>
-        <td>${escapeHtml(basic.positionTitle || '-')}</td>
+        <td>${escapeHtml(basic.positionTitle || '-')}${basic.jobTitleText ? `<br><span class="hint">ชื่อตำแหน่ง/ลักษณะงาน: ${escapeHtml(basic.jobTitleText)}</span>` : ''}</td>
         <td>${escapeHtml(basic.orgUnit?.nameTh || '-')}</td>
         <td><span class="badge badge-${escapeHtml((verification.verificationStatus || '').toLowerCase())}">${escapeHtml(verification.verificationStatus || '-')}</span></td>
         <td>${escapeHtml(fmt(verification.thaidVerifiedAt))}</td>

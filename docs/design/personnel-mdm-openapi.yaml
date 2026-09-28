@@ -1454,6 +1454,10 @@ components:
             positionTitle: { type: string }
             positionNo: { type: string }
             levelCode: { type: string, examples: [ชำนาญการ] }
+            jobTitleText:
+              type: string
+              maxLength: 255
+              description: ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ) ของบุคลากรที่ไม่มีเลขที่ตำแหน่ง - ฟิลด์แยกจาก `positionTitle` ไม่ใช่ตัวแทน และไม่อยู่ใน tokenClaims
             orgUnit: { $ref: '#/components/schemas/OrgUnitRef' }
             emailWork: { type: string, format: email }
             photoUrl:
@@ -1642,6 +1646,11 @@ components:
         position: { $ref: '#/components/schemas/Position' }
         orgUnit: { $ref: '#/components/schemas/OrgUnitRef' }
         levelCode: { type: string }
+        jobTitleText:
+          type: string
+          maxLength: 255
+          x-required-scope: personnel:read:basic
+          description: ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ) - ดู `EmploymentUpsert.jobTitleText`
         appointedDate: { type: string, format: date, description: วันบรรจุ }
         effectiveFrom: { type: string, format: date }
         effectiveTo: { type: [string, 'null'], format: date }
@@ -1670,6 +1679,18 @@ components:
             (พนักงานจ้าง/จ้างเหมาบริการรายบุคคล)
         orgUnitId: { type: string, format: uuid }
         levelCode: { type: string }
+        jobTitleText:
+          type: string
+          maxLength: 255
+          description: |
+            ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ) สำหรับบุคลากรที่ไม่มีเลขที่ตำแหน่ง - เก็บใน `employment.job_title_text` แยกจาก
+            `positionId` (ไม่แทน `basic.positionTitle` และไม่อยู่ใน token claims) ระบบตัด control/bidi characters, รวมบรรทัดเป็นบรรทัดเดียว
+            และ trim ก่อนบันทึก (ข้อความว่างหลังตัด = ไม่มีข้อความ) กฎตามประเภทบุคลากร (แยกจากกฎเลขที่ตำแหน่ง):
+            - ประเภทที่ต้องมีตำแหน่ง (`CIVIL_SERVANT`, `TEACHER`, `PERMANENT_EMPLOYEE`, `TRANSFERRED_HEALTH`) ที่ส่งฟิลด์นี้ -> 422 `job-title-not-allowed`
+            - `OTHER` ส่งทั้ง `positionId` และ `jobTitleText` -> 422 `position-and-job-title-conflict` (เลือกอย่างใดอย่างหนึ่ง หรือไม่ใส่เลย)
+            - ข้อความที่มีตัวเลข 13 หลักที่เข้าข่ายเลขบัตรประชาชน (ติดกันหรือมีขีด/เว้นวรรค) -> 422 `job-title-contains-pid`
+            - ยาวเกิน 255 ตัวอักษรหลัง normalize -> 422 `job-title-too-long`
+            (batch import รายงานเป็น error รายแถว: `JOB_TITLE_NOT_ALLOWED`, `POSITION_AND_JOB_TITLE_CONFLICT`, `JOB_TITLE_CONTAINS_PID`, `JOB_TITLE_TOO_LONG`)
         appointedDate: { type: string, format: date }
         effectiveFrom: { type: string, format: date }
         emailWork: { type: [string, 'null'], format: email }

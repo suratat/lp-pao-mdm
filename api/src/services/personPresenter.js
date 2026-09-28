@@ -38,7 +38,7 @@ async function loadPersonAggregate(pool, personId) {
     `SELECT
        e.employment_id, e.employee_no, e.personnel_type, e.level_code, e.appointed_date,
        e.effective_from, e.effective_to, e.is_current, e.employment_status, e.separation_date,
-       e.email_work, e.hr_source_ref, e.updated_at,
+       e.email_work, e.hr_source_ref, e.updated_at, e.job_title_text,
        pos.position_id, pos.position_no, pos.title_th AS position_title_th, pos.line_of_work,
        pos.position_type, pos.is_active AS position_is_active,
        ou.org_unit_id, ou.code AS org_unit_code, ou.name_th AS org_unit_name_th,
@@ -91,6 +91,8 @@ function presentEmployment(employment) {
     position: presentPositionRef(employment),
     orgUnit: presentOrgUnitRef(employment),
     levelCode: employment.level_code ?? undefined,
+    // ฟิลด์แยกจาก position/basic.positionTitle (ไม่แทนที่) และไม่ใส่ใน token claims - Employment.jobTitleText เป็น {type: string} ไม่ nullable
+    jobTitleText: employment.job_title_text ?? undefined,
     appointedDate: employment.appointed_date ?? undefined,
     effectiveFrom: employment.effective_from,
     effectiveTo: employment.effective_to,
@@ -151,6 +153,7 @@ function presentPerson(aggregate) {
     positionTitle: employment?.position_title_th ?? undefined,
     positionNo: employment?.position_no ?? undefined,
     levelCode: employment?.level_code ?? undefined,
+    jobTitleText: employment?.job_title_text ?? undefined,
     orgUnit: presentOrgUnitRef(employment),
     emailWork: employment?.email_work ?? undefined,
     photoUrl: `${PHOTO_BASE_URL}/persons/${person.person_id}/photo`,

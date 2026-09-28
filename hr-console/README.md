@@ -93,6 +93,20 @@ Reference lookups ในฟอร์ม approve: หน่วยงาน (`orgU
 - ทดสอบสคริปต์ lock ในเบราว์เซอร์จริง (Google Chrome headless รัน script ตัวจริงของหน้า) แล้ว: 13 สถานการณ์ตามเกณฑ์ผ่านทั้งหมด (ก่อนเปลี่ยนเป็น dropdown; สคริปต์ปัจจุบันตรวจซ้ำใน Chrome headless แล้วเช่นกัน — ดู PR)
 - ยังไม่ได้ยืนยัน: เบราว์เซอร์จริงที่ session จริงบน staging (ดู checklist ใน PR)
 
+### ชื่อตำแหน่ง/ลักษณะงาน (`jobTitleText`, ข้อความอิสระ)
+
+สำหรับบุคลากรที่ไม่มีเลขที่ตำแหน่งตามอัตรากำลัง — เก็บที่คอลัมน์แยก `mdm.employment.job_title_text` (varchar(255)) **ไม่ใช้ `position_id`/`position_no`**
+และไม่แทน `basic.positionTitle`, ไม่อยู่ใน token claims (`syncService`)
+- **ใช้ได้กับ:** ประเภทที่ห้ามมีตำแหน่ง (`CONTRACT/GENERAL/EXPERT_EMPLOYEE`, `OUTSOURCE_INDIVIDUAL`, `POLITICAL_APPOINTEE`) และ `OTHER`
+- **ประเภทที่ต้องมีตำแหน่ง** (`CIVIL_SERVANT`, `TEACHER`, `PERMANENT_EMPLOYEE`, `TRANSFERRED_HEALTH`): ซ่อน/disable ช่อง+ล้างค่า; ส่งมาตรง ๆ → 422 `job-title-not-allowed`
+- **`OTHER`:** เลือกได้อย่างใดอย่างหนึ่ง (ตำแหน่ง หรือข้อความ หรือไม่ใส่) — กรอกอย่างใดอย่างหนึ่งแล้วอีกช่องถูก disable อัตโนมัติ ลบ/เลือกกลับเพื่อเปลี่ยนใจ;
+  ส่งทั้งสองอย่าง → 422 `position-and-job-title-conflict` (ถ้าเบราว์เซอร์คืนค่ามาทั้งสองช่อง ตำแหน่งชนะและข้อความถูกล้าง)
+- **การตรวจ (console และ MDM API ตรวจซ้ำทั้งคู่ — `src/jobTitleText.js` ↔ `api/src/services/jobTitleText.js` มี test เทียบสองฝั่ง):** ตัด control/bidi/zero-width characters,
+  รวมขึ้นบรรทัดใหม่เป็นช่องว่างเดียว, trim, ยาวไม่เกิน 255 ตัวอักษร, **ปฏิเสธข้อความที่มีเลขบัตรประชาชน 13 หลัก** (ติดกัน/มีขีด/เว้นวรรค/จุด/เลขไทย) — error ไม่ echo ข้อความกลับ
+- **history:** แก้เฉพาะข้อความ = ปิดแถว employment เก่า/เปิดแถวใหม่ + `data_change_log` (`employment.job_title_text`) + `outbox_event` ใน transaction เดียว
+  (`changed_fields` มีแค่ชื่อฟิลด์ ข้อความไม่ไปอยู่ใน payload ของ outbox/webhook/`GET /events`)
+- **การแสดงผล:** hr-console reverify, portal `/portal/me` (แถว "ชื่อตำแหน่ง/ลักษณะงาน"), dpo-console change-log — escape ทุกจุด + `overflow-wrap: anywhere` ใน CSS ของตาราง
+
 ## T10: จัดการ master data หน่วยงาน/ตำแหน่ง (`/hr/master-data`)
 
 หน้าเพิ่ม/แก้ `mdm.org_unit` และ `mdm.position` ผ่าน `POST/PUT /org-units`, `/positions` ของ MDM API

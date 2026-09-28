@@ -29,7 +29,7 @@ function layout(title, bodyHtml, { displayName } = {}) {
     .ok { color: #1a7a2e; }
     .hint { color: #666; font-size: 0.85em; font-weight: normal; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; font-size: 0.9em; }
-    td, th { border: 1px solid #ccc; padding: 0.35rem; text-align: left; vertical-align: top; word-break: break-word; }
+    td, th { border: 1px solid #ccc; padding: 0.35rem; text-align: left; vertical-align: top; word-break: break-word; overflow-wrap: anywhere; }
     .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 0.75rem; font-size: 0.85em; background: #eee; }
     .badge-service { background: #e2e3ff; }
     .badge-user { background: #dff5e1; }

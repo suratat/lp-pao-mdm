@@ -125,6 +125,7 @@ async function buildIntegrationHarness({ scenarios } = {}) {
   return {
     apiCtx,
     hrConsoleApp,
+    mdmClient,
     sessionStore,
     mockKeycloak,
     async close() {
