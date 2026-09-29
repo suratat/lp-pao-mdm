@@ -87,7 +87,9 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- PR #40 (feat/employment-job-title-text, T10-feat): OPEN — ช่อง jobTitleText (ข้อความอิสระ) สำหรับประเภทที่ไม่มีตำแหน่ง + OTHER; **มี migration 040 ต้องสำรอง DB ก่อน deploy, deploy API ก่อน hr-console**; รอทดสอบบนเบราว์เซอร์จริง/staging (2026-09-28)
+- PR #40 (feat/employment-job-title-text, T10-feat): MERGED (2026-09-29) — deployed on VPN-MDM
+  (migration 040 applied, api1/api2 then hr-console/portal/dpo-console). Verified on real hr-console:
+  jobTitleText field for no-position types + OTHER (mutual exclusion with position), maxlength, Back-button.
 - PR #34 (fix/position-number-lock, T10-fix): MERGED (2026-09-28) — deployed on VPN-MDM (api1/api2/hr-console). Verified: approve form lock + Back-button on real hr-console, 422 rules on local stack. Remaining: DRY_RUN with real HR CSV (non-blocking)
 - PR #33 (docs/keycloak-basic-scope-note, T10 docs): OPEN, mergeable — documents basic client scope loss on --import-realm (2026-09-26)
 - T9 (Portal, HR Console, DPO Console): DONE, merged to main
