@@ -21,4 +21,10 @@ function positionRuleFor(value) {
   return PERSONNEL_TYPES.find((t) => t.value === value)?.positionRule ?? 'OPTIONAL';
 }
 
-module.exports = { PERSONNEL_TYPES, positionRuleFor };
+// ประเภทที่ใช้ช่อง "ชื่อตำแหน่ง/ลักษณะงาน" (ข้อความอิสระ) ได้ = ทุกประเภทที่ไม่ต้องมีตำแหน่ง (ห้ามมี + OTHER) - แยกจากกฎเลขที่ตำแหน่ง
+// ต้องตรงกับ api/src/services/jobTitleText.js (jobTitleAllowedFor) - มี test เทียบสองฝั่ง
+function jobTitleAllowedFor(value) {
+  return positionRuleFor(value) !== 'REQUIRED';
+}
+
+module.exports = { PERSONNEL_TYPES, positionRuleFor, jobTitleAllowedFor };

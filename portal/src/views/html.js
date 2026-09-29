@@ -24,7 +24,7 @@ function layout(title, bodyHtml) {
     .error { color: #b00020; }
     .ok { color: #1a7a2e; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-    td, th { border: 1px solid #ccc; padding: 0.4rem; text-align: left; }
+    td, th { border: 1px solid #ccc; padding: 0.4rem; text-align: left; overflow-wrap: anywhere; }
   </style>
 </head>
 <body>

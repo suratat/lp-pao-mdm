@@ -28,6 +28,7 @@ function createMeRoutes({ mdmClient }) {
              <tr><th>ชื่อ-สกุล</th><td>${escapeHtml(basic.titleTh || '')}${escapeHtml(basic.firstNameTh || '')} ${escapeHtml(basic.lastNameTh || '')}</td></tr>
              <tr><th>เลขประจำตัว</th><td>${escapeHtml(basic.employeeNo || '-')}</td></tr>
              <tr><th>ตำแหน่ง</th><td>${escapeHtml(basic.positionTitle || '-')}</td></tr>
+             ${basic.jobTitleText ? `<tr><th>ชื่อตำแหน่ง/ลักษณะงาน</th><td>${escapeHtml(basic.jobTitleText)}</td></tr>` : ''}
              <tr><th>สังกัด</th><td>${escapeHtml(basic.orgUnit?.nameTh || '-')}</td></tr>
              <tr><th>สถานะ</th><td>${escapeHtml(me.status)}</td></tr>
              <tr><th>สถานะการยืนยัน ThaID</th><td>${escapeHtml(verification.verificationStatus || '-')}</td></tr>

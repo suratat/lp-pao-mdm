@@ -48,20 +48,31 @@ function loadApproveForm(html) {
   const posSelect = makeEl();
   posSelect.children = parseOptions(selectHtmlOf(html, 'positionId'));
   const hint = makeEl();
+  const jobInput = makeEl();
+  const jobRow = makeEl();
+  const jobHint = makeEl();
   const win = makeEl();
-  const doc = { getElementById: (id) => ({ personnelType: typeSelect, orgUnitId: orgSelect, positionId: posSelect, positionHint: hint })[id] };
+  const doc = {
+    getElementById: (id) =>
+      ({ personnelType: typeSelect, orgUnitId: orgSelect, positionId: posSelect, positionHint: hint, jobTitleText: jobInput, jobTitleRow: jobRow, jobTitleHint: jobHint })[id],
+  };
   vm.runInNewContext(script, { document: doc, window: win, JSON, Array });
   return {
     typeSelect,
     orgSelect,
     posSelect,
     hint,
+    jobInput,
+    jobRow,
+    jobHint,
     win,
     // ตัวเลือกตำแหน่งที่ผู้ใช้เห็นอยู่ตอนนี้ (ไม่รวม placeholder)
     visiblePositions: () => posSelect.children.filter((o) => o.value !== '').map((o) => o.value),
     placeholderText: () => posSelect.children[0].textContent,
     chooseOrg(id) { orgSelect.value = id; orgSelect.fire('change'); },
     chooseType(type) { typeSelect.value = type; typeSelect.fire('change'); },
+    choosePosition(id) { posSelect.value = id; posSelect.fire('change'); },
+    typeJobTitle(text) { jobInput.value = text; jobInput.fire('input'); },
   };
 }
 

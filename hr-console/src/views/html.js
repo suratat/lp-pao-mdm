@@ -26,7 +26,7 @@ function layout(title, bodyHtml, { displayName, isMasterDataAdmin } = {}) {
     .ok { color: #1a7a2e; }
     .hint { color: #666; font-size: 0.85em; font-weight: normal; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-    td, th { border: 1px solid #ccc; padding: 0.4rem; text-align: left; vertical-align: top; }
+    td, th { border: 1px solid #ccc; padding: 0.4rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
     .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 0.75rem; font-size: 0.85em; background: #eee; }
     .badge-stale, .badge-pending_hr { background: #fff3cd; }
     .badge-expired { background: #f8d7da; }
