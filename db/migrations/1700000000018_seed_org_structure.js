@@ -45,7 +45,6 @@ const POSITIONS = [
     position_id: '00000000-0000-0000-0000-000000000101',
     position_no: 'POS-0001',
     title_th: 'ผู้อำนวยการกองการเจ้าหน้าที่',
-    line_of_work: 'บริหารงานบุคคล',
     position_type: 'อำนวยการท้องถิ่น',
     org_unit_id: '00000000-0000-0000-0000-000000000002',
   },
@@ -53,7 +52,6 @@ const POSITIONS = [
     position_id: '00000000-0000-0000-0000-000000000102',
     position_no: 'POS-0002',
     title_th: 'นักทรัพยากรบุคคลชำนาญการ',
-    line_of_work: 'บริหารงานบุคคล',
     position_type: 'วิชาการ',
     org_unit_id: '00000000-0000-0000-0000-000000000003',
   },
@@ -61,7 +59,6 @@ const POSITIONS = [
     position_id: '00000000-0000-0000-0000-000000000103',
     position_no: 'POS-0003',
     title_th: 'เจ้าพนักงานธุรการ',
-    line_of_work: 'ธุรการ',
     position_type: 'ทั่วไป',
     org_unit_id: '00000000-0000-0000-0000-000000000004',
   },
@@ -79,9 +76,9 @@ exports.up = async (pgm) => {
 
   for (const p of POSITIONS) {
     await pgm.db.query(
-      `INSERT INTO mdm.position (position_id, position_no, title_th, line_of_work, position_type, org_unit_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [p.position_id, p.position_no, p.title_th, p.line_of_work, p.position_type, p.org_unit_id]
+      `INSERT INTO mdm.position (position_id, position_no, title_th, position_type, org_unit_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [p.position_id, p.position_no, p.title_th, p.position_type, p.org_unit_id]
     );
   }
 };

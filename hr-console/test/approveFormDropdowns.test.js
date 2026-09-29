@@ -33,11 +33,11 @@ async function makeOrg(label, isActive = true) {
   return { id: rows[0].org_unit_id, code, name };
 }
 
-async function makePos(orgId, no, title, type, { isActive = true, lineOfWork = null } = {}) {
+async function makePos(orgId, no, title, type, { isActive = true } = {}) {
   const { rows } = await adminPool.query(
-    `INSERT INTO mdm.position (position_no, title_th, line_of_work, position_type, org_unit_id, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING position_id`,
-    [no, title, lineOfWork, type, orgId, isActive]
+    `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id, is_active)
+     VALUES ($1, $2, $3, $4, $5) RETURNING position_id`,
+    [no, title, type, orgId, isActive]
   );
   return { id: rows[0].position_id, no, title };
 }
@@ -51,7 +51,7 @@ beforeAll(async () => {
   orgB = await makeOrg('B');
   orgInactive = await makeOrg('X', false);
   orgEmpty = await makeOrg('E');
-  posA1 = await makePos(orgA.id, `DD-A1-${suffix}`, 'นักวิชาการทดสอบ ก', 'ACADEMIC', { lineOfWork: `สายงานลับ-${suffix}` });
+  posA1 = await makePos(orgA.id, `DD-A1-${suffix}`, 'นักวิชาการทดสอบ ก', 'ACADEMIC');
   posA2 = await makePos(orgA.id, `DD-A2-${suffix}`, 'เจ้าพนักงานทดสอบ ข', 'GENERAL');
   posAInactive = await makePos(orgA.id, `DD-A3-${suffix}`, 'ตำแหน่งที่ปิดแล้ว', 'GENERAL', { isActive: false });
   posB1 = await makePos(orgB.id, `DD-B1-${suffix}`, 'นักวิชาการทดสอบ ค', 'ACADEMIC');
@@ -98,7 +98,7 @@ describe('render รายการ', () => {
     expect(byValue.has(orgInactive.id)).toBe(false);
   });
 
-  test('ตำแหน่งเป็น select ค่า = positionId แสดง "เลขที่ — ชื่อ · ประเภท(ชื่อไทย)" เฉพาะที่ active, ไม่แสดงระดับ/สายงาน', async () => {
+  test('ตำแหน่งเป็น select ค่า = positionId แสดง "เลขที่ — ชื่อ · ประเภท(ชื่อไทย)" เฉพาะที่ active, ไม่แสดงระดับ', async () => {
     const { html } = await getForm();
     expect(html).toMatch(/<select name="positionId" id="positionId">/);
     const options = parseOptions(selectHtmlOf(html, 'positionId'));
@@ -108,7 +108,6 @@ describe('render รายการ', () => {
     expect(byValue.get(posB1.id).getAttribute('data-org-unit')).toBe(orgB.id);
     expect(byValue.get(posA1.id).getAttribute('data-org-unit')).toBe(orgA.id);
     expect(byValue.has(posAInactive.id)).toBe(false);
-    expect(html).not.toContain(`สายงานลับ-${suffix}`); // line_of_work ไม่ถูกแสดงในฟอร์ม
   });
 
   test('ไม่มีคำว่า undefined ในหน้า (ชื่อประเภทตำแหน่งที่หาไม่เจอใช้ code แทน)', async () => {

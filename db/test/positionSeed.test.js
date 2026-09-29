@@ -20,7 +20,7 @@ afterAll(async () => {
 
 test('seed ตำแหน่ง นักวิชาการคอมพิวเตอร์ ถูกต้องครบ ผูกกับ org_unit YB จริง', async () => {
   const { rows } = await pool.query(
-    `SELECT p.position_no, p.title_th, p.line_of_work, p.position_type, p.is_active, p.org_unit_id, ou.code AS org_unit_code
+    `SELECT p.position_no, p.title_th, p.position_type, p.is_active, p.org_unit_id, ou.code AS org_unit_code
      FROM mdm.position p
      JOIN mdm.org_unit ou ON ou.org_unit_id = p.org_unit_id
      WHERE p.position_no = $1`,
@@ -30,7 +30,6 @@ test('seed ตำแหน่ง นักวิชาการคอมพิ�
   expect(rows).toHaveLength(1);
   const position = rows[0];
   expect(position.title_th).toBe('นักวิชาการคอมพิวเตอร์');
-  expect(position.line_of_work).toBeNull();
   expect(position.position_type).toBe('ACADEMIC');
   expect(position.is_active).toBe(true);
   expect(position.org_unit_code).toBe(ORG_UNIT_CODE);

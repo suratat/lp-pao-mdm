@@ -197,10 +197,10 @@ async function createPosition(pool, body, actor) {
     let row;
     try {
       const { rows } = await client.query(
-        `INSERT INTO mdm.position (position_no, title_th, line_of_work, position_type, org_unit_id, is_active)
-         VALUES ($1, $2, $3, $4, $5, true)
+        `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id, is_active)
+         VALUES ($1, $2, $3, $4, true)
          RETURNING ${POSITION_COLUMNS}`,
-        [body.positionNo, body.titleTh, body.lineOfWork ?? null, body.positionType, body.orgUnitId]
+        [body.positionNo, body.titleTh, body.positionType, body.orgUnitId]
       );
       row = rows[0];
     } catch (err) {
@@ -220,7 +220,6 @@ async function createPosition(pool, body, actor) {
       changes: [
         { field: 'position_no', oldValue: null, newValue: row.position_no },
         { field: 'title_th', oldValue: null, newValue: row.title_th },
-        { field: 'line_of_work', oldValue: null, newValue: row.line_of_work },
         { field: 'position_type', oldValue: null, newValue: row.position_type },
         { field: 'org_unit_id', oldValue: null, newValue: row.org_unit_id },
         { field: 'is_active', oldValue: null, newValue: row.is_active },
@@ -240,7 +239,6 @@ async function updatePosition(pool, positionId, body, actor) {
     const next = {
       position_no: body.positionNo,
       title_th: body.titleTh,
-      line_of_work: body.lineOfWork ?? null,
       position_type: body.positionType,
       org_unit_id: body.orgUnitId,
       is_active: body.isActive,
@@ -275,10 +273,10 @@ async function updatePosition(pool, positionId, body, actor) {
     try {
       ({ rows: updated } = await client.query(
         `UPDATE mdm.position
-         SET position_no = $2, title_th = $3, line_of_work = $4, position_type = $5, org_unit_id = $6, is_active = $7
+         SET position_no = $2, title_th = $3, position_type = $4, org_unit_id = $5, is_active = $6
          WHERE position_id = $1
          RETURNING ${POSITION_COLUMNS}`,
-        [positionId, next.position_no, next.title_th, next.line_of_work, next.position_type, next.org_unit_id, next.is_active]
+        [positionId, next.position_no, next.title_th, next.position_type, next.org_unit_id, next.is_active]
       ));
     } catch (err) {
       if (err.code === PG_UNIQUE_VIOLATION) throw positionNoConflict(body.positionNo);

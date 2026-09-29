@@ -263,12 +263,12 @@ describe('ตำแหน่ง (positions)', () => {
     const agent = await loginAdmin();
     const { orgUnitId } = await createOrgViaConsole(agent);
     const positionNo = uniquePositionNo();
-    const form = { positionNo, titleTh: 'นักวิชาการทดสอบ', lineOfWork: 'สายงานทดสอบ', positionType: 'ACADEMIC', orgUnitId };
+    const form = { positionNo, titleTh: 'นักวิชาการทดสอบ', positionType: 'ACADEMIC', orgUnitId };
 
     const first = await agent.post('/hr/master-data/positions').type('form').send(form);
     expect(first.status).toBe(302);
-    const { rows } = await adminPool.query(`SELECT title_th, line_of_work, position_type, is_active FROM mdm.position WHERE position_no = $1`, [positionNo]);
-    expect(rows[0]).toMatchObject({ title_th: 'นักวิชาการทดสอบ', line_of_work: 'สายงานทดสอบ', position_type: 'ACADEMIC', is_active: true });
+    const { rows } = await adminPool.query(`SELECT title_th, position_type, is_active FROM mdm.position WHERE position_no = $1`, [positionNo]);
+    expect(rows[0]).toMatchObject({ title_th: 'นักวิชาการทดสอบ', position_type: 'ACADEMIC', is_active: true });
 
     const dup = await agent.post('/hr/master-data/positions').type('form').send(form);
     expect(dup.status).toBe(409);

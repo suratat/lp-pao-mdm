@@ -4,7 +4,7 @@ const { presentEmployment } = require('./personPresenter');
 const { closeAndOpenEmployment } = require('./employmentShared');
 
 const EMPLOYMENT_SELECT = `
-  SELECT e.*, pos.position_no, pos.title_th AS position_title_th, pos.line_of_work, pos.position_type,
+  SELECT e.*, pos.position_no, pos.title_th AS position_title_th, pos.position_type,
          pos.is_active AS position_is_active,
          ou.code AS org_unit_code, ou.name_th AS org_unit_name_th, parent_ou.name_th AS org_unit_parent_name_th
   FROM mdm.employment e

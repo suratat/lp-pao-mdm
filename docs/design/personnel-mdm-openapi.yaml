@@ -1075,7 +1075,7 @@ paths:
       tags: [Reference]
       summary: แก้ตำแหน่ง / ปิดใช้งาน (soft-delete) (HR master data admin)
       description: |
-        แทนที่ฟิลด์ที่แก้ได้ทั้งชุด (`lineOfWork` ที่ไม่ส่งมาถือเป็น null) `positionNo` แก้ได้ (ต้องไม่ซ้ำ → 409)
+        แทนที่ฟิลด์ที่แก้ได้ทั้งชุด `positionNo` แก้ได้ (ต้องไม่ซ้ำ → 409)
         **ไม่มี DELETE** - ปิดใช้งานด้วย `isActive=false` เท่านั้น
         - ปิดใช้งานไม่ได้ถ้ามีผู้ดำรงตำแหน่งปัจจุบัน (409 `position-occupied`)
         - ย้ายสังกัด (`orgUnitId` เปลี่ยน) ไม่ได้ถ้ามีผู้ดำรงตำแหน่งปัจจุบัน (409 `position-occupied`)
@@ -1557,7 +1557,6 @@ components:
         positionId: { type: string, format: uuid }
         positionNo: { type: string, description: เลขที่ตำแหน่ง }
         titleTh: { type: string }
-        lineOfWork: { type: string, description: สายงาน }
         positionType:
           type: string
           enum: [EXECUTIVE, DIRECTOR, ACADEMIC, GENERAL, SCHOOL_DIRECTOR, SCHOOL_DEPUTY_DIRECTOR, POLITICAL]
@@ -1605,7 +1604,6 @@ components:
       properties:
         positionNo: { $ref: '#/components/schemas/PositionNo' }
         titleTh: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
-        lineOfWork: { type: [string, 'null'], maxLength: 100 }
         positionType: { type: string, description: code จาก GET /position-types }
         orgUnitId: { type: string, format: uuid }
 
@@ -1616,7 +1614,6 @@ components:
       properties:
         positionNo: { $ref: '#/components/schemas/PositionNo' }
         titleTh: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
-        lineOfWork: { type: [string, 'null'], maxLength: 100 }
         positionType: { type: string }
         orgUnitId: { type: string, format: uuid }
         isActive: { type: boolean }
