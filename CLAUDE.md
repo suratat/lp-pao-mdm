@@ -87,6 +87,10 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
+- PR #46 (fix/flaky-tests): OPEN — test-only fix: db/test/positionBatchSeed.test.js filters mdm.position
+  queries by CSV position_no (was order-dependent on constraints.test.js's uncleaned inserts, confirmed
+  diff=10 rows); migrate/test/rules.test.js:104 fixture updated to match personnel-type-map.json's real key
+  'พนักงานจ้าง' (commit 2e16d9b). No production code, migrations, or config touched (2026-09-30)
 - PR #44 (fix/employment-error-status): MERGED (2026-09-30) — deployed on VPN-MDM (api1/api2 built, no migration).
   mapEmploymentConstraintError returns HttpProblem (422 org-unit-invalid/position-invalid/personnel-type-invalid,
   409 position-occupied/employee-no-conflict) instead of plain Error+.code that leaked as 500 on
