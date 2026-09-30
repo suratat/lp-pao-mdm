@@ -87,6 +87,7 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
+- PR #44 (fix/employment-error-status): OPEN — mapEmploymentConstraintError returns HttpProblem (422 org-unit-invalid/position-invalid/personnel-type-invalid, 409 position-occupied/employee-no-conflict) instead of plain Error+.code that leaked as 500 on provision/reactivate/resolve-claim; PUT /persons/{id}/employment status changes from blanket 409 to per-code 422/409 (breaking for callers branching on 409). Only api/src/services/employmentShared.js touched; no migration (2026-09-30)
 - PR #42 (chore/remove-line-of-work): MERGED (2026-09-30) — deployed on VPN-MDM (migration 041 applied,
   api1/api2 then hr-console/portal/dpo-console). Verified on real hr-console: position form has no
   line_of_work field, approve-form dropdowns (PR #39) and jobTitleText (PR #40) still work correctly.

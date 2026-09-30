@@ -4,6 +4,7 @@
 
 const { assertPositionMatchesPersonnelType } = require('./personnelPositionRules');
 const { validateJobTitleText, assertJobTitleMatchesPersonnelType } = require('./jobTitleText');
+const { HttpProblem } = require('../security/httpProblem');
 
 const FIELD_MAP = {
   employeeNo: { column: 'employee_no', fieldKey: 'employment.employee_no' },
@@ -34,17 +35,32 @@ function diffEmploymentFields(current, incoming) {
   return changes;
 }
 
+// คืน HttpProblem ที่มี .status/.type ให้ route handler (provisioningService/employmentService) ตอบ 4xx ได้ตรงๆ
+// โดยไม่ต้องมี catch/remap เพิ่มที่ผู้เรียก - ยังคง .code (SCREAMING_SNAKE) ไว้บน object เดิมด้วย เพราะ
+// employmentImportService.js:96 อ่าน err.code || 'UNKNOWN_ERROR' เพื่อรายงานเป็น error รายแถวของ batch import
+function constraintProblem(status, type, title, code) {
+  const problem = new HttpProblem(status, type, title);
+  problem.code = code;
+  return problem;
+}
+
 function mapEmploymentConstraintError(err) {
   if (err.code === '23503') {
-    if (err.constraint?.includes('position')) return serviceError('POSITION_NOT_FOUND', 'ไม่พบตำแหน่งที่ระบุ');
-    if (err.constraint?.includes('org_unit')) return serviceError('ORG_UNIT_NOT_FOUND', 'ไม่พบสังกัดที่ระบุ');
+    if (err.constraint?.includes('position')) {
+      return constraintProblem(422, 'position-invalid', 'ไม่พบตำแหน่งที่ระบุ', 'POSITION_NOT_FOUND');
+    }
+    if (err.constraint?.includes('org_unit')) {
+      return constraintProblem(422, 'org-unit-invalid', 'ไม่พบสังกัดที่ระบุ', 'ORG_UNIT_NOT_FOUND');
+    }
     if (err.constraint?.includes('personnel_type')) {
-      return serviceError('PERSONNEL_TYPE_INVALID', 'ประเภทบุคลากรไม่ถูกต้อง');
+      return constraintProblem(422, 'personnel-type-invalid', 'ประเภทบุคลากรไม่ถูกต้อง', 'PERSONNEL_TYPE_INVALID');
     }
   }
-  if (err.code === '23P01') return serviceError('DUPLICATE_POSITION', 'ตำแหน่งนี้มีผู้ครองอยู่แล้วในช่วงเวลาที่ระบุ');
+  if (err.code === '23P01') {
+    return constraintProblem(409, 'position-occupied', 'ตำแหน่งนี้มีผู้ครองอยู่แล้วในช่วงเวลาที่ระบุ', 'DUPLICATE_POSITION');
+  }
   if (err.code === '23505') {
-    return serviceError('DUPLICATE_EMPLOYEE_NO', 'เลขประจำตัวนี้ถูกใช้กับบุคลากรอื่นที่เป็น current อยู่แล้ว');
+    return constraintProblem(409, 'employee-no-conflict', 'เลขประจำตัวนี้ถูกใช้กับบุคลากรอื่นที่เป็น current อยู่แล้ว', 'DUPLICATE_EMPLOYEE_NO');
   }
   return err;
 }
