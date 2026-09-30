@@ -87,6 +87,10 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
+- PR #48 (ci/github-actions): OPEN — adds .github/workflows/ci.yml, matrix job (db/api/worker/migrate/
+  hr-console/portal/dpo-console) on pull_request->main and push main, node 22, npm ci + npm test per workspace
+  (globalSetup.js handles docker/migrate/roles itself, no env/secrets needed), ~/.npm cache per workspace,
+  jest-output.log uploaded as artifact on always(). Not yet verified on real Actions runner (2026-09-30)
 - PR #46 (fix/flaky-tests): MERGED (2026-09-30) — no deploy needed (test-only change). Test-only fix:
   db/test/positionBatchSeed.test.js filters mdm.position queries by CSV position_no (was order-dependent on
   constraints.test.js's uncleaned inserts, confirmed diff=10 rows); migrate/test/rules.test.js:104 fixture
