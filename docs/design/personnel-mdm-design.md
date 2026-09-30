@@ -260,6 +260,7 @@ erDiagram
         uuid position_id FK
         uuid org_unit_id FK
         varchar level_code "ปฏิบัติการ | ชำนาญการ | ..."
+        varchar job_title_text "ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ) - เฉพาะประเภทบุคลากรที่ไม่มีเลขที่ตำแหน่ง, nullable (PR #40)"
         date appointed_date "วันบรรจุ"
         date effective_from
         date effective_to "null = current"
@@ -501,7 +502,7 @@ erDiagram
 | `person_photo` | รูปถ่ายจาก ThaID (เก็บหลายเวอร์ชัน, `is_current` เพียงหนึ่ง) | `image_enc` เข้ารหัส (หรือ object key ใน MinIO), `sha256` ใช้ตรวจว่ารูปเปลี่ยน |
 | `person_contact` | ข้อมูลติดต่อที่เจ้าตัวแก้ไขเอง 1:1 | มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, `same_as_registered`; `updated_by` SELF/HR |
 | `emergency_contact` | ผู้ติดต่อฉุกเฉิน 1:N (สูงสุด 3) | ชื่อ, ความสัมพันธ์, โทร, ลำดับ (ข้อมูลของบุคคลที่สาม — เก็บเท่าที่จำเป็น) |
-| `employment` | ข้อมูลการปฏิบัติงานจากฝ่ายบุคคล เก็บเป็นประวัติ (1:N) | `employee_no`, `personnel_type`, `position_id`, `org_unit_id`, `level_code`, `appointed_date` (วันบรรจุ), `effective_from/to`, `is_current` (partial unique index: หนึ่ง current ต่อ person), `employment_status`, `separation_*`, `email_work`, `hr_source_ref` (รหัสในระบบ HR เดิม/LHR) |
+| `employment` | ข้อมูลการปฏิบัติงานจากฝ่ายบุคคล เก็บเป็นประวัติ (1:N) | `employee_no`, `personnel_type`, `position_id`, `org_unit_id`, `level_code`, `job_title_text` (varchar(255), nullable — ชื่อตำแหน่ง/ลักษณะงานแบบข้อความอิสระ สำหรับประเภทบุคลากรที่ไม่มีเลขที่ตำแหน่งตามโครงสร้างอัตรากำลัง เช่น พนักงานจ้าง/จ้างเหมาบริการ, PR #40), `appointed_date` (วันบรรจุ), `effective_from/to`, `is_current` (partial unique index: หนึ่ง current ต่อ person), `employment_status`, `separation_*`, `email_work`, `hr_source_ref` (รหัสในระบบ HR เดิม/LHR) |
 | `org_unit` | โครงสร้างส่วนราชการแบบลำดับชั้น สำนัก/กอง → ฝ่าย → งาน | `parent_id`, `code` UNIQUE, `valid_from/to` รองรับการปรับโครงสร้าง |
 | `position` | กรอบอัตรากำลัง/เลขที่ตำแหน่ง | `position_no` UNIQUE, ชื่อตำแหน่ง, ประเภท (บริหารท้องถิ่น/อำนวยการท้องถิ่น/วิชาการ/ทั่วไป), `org_unit_id`; กฎ: ตำแหน่งหนึ่งมีผู้ครองได้หนึ่งคนในช่วงเวลาหนึ่ง (EXCLUDE constraint บนช่วง `effective_from/to` ของ employment) |
 | `external_identifier` | รหัสของบุคคลเดียวกันในระบบอื่น | `system_code` (LEGACY_HR, LHR, KEYCLOAK, PAYROLL, EOFFICE ...), `external_value`; UNIQUE(system_code, external_value) ใช้ตอน migrate และตอน merge |
@@ -593,6 +594,7 @@ erDiagram
 | `personnel:read:pid` / `personnel:lookup:pid` | ถอดรหัส pid / ค้นจาก pid / employeeNo (= pid เสมอ - อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) | อนุมัติเป็นราย client โดย DPO เท่านั้น |
 | `personnel:self` | ข้อมูลของตนเอง + แก้ไขข้อมูลติดต่อ/ความยินยอม | user context |
 | `personnel:provision`, `personnel:write:employment`, `personnel:import` | งาน HR | realm role `hr_officer` |
+| `personnel:manage:reference` | เขียน reference data ของ `org_unit`/`position` (สร้าง/แก้หน่วยงานและตำแหน่ง) | realm role `hr_master_data_admin` เท่านั้น (PR #29) |
 | `sync:thaid` | `POST /sync/thaid` | client `check-broker` เท่านั้น |
 | `events:read`, `webhook:manage` | ฟีดเหตุการณ์ / webhook | ระบบปลายทาง |
 | `audit:read` | change log, access log | realm role `dpo`, `auditor` |
@@ -1017,7 +1019,7 @@ pid: ไม่มีวันเปลี่ยน — pid_hash ต่างก�
 1. **Client scopes** ตามหัวข้อ 2.2 ทั้งหมด, protocol openid-connect, "Include in token scope" = on, "Display on consent screen" = off
 2. **Audience mapper** ใส่ `aud = mdm-api` ในทุก scope ของ MDM (ผ่าน dedicated scope `mdm-api-audience` ที่เป็น default ของทุก client ที่เรียก MDM)
 3. **Clients (confidential, service account)**: `check-broker` (default scope: `sync:thaid`), `mdm-worker` (service-account role `realm-management: view-users, manage-users` เพื่อ logout/disable), `mdm-portal` (ทางเลือก B), และหนึ่ง client ต่อระบบปลายทาง เช่น `eoffice`, `telemed`, `klang` (scope ตามที่อนุมัติ) — ห้ามใช้ client ร่วมกันหลายระบบ
-4. **Realm roles**: `staff`, `hr_officer`, `dpo`, `auditor`, `mdm_admin`; ผูก role → scope ผ่านแท็บ Scope ของ client scope (`audit:read` เฉพาะ `dpo`/`auditor`, `personnel:provision` เฉพาะ `hr_officer`)
+4. **Realm roles**: `staff`, `hr_officer`, `dpo`, `auditor`, `mdm_admin`, `hr_master_data_admin` (สิทธิ์จัดการ org-units/positions ใน HR Console — เพิ่มเข้ามาจริงใน PR #29 ไม่เป็น composite ของ `hr_officer` ต้องมีทั้งสอง role จึงจะเห็นและใช้หน้าจัดการ master data ได้); ผูก role → scope ผ่านแท็บ Scope ของ client scope (`audit:read` เฉพาะ `dpo`/`auditor`, `personnel:provision` เฉพาะ `hr_officer`, `personnel:manage:reference` เฉพาะ `hr_master_data_admin`)
 5. **Identity Provider `check-lp-pao` (ทางเลือก A)**: OIDC, discovery จาก check, `sub` = person_id, First login flow: สร้าง user อัตโนมัติ (username = person_id), mapper `person_id` → user attribute → token claim `person_id`; sync mode force; ปิด "Trust email"; role ของผู้ใช้ตั้งโดย `mdm-worker` จาก employment (เช่น สมาชิกกองการเจ้าหน้าที่/ฝ่ายบุคคล → `hr_officer`) ไม่ตั้งด้วยมือ
 6. **Token settings**: access token 5 นาที (service), 15 นาที (user); SSO session idle 30 นาที / max 10 ชั่วโมง; ไม่มี offline token
 7. **Break-glass**: บัญชี local 1–2 บัญชี role `mdm_admin` + OTP, ตรวจ log การใช้ทุกครั้ง
@@ -1085,3 +1087,17 @@ export function verifyWebhook(secret, timestamp, rawBody, signatureHeader) {
 | 6 | ข้อตกลงการประมวลผลข้อมูลกับ NT (cloud) และการใช้ Cloudflare กับข้อมูลส่วนบุคคล | DPO / งานพัสดุ |
 | 7 | ตารางอายุการเก็บเอกสารทะเบียนประวัติและข้อมูลติดต่อของหน่วยงาน | ฝ่ายบุคคล / งานสารบรรณ |
 | 8 | นโยบายให้ประชาชนทั่วไปใช้ check.lp-pao.go.th (ผลต่อ `audience` และการบันทึก `claim_request`) | ผู้ดูแล check |
+
+## ภาคผนวก จ. ขอบเขตงานหลัง T9 (ไม่ได้อยู่ในแผนเดิมของเอกสารนี้)
+
+CLAUDE.md §5 ระบุงานตามลำดับไว้ถึง **T9** (Portal → HR Console → DPO Console) เท่านั้น เอกสารฉบับนี้ไม่ได้ถูกออกแบบ
+ให้ครอบคลุมงานที่เกิดขึ้น**หลังจาก** T9 เสร็จและใช้งานจริง — งานกลุ่มนี้เกิดจากบั๊ก/requirement ที่พบระหว่างใช้งานจริงบน
+staging และ production (VPN-MDM) เช่น ฟอร์ม HR Console ที่ต้องล็อกเลขที่ตำแหน่งตามประเภทบุคลากร, ช่อง
+`job_title_text` สำหรับประเภทที่ไม่มีตำแหน่ง, การจัดการ master data หน่วยงาน/ตำแหน่งจาก HR Console, การแก้ปัญหา
+Keycloak client scope หลัง `--import-realm`, และการแก้ HTTP status code ที่หลุดเป็น 500 — **ไม่ใช่ scope เดิมที่
+วางแผนไว้ตั้งแต่ต้น** และไม่ได้ถูกบันทึกรายละเอียดไว้ในเอกสารนี้ทั้งหมด (มีปรับ ER/ตารางบางจุดเมื่อกระทบโครงสร้างข้อมูล
+เช่น `job_title_text` ด้านบน แต่ไม่ใช่ทุกงาน)
+
+**แหล่งข้อมูลที่ถูกต้องของงานกลุ่มนี้คือ `CLAUDE.md` หัวข้อ "Status Log"** (ใน "Multi-Session Workflow") ซึ่งบันทึกทุก
+PR ตั้งแต่ #29 เป็นต้นไปพร้อมสถานะ วันที่ และรายละเอียดที่ deploy จริง — ผู้ที่อ่านเอกสารนี้ไม่ควรเข้าใจว่า T1–T9 คือ
+ขอบเขตทั้งหมดของระบบ ควรอ่าน Status Log ควบคู่กันเพื่อดูภาพงานล่าสุด
