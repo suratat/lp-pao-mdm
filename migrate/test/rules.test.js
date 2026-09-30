@@ -101,7 +101,9 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
 
   test('พนักงานจ้าง/จ้างเหมาบริการรายบุคคล/อื่นๆ/ผู้ดำรงตำแหน่งทางการเมือง ไม่มีเลขที่ตำแหน่ง -> ไม่ error POSITION_NOT_FOUND', async () => {
     const { rawRows } = await loadAndCheck([
-      defaultRow({ rowRef: 'general', personnelTypeRaw: 'พนักงานจ้างทั่วไป', positionNo: '' }),
+      // 'พนักงานจ้าง' คือคีย์จริงใน personnel-type-map.json (ยืนยันจากไฟล์ HR ต้นทางจริง, commit 2e16d9b) - ไม่ใช่
+      // 'พนักงานจ้างทั่วไป' ซึ่งเป็นป้ายบรรยายของ enum GENERAL_EMPLOYEE ใน OpenAPI (คนละอย่างกับ raw label ของ HR)
+      defaultRow({ rowRef: 'general', personnelTypeRaw: 'พนักงานจ้าง', positionNo: '' }),
       defaultRow({ rowRef: 'outsource', personnelTypeRaw: 'จ้างเหมาบริการ', positionNo: '' }),
       defaultRow({ rowRef: 'other', personnelTypeRaw: 'อื่นๆ', positionNo: '' }),
       defaultRow({ rowRef: 'political', personnelTypeRaw: 'ผู้ดำรงตำแหน่งทางการเมือง', positionNo: '' }),

@@ -6,6 +6,12 @@ const { DATABASE_URL } = require('./config');
 // ยืนยันว่า migration 1700000000038 seed ตำแหน่งจริงของ อบจ.ลำปาง (~1,025 ตำแหน่ง) จาก
 // migrate/data/position-seed-data.csv ถูกต้องครบ - อ่าน CSV ตัวจริงมาคำนวณค่าที่คาดหวังเอง (ไม่ hardcode
 // ตัวเลขซ้ำในเทสนี้) เพื่อไม่ให้เทสหลุดจากไฟล์ต้นทางจริงถ้าไฟล์เปลี่ยนในอนาคต
+//
+// ทุก query ที่นับ/รวมแถวใน mdm.position ต้อง filter ด้วย position_no = ANY(csvPositionNos) เสมอ (ไม่นับทั้งตาราง
+// ตรงๆ) เพราะ db/test/*.test.js ทั้งหมดแชร์ Postgres instance เดียวกัน - ไฟล์อื่น (เช่น constraints.test.js) insert
+// ตำแหน่งทดสอบของตัวเองทิ้งไว้โดยไม่ cleanup ถ้าไฟล์นั้นรันก่อนไฟล์นี้ (Jest ไม่การันตีลำดับไฟล์คงที่) การนับทั้งตาราง
+// จะได้ผลบวกเกิน (พบจริง: diff = 10 แถว ตรงกับจำนวนที่ constraints.test.js insert พอดี) filter ด้วย position_no ที่มา
+// จาก CSV จริงเท่านั้นทำให้ผลลัพธ์ไม่พึ่งพาว่าตารางมีแถวอื่นจากไฟล์เทสต์ไหนหรือไม่
 
 const CSV_PATH = path.join(__dirname, '..', '..', 'migrate', 'data', 'position-seed-data.csv');
 
@@ -28,10 +34,12 @@ function parseCsv(text) {
 
 let pool;
 let csvRows;
+let csvPositionNos;
 
 beforeAll(() => {
   pool = new Pool({ connectionString: DATABASE_URL });
   csvRows = parseCsv(fs.readFileSync(CSV_PATH, 'utf8'));
+  csvPositionNos = csvRows.map((r) => r.position_no);
 });
 
 afterAll(async () => {
@@ -39,7 +47,9 @@ afterAll(async () => {
 });
 
 test('จำนวนตำแหน่งทั้งหมดใน mdm.position เท่ากับจำนวนแถวใน CSV พอดี (รวมตำแหน่งที่ seed มาก่อนหน้าซึ่งซ้ำกับ CSV 1 แถว)', async () => {
-  const { rows } = await pool.query(`SELECT count(*)::int AS n FROM mdm.position`);
+  const { rows } = await pool.query(`SELECT count(*)::int AS n FROM mdm.position WHERE position_no = ANY($1::varchar[])`, [
+    csvPositionNos,
+  ]);
   expect(rows[0].n).toBe(csvRows.length);
 });
 
@@ -48,7 +58,9 @@ test('แยกตาม org_unit ตรงกับ CSV ทุกหน่ว�
     `SELECT ou.code AS org_unit_code, count(*)::int AS n
      FROM mdm.position p
      JOIN mdm.org_unit ou ON ou.org_unit_id = p.org_unit_id
-     GROUP BY ou.code`
+     WHERE p.position_no = ANY($1::varchar[])
+     GROUP BY ou.code`,
+    [csvPositionNos]
   );
   const dbByOrgUnit = Object.fromEntries(rows.map((r) => [r.org_unit_code, r.n]));
 
@@ -62,7 +74,8 @@ test('แยกตาม org_unit ตรงกับ CSV ทุกหน่ว�
 
 test('แยกตาม position_type ตรงกับ CSV ทุกประเภท (ข้อ 4)', async () => {
   const { rows } = await pool.query(
-    `SELECT position_type, count(*)::int AS n FROM mdm.position GROUP BY position_type`
+    `SELECT position_type, count(*)::int AS n FROM mdm.position WHERE position_no = ANY($1::varchar[]) GROUP BY position_type`,
+    [csvPositionNos]
   );
   const dbByPositionType = Object.fromEntries(rows.map((r) => [r.position_type, r.n]));
 
@@ -100,8 +113,9 @@ test('คณะผู้บริหาร (EX-001 ถึง EX-009): เลข�
     `SELECT p.position_no, p.title_th, ou.code AS org_unit_code
      FROM mdm.position p
      JOIN mdm.org_unit ou ON ou.org_unit_id = p.org_unit_id
-     WHERE p.position_type = 'POLITICAL'
-     ORDER BY p.position_no`
+     WHERE p.position_type = 'POLITICAL' AND p.position_no = ANY($1::varchar[])
+     ORDER BY p.position_no`,
+    [csvPositionNos]
   );
   expect(rows).toHaveLength(9);
   expect(rows.map((r) => r.position_no)).toEqual([
