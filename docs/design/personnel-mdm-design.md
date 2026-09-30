@@ -289,7 +289,6 @@ erDiagram
         uuid position_id PK
         varchar position_no UK "เลขที่ตำแหน่ง"
         varchar title_th "ชื่อตำแหน่ง"
-        varchar line_of_work "สายงาน"
         varchar position_type "บริหารท้องถิ่น | อำนวยการท้องถิ่น | วิชาการ | ทั่วไป"
         uuid org_unit_id FK
         bool is_active
@@ -504,7 +503,7 @@ erDiagram
 | `emergency_contact` | ผู้ติดต่อฉุกเฉิน 1:N (สูงสุด 3) | ชื่อ, ความสัมพันธ์, โทร, ลำดับ (ข้อมูลของบุคคลที่สาม — เก็บเท่าที่จำเป็น) |
 | `employment` | ข้อมูลการปฏิบัติงานจากฝ่ายบุคคล เก็บเป็นประวัติ (1:N) | `employee_no`, `personnel_type`, `position_id`, `org_unit_id`, `level_code`, `appointed_date` (วันบรรจุ), `effective_from/to`, `is_current` (partial unique index: หนึ่ง current ต่อ person), `employment_status`, `separation_*`, `email_work`, `hr_source_ref` (รหัสในระบบ HR เดิม/LHR) |
 | `org_unit` | โครงสร้างส่วนราชการแบบลำดับชั้น สำนัก/กอง → ฝ่าย → งาน | `parent_id`, `code` UNIQUE, `valid_from/to` รองรับการปรับโครงสร้าง |
-| `position` | กรอบอัตรากำลัง/เลขที่ตำแหน่ง | `position_no` UNIQUE, ชื่อตำแหน่ง, สายงาน, ประเภท (บริหารท้องถิ่น/อำนวยการท้องถิ่น/วิชาการ/ทั่วไป), `org_unit_id`; กฎ: ตำแหน่งหนึ่งมีผู้ครองได้หนึ่งคนในช่วงเวลาหนึ่ง (EXCLUDE constraint บนช่วง `effective_from/to` ของ employment) |
+| `position` | กรอบอัตรากำลัง/เลขที่ตำแหน่ง | `position_no` UNIQUE, ชื่อตำแหน่ง, ประเภท (บริหารท้องถิ่น/อำนวยการท้องถิ่น/วิชาการ/ทั่วไป), `org_unit_id`; กฎ: ตำแหน่งหนึ่งมีผู้ครองได้หนึ่งคนในช่วงเวลาหนึ่ง (EXCLUDE constraint บนช่วง `effective_from/to` ของ employment) |
 | `external_identifier` | รหัสของบุคคลเดียวกันในระบบอื่น | `system_code` (LEGACY_HR, LHR, KEYCLOAK, PAYROLL, EOFFICE ...), `external_value`; UNIQUE(system_code, external_value) ใช้ตอน migrate และตอน merge |
 | `claim_request` | การ login ThaID ที่ไม่ตรงกับบุคลากรใด (เฉพาะ app audience=PERSONNEL) รอ HR ตัดสิน | เก็บเฉพาะ `pid_hash` + ชื่อที่แสดง (ไม่มี pid ตัวจริง), `attempt_count`, `status` PENDING_HR/LINKED/REJECTED, `resolved_person_id` |
 
@@ -978,7 +977,7 @@ pid: ไม่มีวันเปลี่ยน — pid_hash ต่างก�
 | ที่อยู่ตามทะเบียนบ้าน, วันเกิด, เพศ จาก HR | ไม่นำเข้า | เก็บใน staging เพื่อเปรียบเทียบเท่านั้น; แหล่งจริงคือ ThaID |
 | (ไม่มีในระบบเดิม - ไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) | `employment.employee_no` | = เลขประจำตัวประชาชน (pid) เสมอ, derive จาก `pid_plaintext` ไม่อ่านจากคอลัมน์แยก, UNIQUE ใน current, classification/scope เทียบเท่า pid (RESTRICTED, `personnel:read:pid`) |
 | ประเภทบุคลากร | `employment.personnel_type` | map เป็น enum (ข้าราชการ อบจ., ครู, ลูกจ้างประจำ, พนักงานจ้าง 3 ประเภท, ถ่ายโอน) |
-| ตำแหน่ง/เลขที่ตำแหน่ง/สายงาน/ประเภทตำแหน่ง | `position` (seed) + `employment.position_id` | เลขที่ตำแหน่งเป็นคีย์ |
+| ตำแหน่ง/เลขที่ตำแหน่ง/ประเภทตำแหน่ง | `position` (seed) + `employment.position_id` | เลขที่ตำแหน่งเป็นคีย์ |
 | สังกัด (สำนัก/กอง/ฝ่าย/งาน) | `org_unit` (seed) + `employment.org_unit_id` | รหัสสังกัดตามโครงสร้างส่วนราชการปัจจุบัน |
 | ระดับ | `employment.level_code` | |
 | วันบรรจุ / วันที่ดำรงตำแหน่งปัจจุบัน | `employment.appointed_date` / `effective_from` | แปลง พ.ศ. → ค.ศ. |

@@ -1,5 +1,5 @@
 const ORG_UNIT_COLUMNS = 'org_unit_id, parent_id, code, name_th, name_en, unit_level, is_active';
-const POSITION_COLUMNS = 'position_id, position_no, title_th, line_of_work, position_type, org_unit_id, is_active';
+const POSITION_COLUMNS = 'position_id, position_no, title_th, position_type, org_unit_id, is_active';
 
 function presentOrgUnit(r) {
   return {
@@ -18,8 +18,6 @@ function presentPosition(r) {
     positionId: r.position_id,
     positionNo: r.position_no,
     titleTh: r.title_th,
-    // lineOfWork เป็น {type: string} ไม่ nullable ใน Position schema - ตัดออกเมื่อไม่มีค่าแทนที่จะส่ง null
-    lineOfWork: r.line_of_work ?? undefined,
     positionType: r.position_type,
     orgUnitId: r.org_unit_id,
     isActive: r.is_active,

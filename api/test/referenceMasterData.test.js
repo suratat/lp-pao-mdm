@@ -294,16 +294,16 @@ describe('POST/PUT /org-units', () => {
 });
 
 describe('POST/PUT /positions', () => {
-  test('สร้างได้ 201 (lineOfWork ไม่ส่ง = ไม่มีฟิลด์ใน response) และเขียน reference_change_log', async () => {
+  test('สร้างได้ 201 และเขียน reference_change_log', async () => {
     const org = await makeOrgUnit();
     const positionNo = uniquePositionNo();
     const res = await api('post', '/positions').send({ positionNo, titleTh: 'นักวิชาการทดสอบ', positionType: 'ACADEMIC', orgUnitId: org.orgUnitId });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ positionNo, titleTh: 'นักวิชาการทดสอบ', positionType: 'ACADEMIC', orgUnitId: org.orgUnitId, isActive: true });
-    expect(res.body).not.toHaveProperty('lineOfWork');
+    expect(res.body).not.toHaveProperty('lineOfWork'); // เอาสายงานออกจากระบบแล้ว (chore/remove-line-of-work) - ต้องไม่หลุดกลับมาในสัญญา
 
     const log = await changeLog('position', res.body.positionId);
-    expect(log.map((r) => r.field_name).sort()).toEqual(['is_active', 'line_of_work', 'org_unit_id', 'position_no', 'position_type', 'title_th']);
+    expect(log.map((r) => r.field_name).sort()).toEqual(['is_active', 'org_unit_id', 'position_no', 'position_type', 'title_th']);
     expect(log.every((r) => r.action === 'CREATE' && r.actor_sub === 'kc-user-master-data')).toBe(true);
   });
 
@@ -332,9 +332,9 @@ describe('POST/PUT /positions', () => {
 
     const { rows } = await adminPool.query(`SELECT count(*)::int AS n FROM mdm.position WHERE position_no = $1`, [positionNo]);
     expect(rows[0].n).toBe(1);
-    // log ของ request ที่ล้มเหลวต้อง rollback ไปด้วย: มีชุด CREATE เดียว (6 ฟิลด์)
+    // log ของ request ที่ล้มเหลวต้อง rollback ไปด้วย: มีชุด CREATE เดียว (5 ฟิลด์)
     const created = results.find((r) => r.status === 201).body;
-    expect(await changeLog('position', created.positionId)).toHaveLength(6);
+    expect(await changeLog('position', created.positionId)).toHaveLength(5);
   });
 
   test('org_unit ไม่มีอยู่ / inactive -> 422 org-unit-invalid; position_type ไม่มี/inactive -> 422 position-type-invalid', async () => {
@@ -408,21 +408,19 @@ describe('POST/PUT /positions', () => {
     expect(bad).toEqual([]);
   });
 
-  test('PUT: แก้ชื่อ/สายงาน/หมวด/position_no ได้ พร้อม log; lineOfWork ที่ไม่ส่งมา = ล้างเป็น null', async () => {
+  test('PUT: แก้ชื่อ/หมวด/position_no ได้ พร้อม log', async () => {
     const org = await makeOrgUnit();
-    const pos = await makePosition(org.orgUnitId, { lineOfWork: 'สายงานเดิม' });
+    const pos = await makePosition(org.orgUnitId);
     const newNo = uniquePositionNo();
     const res = await api('put', `/positions/${pos.positionId}`).send({
       positionNo: newNo, titleTh: 'ชื่อใหม่', positionType: 'ACADEMIC', orgUnitId: org.orgUnitId, isActive: true,
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ positionNo: newNo, titleTh: 'ชื่อใหม่', positionType: 'ACADEMIC' });
-    expect(res.body).not.toHaveProperty('lineOfWork');
 
     const updates = (await changeLog('position', pos.positionId)).filter((r) => r.action === 'UPDATE');
-    expect(updates.map((r) => r.field_name).sort()).toEqual(['line_of_work', 'position_no', 'position_type', 'title_th']);
+    expect(updates.map((r) => r.field_name).sort()).toEqual(['position_no', 'position_type', 'title_th']);
     expect(updates.find((r) => r.field_name === 'position_no')).toMatchObject({ old_value: pos.positionNo, new_value: newNo });
-    expect(updates.find((r) => r.field_name === 'line_of_work')).toMatchObject({ old_value: 'สายงานเดิม', new_value: null });
   });
 
   test('PUT: เปลี่ยน position_no ไปซ้ำกับของอื่น -> 409 position-no-conflict; ไม่พบ -> 404', async () => {

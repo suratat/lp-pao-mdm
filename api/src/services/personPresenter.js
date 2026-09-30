@@ -39,7 +39,7 @@ async function loadPersonAggregate(pool, personId) {
        e.employment_id, e.employee_no, e.personnel_type, e.level_code, e.appointed_date,
        e.effective_from, e.effective_to, e.is_current, e.employment_status, e.separation_date,
        e.email_work, e.hr_source_ref, e.updated_at, e.job_title_text,
-       pos.position_id, pos.position_no, pos.title_th AS position_title_th, pos.line_of_work,
+       pos.position_id, pos.position_no, pos.title_th AS position_title_th,
        pos.position_type, pos.is_active AS position_is_active,
        ou.org_unit_id, ou.code AS org_unit_code, ou.name_th AS org_unit_name_th,
        parent_ou.name_th AS org_unit_parent_name_th
@@ -75,7 +75,6 @@ function presentPositionRef(employment) {
     positionId: employment.position_id,
     positionNo: employment.position_no,
     titleTh: employment.position_title_th,
-    lineOfWork: employment.line_of_work ?? undefined,
     positionType: employment.position_type,
     orgUnitId: employment.org_unit_id,
     isActive: employment.position_is_active,

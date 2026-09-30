@@ -513,7 +513,6 @@ function buildOperationDescriptors() {
       body: (ids) => ({
         positionNo: `EX-${100 + Math.floor(Math.random() * 900)}`,
         titleTh: 'ตำแหน่ง contract (แก้แล้ว)',
-        lineOfWork: 'สายงานทดสอบ',
         positionType: 'ACADEMIC',
         orgUnitId: ids.refOrgUnitId,
         isActive: true,

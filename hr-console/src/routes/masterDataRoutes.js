@@ -161,7 +161,6 @@ function renderPositionForm({ action, mode, values, errors, orgUnits, positionTy
       <span class="hint">ต้องไม่ซ้ำกับตำแหน่งอื่น</span>
     </label>
     <label>ชื่อตำแหน่ง <input name="titleTh" required maxlength="255" value="${escapeHtml(values.titleTh)}" /></label>
-    <label>สายงาน <input name="lineOfWork" maxlength="100" value="${escapeHtml(values.lineOfWork)}" /></label>
     <label>หมวดตำแหน่ง
       <select name="positionType" required>${options(typeChoices, values.positionType, { blank: '-- เลือกหมวดตำแหน่ง --' })}</select>
     </label>
@@ -388,7 +387,7 @@ function createMasterDataRoutes({ mdmClient }) {
         .map(
           (p) => `<tr>
             <td>${escapeHtml(p.positionNo)}</td>
-            <td>${escapeHtml(p.titleTh)}${p.lineOfWork ? `<br><span class="hint">${escapeHtml(p.lineOfWork)}</span>` : ''}</td>
+            <td>${escapeHtml(p.titleTh)}</td>
             <td>${escapeHtml(typeByCode.get(p.positionType) || p.positionType)}</td>
             <td>${escapeHtml(orgById.get(p.orgUnitId)?.nameTh || '-')}</td>
             <td>${p.isActive ? 'ใช้งาน' : '<span class="muted">ปิดใช้งาน</span>'}</td>
@@ -444,7 +443,7 @@ function createMasterDataRoutes({ mdmClient }) {
     return { orgUnits, positionTypes };
   }
 
-  const emptyPositionValues = { positionNo: '', titleTh: '', lineOfWork: '', positionType: '', orgUnitId: '', isActive: 'true' };
+  const emptyPositionValues = { positionNo: '', titleTh: '', positionType: '', orgUnitId: '', isActive: 'true' };
 
   router.get('/hr/master-data/positions/new', async (req, res, next) => {
     try {
@@ -496,7 +495,6 @@ function createMasterDataRoutes({ mdmClient }) {
       const values = {
         positionNo: existing.positionNo,
         titleTh: existing.titleTh,
-        lineOfWork: existing.lineOfWork || '',
         positionType: existing.positionType,
         orgUnitId: existing.orgUnitId,
         isActive: existing.isActive ? 'true' : 'false',

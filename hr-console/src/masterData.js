@@ -65,7 +65,6 @@ function parsePositionForm(input, { mode }) {
   const values = {
     positionNo: trimmed(input.positionNo),
     titleTh: trimmed(input.titleTh),
-    lineOfWork: trimmed(input.lineOfWork),
     positionType: trimmed(input.positionType),
     orgUnitId: trimmed(input.orgUnitId),
     isActive: input.isActive === 'false' ? 'false' : 'true',
@@ -73,14 +72,12 @@ function parsePositionForm(input, { mode }) {
 
   if (!new RegExp(POSITION_NO_PATTERN).test(values.positionNo)) errors.push(POSITION_NO_MESSAGE);
   validateRequiredText(errors, values.titleTh, 'ชื่อตำแหน่ง', 255);
-  if (values.lineOfWork.length > 100) errors.push('สายงานยาวเกิน 100 ตัวอักษร');
   if (!values.positionType) errors.push('กรุณาเลือกหมวดตำแหน่งจากรายการ');
   if (!UUID_RE.test(values.orgUnitId)) errors.push('กรุณาเลือกหน่วยงานจากรายการ');
 
   const body = {
     positionNo: values.positionNo,
     titleTh: values.titleTh,
-    lineOfWork: values.lineOfWork || null,
     positionType: values.positionType,
     orgUnitId: values.orgUnitId,
   };
