@@ -87,7 +87,9 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- PR #42 (chore/remove-line-of-work): OPEN — DROP COLUMN mdm.position.line_of_work (migration 041, สำรอง DB ก่อน deploy, deploy API ก่อน consoles); removed from OpenAPI/api/src/hr-console/design docs; audit.reference_change_log entries with field_name='line_of_work' kept as-is (2026-09-29)
+- PR #42 (chore/remove-line-of-work): MERGED (2026-09-30) — deployed on VPN-MDM (migration 041 applied,
+  api1/api2 then hr-console/portal/dpo-console). Verified on real hr-console: position form has no
+  line_of_work field, approve-form dropdowns (PR #39) and jobTitleText (PR #40) still work correctly.
 - PR #40 (feat/employment-job-title-text, T10-feat): MERGED (2026-09-29) — deployed on VPN-MDM
   (migration 040 applied, api1/api2 then hr-console/portal/dpo-console). Verified on real hr-console:
   jobTitleText field for no-position types + OTHER (mutual exclusion with position), maxlength, Back-button.
