@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const { DATABASE_URL, MIGRATOR_DATABASE_URL } = require('./config');
 const { loadBatch } = require('../src/loader/loadBatch');
 const { runQualityCheck } = require('../src/quality/rules');
+const { mapPersonnelType } = require('../src/quality/personnelTypeMap');
 const { buildCsv, validRow, defaultColumnMap, makeOrgUnit, makePosition } = require('./fixtures');
 
 let pool;
@@ -144,6 +145,27 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
       defaultRow({ rowRef: 'civil', personnelTypeRaw: 'ข้าราชการ อบจ.', positionNo: '' }),
     ]);
     expect(codesFor(rawRows, 'civil')).toContain('POSITION_NOT_FOUND');
+  });
+
+  // 'ข้าราชการองค์การบริหารส่วนจังหวัด' (ชื่อเต็ม) กับ 'ข้าราชการ อบจ.' (ชื่อย่อ) คือประเภทบุคลากรเดียวกัน - ยืนยันจากไฟล์ HR
+  // จริงที่ฝ่ายบุคคลส่งมา ทั้งสองคีย์ต้อง map ไปที่ CIVIL_SERVANT เหมือนกัน (เพิ่มคีย์ใหม่เข้า personnel-type-map.json
+  // โดยไม่แก้คีย์เดิม)
+  test('"ข้าราชการองค์การบริหารส่วนจังหวัด" (ชื่อเต็ม) map เป็น CIVIL_SERVANT เหมือน "ข้าราชการ อบจ." (ชื่อย่อ)', () => {
+    expect(mapPersonnelType('ข้าราชการองค์การบริหารส่วนจังหวัด')).toBe('CIVIL_SERVANT');
+    expect(mapPersonnelType('ข้าราชการองค์การบริหารส่วนจังหวัด')).toBe(mapPersonnelType('ข้าราชการ อบจ.'));
+  });
+
+  test('แถวที่ personnelTypeRaw = "ข้าราชการองค์การบริหารส่วนจังหวัด" ผ่านกฎคุณภาพเหมือน "ข้าราชการ อบจ." (ต้องมีตำแหน่งเหมือนกัน)', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'full-name-with-pos', personnelTypeRaw: 'ข้าราชการองค์การบริหารส่วนจังหวัด' }),
+      defaultRow({ rowRef: 'full-name-no-pos', personnelTypeRaw: 'ข้าราชการองค์การบริหารส่วนจังหวัด', positionNo: '' }),
+    ]);
+    // ไม่ error PERSONNEL_TYPE_NOT_MAPPED (เคย map ไม่เจอก่อนเพิ่มคีย์นี้) และผ่าน OK เหมือน 'ข้าราชการ อบจ.' ทุกประการ
+    expect(codesFor(rawRows, 'full-name-with-pos')).not.toContain('PERSONNEL_TYPE_NOT_MAPPED');
+    expect(rawRows.find((r) => r.row_ref === 'full-name-with-pos').quality_status).toBe('OK');
+    // ไม่มีตำแหน่ง -> ยังคงต้อง POSITION_NOT_FOUND เหมือนกับประเภท REQUIRED อื่น (ไม่ได้ถูกจัดเป็นกลุ่ม optional ผิดๆ)
+    expect(codesFor(rawRows, 'full-name-no-pos')).toContain('POSITION_NOT_FOUND');
+    expect(codesFor(rawRows, 'full-name-no-pos')).not.toContain('PERSONNEL_TYPE_NOT_MAPPED');
   });
 
   test('ตำแหน่งมีจริงแต่สังกัดคนละหน่วยกับที่ระบุในแถว -> POSITION_ORG_UNIT_MISMATCH', async () => {

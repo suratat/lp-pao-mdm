@@ -1,6 +1,7 @@
 {
   "_comment": "แปลค่าดิบจากไฟล์ HR เดิม (personnelTypeRaw) เป็น PersonnelType enum ของ MDM API (ดู personnel-mdm-openapi.yaml#/components/schemas/PersonnelType) - trim + เทียบตรงตัว ไม่ fuzzy match",
   "ข้าราชการ อบจ.": "CIVIL_SERVANT",
+  "ข้าราชการองค์การบริหารส่วนจังหวัด": "CIVIL_SERVANT",
   "ข้าราชการครูและบุคลากรทางการศึกษา": "TEACHER",
   "ลูกจ้างประจำ": "PERMANENT_EMPLOYEE",
   "พนักงานจ้าง": "GENERAL_EMPLOYEE",
