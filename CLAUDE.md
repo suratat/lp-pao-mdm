@@ -87,10 +87,15 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- PR #49 (docs/sync-design-docs): OPEN — docs-only: personnel-mdm-design.md + er-01-personnel-core.mermaid add
+- PR #50 (feat/migrate-job-title-text): OPEN — migrate/ tool now supports job_title_text in HR CSV import
+  (column-map.json, loadBatch.js, rules.js reuses api/src/services/jobTitleText.js directly, toImportRow.js,
+  runImport.js). New migration 1700000000042 adds stg_hr.raw_row.job_title_text (text, not varchar(255) -
+  avoids crashing loadBatch on overlong input before JOB_TITLE_TOO_LONG can report it). stg_hr-only, no mdm
+  schema touched. migrate suite 39/39, db 50/50, api 306/306 (2026-10-01)
+- PR #49 (docs/sync-design-docs): MERGED (2026-09-30) — docs-only: personnel-mdm-design.md + er-01-personnel-core.mermaid add
   job_title_text (PR #40), hr_master_data_admin role + personnel:manage:reference scope (PR #29); adds
   "ภาคผนวก จ" noting post-T9 work isn't in this doc's original scope, points to CLAUDE.md Status Log instead.
-  No code/production impact (2026-10-01)
+  No code/production impact
 - PR #48 (ci/github-actions): MERGED (2026-09-30) — adds .github/workflows/ci.yml, matrix job (db/api/worker/
   migrate/hr-console/portal/dpo-console) on pull_request->main and push main, node 22, npm ci + npm test per
   workspace (globalSetup.js handles docker/migrate/roles itself, no env/secrets needed), ~/.npm cache per
