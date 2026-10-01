@@ -36,6 +36,20 @@ services:
         condition: service_healthy
     networks: [mdm-internal]
 
+  # T8: เครื่องมือ import ข้อมูล HR เดิม (migrate/src/cli.js: load/check-quality/import/reconcile) - แยกจาก
+  # service "migrate" ด้านบน (รันแค่ node-pg-migrate up) อยู่ profile "tools" ไม่ให้ `docker compose up` ปกติ
+  # เผลอ start (ไม่ใช่ service ที่ต้องรันต่อเนื่อง) ใช้งานจริงด้วย `docker compose --profile tools run --rm
+  # migrate-cli node src/cli.js <load|check-quality|import|reconcile> ...` (ส่ง MDM_API_BASE_URL/MDM_API_TOKEN
+  # เพิ่มตอน run ด้วย -e ถ้าจะใช้คำสั่ง import - ดู migrate/src/cli.js cmdImport)
+  migrate-cli:
+    profiles: ["tools"]
+    build:
+      context: ..
+      dockerfile: infra/migrate-cli/Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    networks: [mdm-internal]
+
   # one-shot: สร้าง/อัปเดต LOGIN role mdm_api_svc/mdm_worker_svc (ดู infra/postgres/bootstrap-roles.sql)
   roles-bootstrap:
     image: postgres:16
