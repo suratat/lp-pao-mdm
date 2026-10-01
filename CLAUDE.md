@@ -87,7 +87,7 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- PR #52 (fix/personnel-type-map-civil-servant): OPEN — data-only fix: add "ข้าราชการองค์การบริหารส่วนจังหวัด"
+- PR #52 (fix/personnel-type-map-civil-servant): MERGED (2026-10-01) — data-only fix: add "ข้าราชการองค์การบริหารส่วนจังหวัด"
   (full name) as a synonym key for "ข้าราชการ อบจ." in migrate/config/personnel-type-map.json, both -> CIVIL_SERVANT
   (confirmed from real HR file). No code/migration touched; migrate suite 41/41 (2026-10-01)
 - PR #51 (chore/migrate-cli-dockerfile): MERGED (image built) — infra/migrate-cli/Dockerfile (new, separate from
@@ -131,7 +131,7 @@ git fetch --all && git status && git log --oneline -10 --all --graph
   jobTitleText field for no-position types + OTHER (mutual exclusion with position), maxlength, Back-button.
 - PR #34 (fix/position-number-lock, T10-fix): MERGED (2026-09-28) — deployed on VPN-MDM (api1/api2/hr-console). Verified: approve form lock + Back-button on real hr-console, 422 rules on local stack. DRY_RUN check completed 2026-10-01 using a partial real HR CSV file (11 rows passed quality check out of 19 total — 8 rows skipped due to inconsistent column count, not yet resolved with HR). Result: load OK (11 rows), check-quality OK=11 ERROR=0, import --mode DRY_RUN created=10 updated=1 errors=0. Not yet APPLYed — waiting for complete HR file before writing real data.
 - [2026-10-01] DRY_RUN test detail for PR #34 (real partial HR CSV, see line above): batch id b8cf1d3c-73a8-4325-896c-1a247150633b. Found 1 missing personnel-type-map.json mapping ("ข้าราชการองค์การบริหารส่วนจังหวัด") - fixed in PR #52. Unresolved: 7 of 19 rows have 15 columns vs the 10-column header - need to ask HR what the extra columns are before importing the complete file.
-- PR #33 (docs/keycloak-basic-scope-note, T10 docs): OPEN, mergeable — documents basic client scope loss on --import-realm (2026-09-26)
+- PR #33 (docs/keycloak-basic-scope-note, T10 docs): MERGED (2026-09-29) — documents basic client scope loss on --import-realm (2026-09-26)
 - T9 (Portal, HR Console, DPO Console): DONE, merged to main
 - T8 (stg_hr schema + HR migrate runner): DONE, merged to main
 - T7 (check.lp-pao.go.th sync-on-login): DONE, confirmed merged into check-app master on sso-server (commit e84c682) (2026-09-26)
