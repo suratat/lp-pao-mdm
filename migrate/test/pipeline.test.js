@@ -125,6 +125,74 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
     }
   });
 
+  test('แถวที่มี jobTitleText (ประเภทไม่มีตำแหน่ง) -> DRY_RUN ส่งต่อถึง API จริง และ APPLY สร้าง employment.job_title_text ถูกต้อง', async () => {
+    const row = validRow({
+      rowRef: 'r1',
+      positionNo: '',
+      orgUnitCode: fixtureOrgUnitCode,
+      personnelTypeRaw: 'พนักงานจ้าง',
+      jobTitleText: '  พนักงานขับรถยนต์ประจำสำนัก  ', // เว้นวรรคหัวท้าย - API ต้อง trim ให้ตอนบันทึกจริง
+    });
+    const csv = buildCsv([row]);
+
+    const { batchId } = await loadBatch(pool, {
+      csvContent: csv,
+      columnMap: defaultColumnMap,
+      sourceFilename: 'job-title.csv',
+      importedBy: 'tester',
+    });
+
+    const qualitySummary = await runQualityCheck(pool, batchId);
+    expect(qualitySummary.ok).toBe(1);
+    expect(qualitySummary.error).toBe(0);
+
+    const dryRun = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'DRY_RUN', createIfMissing: true });
+    expect(dryRun).toEqual({ mode: 'DRY_RUN', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+
+    const pepper = await apiCtx.vault.getPepper();
+    const hash = pidHash(row.pid, pepper);
+    const beforeApply = await adminPool.query(`SELECT 1 FROM mdm.person WHERE pid_hash = $1`, [hash]);
+    expect(beforeApply.rows).toHaveLength(0); // DRY_RUN ต้อง rollback จริง
+
+    const apply = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'APPLY', createIfMissing: true });
+    expect(apply).toEqual({ mode: 'APPLY', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+
+    const employment = await adminPool.query(
+      `SELECT position_id, job_title_text FROM mdm.employment WHERE employee_no = $1`,
+      [row.pid]
+    );
+    expect(employment.rows).toHaveLength(1);
+    expect(employment.rows[0].position_id).toBeNull(); // ประเภทไม่มีตำแหน่ง - positionId ต้องไม่ถูกตั้ง
+    expect(employment.rows[0].job_title_text).toBe('พนักงานขับรถยนต์ประจำสำนัก'); // API trim ให้แล้ว
+  });
+
+  test('ประเภทที่ต้องมีตำแหน่งแต่ไฟล์ส่ง jobTitleText มาด้วย -> ติด JOB_TITLE_NOT_ALLOWED ตั้งแต่ตรวจคุณภาพ ไม่ถูกส่งเข้า import', async () => {
+    const positionNo = await makePosition(adminPool, fixtureOrgUnitId);
+    const row = validRow({
+      rowRef: 'bad-job-title',
+      positionNo,
+      orgUnitCode: fixtureOrgUnitCode,
+      personnelTypeRaw: 'ข้าราชการ อบจ.',
+      jobTitleText: 'ตำแหน่งพิเศษ',
+    });
+    const csv = buildCsv([row]);
+
+    const { batchId } = await loadBatch(pool, {
+      csvContent: csv,
+      columnMap: defaultColumnMap,
+      sourceFilename: 'job-title-bad.csv',
+      importedBy: 'tester',
+    });
+
+    const qualitySummary = await runQualityCheck(pool, batchId);
+    expect(qualitySummary.ok).toBe(0);
+    expect(qualitySummary.error).toBe(1);
+    expect(qualitySummary.errorsByCode).toMatchObject({ JOB_TITLE_NOT_ALLOWED: 1 });
+
+    const dryRun = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'DRY_RUN', createIfMissing: true });
+    expect(dryRun.total).toBe(0); // กรองออกก่อนถึง API เหมือนแถวที่มีปัญหาคุณภาพแบบอื่น
+  });
+
   test('แถวที่มีปัญหาคุณภาพ -> ไม่ถูกส่งเข้า import เลย (กรองก่อนถึง API)', async () => {
     const badRow = validRow({ rowRef: 'bad', positionNo: 'POS-DOES-NOT-MATTER', orgUnitCode: 'NO-SUCH-UNIT' });
     const csv = buildCsv([badRow]);

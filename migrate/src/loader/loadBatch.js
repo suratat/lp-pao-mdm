@@ -17,10 +17,10 @@ async function loadBatch(pool, { csvContent, columnMap, sourceFilename, imported
     await pool.query(
       `INSERT INTO stg_hr.raw_row (
          batch_id, row_ref, pid_plaintext, pid_loaded_at, expected_first_name_th, expected_last_name_th,
-         employee_no, personnel_type_raw, position_no, org_unit_code, level_code,
+         employee_no, personnel_type_raw, position_no, job_title_text, org_unit_code, level_code,
          appointed_date_raw, effective_from_raw, employment_status_raw, email_work,
          external_system_code, external_value, phone_raw, email_personal_raw, source_data
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
       [
         batchId,
         logical.rowRef,
@@ -31,6 +31,7 @@ async function loadBatch(pool, { csvContent, columnMap, sourceFilename, imported
         logical.employeeNo,
         logical.personnelTypeRaw,
         logical.positionNo,
+        logical.jobTitleText,
         logical.orgUnitCode,
         logical.levelCode,
         logical.appointedDateRaw,

@@ -184,3 +184,65 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
     expect(rows[0].status).toBe('QUALITY_CHECKED');
   });
 });
+
+// ชื่อตำแหน่ง/ลักษณะงาน (jobTitleText) สำหรับประเภทบุคลากรที่ไม่มีเลขที่ตำแหน่ง - กฎเดียวกับ api/src/services/jobTitleText.js
+// (เรียกฟังก์ชันเดิมตรงๆ ไม่ duplicate logic) error code ต้องตรงกับที่ API ใช้ (PR #40/#44) เพื่อให้รายงานผลสอดคล้องกัน
+describe('runQualityCheck: jobTitleText (ชื่อตำแหน่ง/ลักษณะงาน)', () => {
+  test('ประเภทที่ไม่มีตำแหน่ง (พนักงานจ้าง) ใส่ jobTitleText ได้ -> OK ไม่มี error', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'r1', personnelTypeRaw: 'พนักงานจ้าง', positionNo: '', jobTitleText: 'พนักงานขับรถยนต์' }),
+    ]);
+    expect(rawRows[0].quality_status).toBe('OK');
+    expect(codesFor(rawRows, 'r1')).toEqual([]);
+  });
+
+  test('ประเภท OTHER ไม่ใส่เลย / ใส่ตำแหน่งอย่างเดียว / ใส่ jobTitleText อย่างเดียว -> ผ่านทั้ง 3 แบบ', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'none', personnelTypeRaw: 'อื่นๆ', positionNo: '' }),
+      defaultRow({ rowRef: 'pos-only', personnelTypeRaw: 'อื่นๆ', positionNo: positionA }),
+      defaultRow({ rowRef: 'text-only', personnelTypeRaw: 'อื่นๆ', positionNo: '', jobTitleText: 'อาสาสมัครประจำศูนย์' }),
+    ]);
+    for (const rowRef of ['none', 'pos-only', 'text-only']) {
+      expect(codesFor(rawRows, rowRef)).toEqual([]);
+    }
+  });
+
+  test('ประเภทที่ต้องมีตำแหน่ง (ข้าราชการ) ส่ง jobTitleText มาด้วย -> JOB_TITLE_NOT_ALLOWED', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'r1', personnelTypeRaw: 'ข้าราชการ อบจ.', jobTitleText: 'ตำแหน่งพิเศษ' }),
+    ]);
+    expect(codesFor(rawRows, 'r1')).toContain('JOB_TITLE_NOT_ALLOWED');
+  });
+
+  test('ประเภท OTHER ส่งทั้งเลขที่ตำแหน่งและ jobTitleText พร้อมกัน -> POSITION_AND_JOB_TITLE_CONFLICT', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'r1', personnelTypeRaw: 'อื่นๆ', positionNo: positionA, jobTitleText: 'อาสาสมัคร' }),
+    ]);
+    expect(codesFor(rawRows, 'r1')).toContain('POSITION_AND_JOB_TITLE_CONFLICT');
+  });
+
+  test('jobTitleText มีเลขบัตรประชาชน 13 หลัก (ติดกัน/มีขีด) -> JOB_TITLE_CONTAINS_PID ไม่ echo ข้อความกลับ', async () => {
+    const pid = require('../../api/src/security/pid').makeFakePid();
+    const dashed = `${pid.slice(0, 1)}-${pid.slice(1, 5)}-${pid.slice(5, 10)}-${pid.slice(10, 12)}-${pid.slice(12)}`;
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'plain', personnelTypeRaw: 'พนักงานจ้าง', positionNo: '', jobTitleText: `ช่าง ${pid}` }),
+      defaultRow({ rowRef: 'dashed', personnelTypeRaw: 'พนักงานจ้าง', positionNo: '', jobTitleText: dashed }),
+    ]);
+    expect(codesFor(rawRows, 'plain')).toContain('JOB_TITLE_CONTAINS_PID');
+    expect(codesFor(rawRows, 'dashed')).toContain('JOB_TITLE_CONTAINS_PID');
+    expect(JSON.stringify(rawRows)).not.toContain(pid);
+    expect(JSON.stringify(rawRows)).not.toContain(dashed);
+  });
+
+  test('jobTitleText ยาวเกิน 255 ตัวอักษร -> JOB_TITLE_TOO_LONG', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'r1', personnelTypeRaw: 'พนักงานจ้าง', positionNo: '', jobTitleText: 'ก'.repeat(256) }),
+    ]);
+    expect(codesFor(rawRows, 'r1')).toContain('JOB_TITLE_TOO_LONG');
+  });
+
+  test('jobTitleText ว่าง/ไม่ใส่สำหรับประเภทที่ต้องมีตำแหน่ง -> ไม่มี error เกี่ยวกับ jobTitleText (ปกติตามเดิม)', async () => {
+    const { rawRows } = await loadAndCheck([defaultRow({ rowRef: 'r1', jobTitleText: '' })]);
+    expect(codesFor(rawRows, 'r1')).toEqual([]);
+  });
+});

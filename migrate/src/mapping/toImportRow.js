@@ -23,6 +23,7 @@ function toImportRow(row) {
       positionId: row.resolved_position_id ?? undefined,
       orgUnitId: row.resolved_org_unit_id,
       levelCode: row.level_code ?? undefined,
+      jobTitleText: row.job_title_text ?? undefined,
       appointedDate: appointedDate?.isoDate,
       effectiveFrom: effectiveFrom.isoDate,
       emailWork: row.email_work ?? undefined,
