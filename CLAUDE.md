@@ -87,7 +87,10 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
-- PR #51 (chore/migrate-cli-dockerfile): OPEN — infra/migrate-cli/Dockerfile (new, separate from
+- PR #52 (fix/personnel-type-map-civil-servant): OPEN — data-only fix: add "ข้าราชการองค์การบริหารส่วนจังหวัด"
+  (full name) as a synonym key for "ข้าราชการ อบจ." in migrate/config/personnel-type-map.json, both -> CIVIL_SERVANT
+  (confirmed from real HR file). No code/migration touched; migrate suite 41/41 (2026-10-01)
+- PR #51 (chore/migrate-cli-dockerfile): MERGED (image built) — infra/migrate-cli/Dockerfile (new, separate from
   infra/migrate/Dockerfile) runs migrate/src/cli.js (HR import tool); copies migrate/ plus 4 api/src files it
   transitively requires (pid.js, jobTitleText.js, httpProblem.js, personnelPositionRules.js - the last one
   was missing from the original instructions, found via actual require() trace). New migrate-cli service in
