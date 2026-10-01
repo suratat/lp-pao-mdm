@@ -2,6 +2,13 @@ const path = require('node:path');
 const { isValidPid } = require(path.join(__dirname, '..', '..', '..', 'api', 'src', 'security', 'pid'));
 const { convertToIsoDate } = require('./dateConvert');
 const { mapPersonnelType } = require('./personnelTypeMap');
+// ใช้ฟังก์ชันตรวจ jobTitleText ชุดเดียวกับ API ตรงๆ (ไม่ duplicate logic) - validateJobTitleText/
+// assertJobTitleMatchesPersonnelType เป็น pure function ล้วน (ไม่แตะ DB/HTTP) เหมือน isValidPid ด้านบน
+// จึง require ข้ามแพ็กเกจแบบนี้ได้อย่างปลอดภัย (รูปแบบเดียวกับที่ไฟล์นี้ทำกับ security/pid.js อยู่แล้ว)
+const {
+  validateJobTitleText,
+  assertJobTitleMatchesPersonnelType,
+} = require(path.join(__dirname, '..', '..', '..', 'api', 'src', 'services', 'jobTitleText'));
 
 // รหัสสถานะที่ API (/sync/hr/employment-batch) รองรับตอนนี้เท่านั้น - EmploymentUpsert (openapi) ไม่มีฟิลด์
 // employmentStatus เลย จึงนำเข้าได้เฉพาะคนที่ "ปฏิบัติงาน" (ACTIVE) ผ่าน endpoint นี้ คนที่พ้นสภาพก่อน
@@ -89,6 +96,17 @@ function checkRow(row, { orgUnitLookup, positionLookup }) {
     }
   }
 
+  // ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ) - กฎเดียวกับ api/src/services/jobTitleText.js ที่ API ใช้ตอนเขียน employment จริง
+  // (PR #40/#44): ความยาว/เลขบัตรปนอยู่ในข้อความ ตรวจก่อน แล้วค่อยตรวจว่าตรงกับกฎตำแหน่งของประเภทบุคลากรหรือไม่
+  // (ประเภทที่ต้องมีตำแหน่งส่ง jobTitleText มาไม่ได้, OTHER ส่งทั้งเลขที่ตำแหน่งและ jobTitleText พร้อมกันไม่ได้)
+  // ใช้ positionNo แบบดิบ (ยังไม่ resolve) เพราะเป็นการตรวจ "ผู้กรอกไฟล์ใส่มาทั้งสองช่องหรือไม่" ไม่ใช่ว่าตำแหน่งนั้นมีจริง
+  try {
+    const jobTitleText = validateJobTitleText(row.job_title_text);
+    assertJobTitleMatchesPersonnelType(personnelType, row.position_no || null, jobTitleText);
+  } catch (e) {
+    errors.push(err(e.code, e.detail || e.title));
+  }
+
   if (row.employment_status_raw && !ACTIVE_STATUS_LABELS.has(row.employment_status_raw.trim())) {
     errors.push(
       err(
@@ -156,7 +174,7 @@ async function loadLookups(pool) {
 async function runQualityCheck(pool, batchId) {
   const { rows } = await pool.query(
     `SELECT raw_row_id, row_ref, pid_plaintext, expected_first_name_th, expected_last_name_th,
-            personnel_type_raw, position_no, org_unit_code, employment_status_raw,
+            personnel_type_raw, position_no, job_title_text, org_unit_code, employment_status_raw,
             appointed_date_raw, effective_from_raw
      FROM stg_hr.raw_row WHERE batch_id = $1 ORDER BY row_ref`,
     [batchId]

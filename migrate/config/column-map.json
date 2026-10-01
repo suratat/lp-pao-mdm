@@ -8,6 +8,7 @@
     "expectedLastNameTh": "นามสกุล",
     "personnelTypeRaw": "ประเภทบุคลากร",
     "positionNo": "เลขที่ตำแหน่ง",
+    "jobTitleText": "ชื่อตำแหน่ง/ลักษณะงาน",
     "orgUnitCode": "รหัสสังกัด",
     "levelCode": "ระดับ",
     "appointedDateRaw": "วันบรรจุ",
