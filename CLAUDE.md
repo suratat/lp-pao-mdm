@@ -129,7 +129,8 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 - PR #40 (feat/employment-job-title-text, T10-feat): MERGED (2026-09-29) — deployed on VPN-MDM
   (migration 040 applied, api1/api2 then hr-console/portal/dpo-console). Verified on real hr-console:
   jobTitleText field for no-position types + OTHER (mutual exclusion with position), maxlength, Back-button.
-- PR #34 (fix/position-number-lock, T10-fix): MERGED (2026-09-28) — deployed on VPN-MDM (api1/api2/hr-console). Verified: approve form lock + Back-button on real hr-console, 422 rules on local stack. Remaining: DRY_RUN with real HR CSV (non-blocking)
+- PR #34 (fix/position-number-lock, T10-fix): MERGED (2026-09-28) — deployed on VPN-MDM (api1/api2/hr-console). Verified: approve form lock + Back-button on real hr-console, 422 rules on local stack. DRY_RUN check completed 2026-10-01 using a partial real HR CSV file (11 rows passed quality check out of 19 total — 8 rows skipped due to inconsistent column count, not yet resolved with HR). Result: load OK (11 rows), check-quality OK=11 ERROR=0, import --mode DRY_RUN created=10 updated=1 errors=0. Not yet APPLYed — waiting for complete HR file before writing real data.
+- [2026-10-01] DRY_RUN test detail for PR #34 (real partial HR CSV, see line above): batch id b8cf1d3c-73a8-4325-896c-1a247150633b. Found 1 missing personnel-type-map.json mapping ("ข้าราชการองค์การบริหารส่วนจังหวัด") - fixed in PR #52. Unresolved: 7 of 19 rows have 15 columns vs the 10-column header - need to ask HR what the extra columns are before importing the complete file.
 - PR #33 (docs/keycloak-basic-scope-note, T10 docs): OPEN, mergeable — documents basic client scope loss on --import-realm (2026-09-26)
 - T9 (Portal, HR Console, DPO Console): DONE, merged to main
 - T8 (stg_hr schema + HR migrate runner): DONE, merged to main
