@@ -18,3 +18,10 @@ infra/postgres/data/
 # T8 (migrate/): รายงานที่ runner สร้างระหว่างรัน (quality/DRY_RUN/APPLY/reconciliation) - artifact ของการรัน
 # แต่ละครั้ง ไม่ใช่ source ที่ต้อง commit
 migrate/reports/
+
+# ไฟล์ข้อมูล HR จริง (มีเลขบัตรประชาชนจริงปน) ที่ใช้ทดสอบ migrate CLI ด้วยมือตอน DRY_RUN - ห้าม commit
+# เด็ดขาดตาม hard rule ข้อ 1/8 ใน CLAUDE.md (ห้าม pid จริงปรากฏใน test fixture ที่ commit) จำกัด pattern
+# เฉพาะ root กับ migrate/ ชั้นบนสุดเท่านั้น (ไม่ใช้ **) เพื่อไม่ให้ไปโดน fixture/seed data จริงที่ตั้งใจ commit
+# เช่น migrate/data/position-seed-data.csv (ข้อมูลตำแหน่ง ไม่มี pid ใช้เป็น seed/fixture ของเทสต์)
+/hr*.csv
+/migrate/*.csv
