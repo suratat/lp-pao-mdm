@@ -94,7 +94,11 @@ git fetch --all && git status && git log --oneline -10 --all --graph
   instead of silently resolving. Utility only - not wired into migrate/ or POST /positions yet (PR 2 next:
   wire into migrate/src/quality/rules.js for POSITION_NO_SIMILAR_EXISTS detection). 20 unit tests, mutation
   testing 5/5 killed. No migration, no deploy needed (pure utility, not called from anywhere yet)
-- PR #52 (fix/personnel-type-map-civil-servant): OPEN — data-only fix: add "ข้าราชการองค์การบริหารส่วนจังหวัด"
+- PR #57 (chore/gitignore-hr-data): MERGED (b317701) — .gitignore only: ignore real HR data files
+  (/hr*.csv at root, /migrate/*.csv top-level only - not ** so migrate/data/position-seed-data.csv fixture
+  stays tracked). No code, no migration
+- PR #52 (fix/personnel-type-map-civil-servant): MERGED (2026-10-01T23:07:19Z) — data-only fix: add
+  "ข้าราชการองค์การบริหารส่วนจังหวัด"
   (full name) as a synonym key for "ข้าราชการ อบจ." in migrate/config/personnel-type-map.json, both -> CIVIL_SERVANT
   (confirmed from real HR file). No code/migration touched; migrate suite 41/41 (2026-10-01)
 - PR #51 (chore/migrate-cli-dockerfile): MERGED (image built) — infra/migrate-cli/Dockerfile (new, separate from
