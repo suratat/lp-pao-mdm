@@ -90,6 +90,13 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 - build/รัน `migrate-cli` บน VPN-MDM ต้องใช้ `docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml --profile tools <build|run> migrate-cli` เสมอ (ไม่ใส่ `--env-file` ตัวแปรจะว่างและ build ล้มด้วย "no port specified") **ห้ามใส่ `--remove-orphans`** เด็ดขาด เพราะจะลบ `infra-keycloak-1` ทิ้งไปด้วย (อยู่คนละ compose file)
 
 ### Status Log
+- PR #61 (feat/stg-hr-purge-source-data-a, T8): OPEN (2026-10-03) — PR A of 2: migration 1700000000043 (stg_hr.raw_row
+  loaded_at NOT NULL backfilled COALESCE(pid_loaded_at, import_batch.imported_at, now()), source_purged_at, partial
+  index, column-level grants + trigger so mdm_worker can only write source_data = '{}') and worker stgHrPurge now
+  clears pid_plaintext + source_data in one statement (loaded_at < now() - STG_HR_PID_RETENTION_DAYS). NOT deployed:
+  needs DB backup before migrating + worker image rebuild. batch b8cf1d3c-73a8-4325-896c-1a247150633b ages unchanged,
+  purged after 2026-10-31. Names/phone/personal email/email_work/employee_no/external_value/quality_errors NOT purged,
+  waiting for DPO. PR B (redact() in err() of migrate/src/quality/rules.js + sentinel test) not started
 - PR #59 (feat/migrate-position-no-similar): MERGED (53b6a46) — deployed on VPN-MDM (2026-10-02, no migration).
   Wires api/src/services/positionNoMatch.js (PR #55) into migrate/src/quality/rules.js: check-quality now emits
   POSITION_NO_SIMILAR_EXISTS when position_no doesn't match exactly but normalizes to an existing position
