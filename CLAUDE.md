@@ -86,7 +86,20 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 3. When resuming work in a new session, state which branch/PR/task you're continuing, don't assume the session remembers.
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
+### หมายเหตุ Deploy
+- build/รัน `migrate-cli` บน VPN-MDM ต้องใช้ `docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml --profile tools <build|run> migrate-cli` เสมอ (ไม่ใส่ `--env-file` ตัวแปรจะว่างและ build ล้มด้วย "no port specified") **ห้ามใส่ `--remove-orphans`** เด็ดขาด เพราะจะลบ `infra-keycloak-1` ทิ้งไปด้วย (อยู่คนละ compose file)
+
 ### Status Log
+- PR #59 (feat/migrate-position-no-similar): MERGED (53b6a46) — deployed on VPN-MDM (2026-10-02, no migration).
+  Wires api/src/services/positionNoMatch.js (PR #55) into migrate/src/quality/rules.js: check-quality now emits
+  POSITION_NO_SIMILAR_EXISTS when position_no doesn't match exactly but normalizes to an existing position
+  (names the matching position_no, does not auto-resolve); still POSITION_NOT_FOUND when no match at all.
+  loadLookups throws a clear POSITION_NO_KEY_COLLISION error (batch stays non-QUALITY_CHECKED) if mdm.position
+  itself has two active positions colliding after normalize. infra/migrate-cli/Dockerfile updated to COPY the
+  new file. Verified on VPN-MDM: git pull --ff-only, rebuilt migrate-cli image (see "หมายเหตุ Deploy" above -
+  needs --env-file infra/.env.staging or build fails with "no port specified"), confirmed require() resolves
+  (no MODULE_NOT_FOUND), re-ran check-quality on batch b8cf1d3c-73a8-4325-896c-1a247150633b (same as PR #34) ->
+  OK=11 ERROR=0, unchanged from before this PR
 - PR #55 (feat/position-no-match-utility): MERGED (2026-10-02) — adds api/src/services/positionNoMatch.js
   (normalizePositionNo + buildPositionNoIndex, pure function, no DB/HTTP) to normalize position_no as a
   comparison key only (never overwrites the stored position_no) - handles whitespace/NBSP/tab/newline and
