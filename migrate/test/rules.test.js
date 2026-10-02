@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const { Pool } = require('pg');
 const { DATABASE_URL, MIGRATOR_DATABASE_URL } = require('./config');
 const { loadBatch } = require('../src/loader/loadBatch');
@@ -30,6 +31,19 @@ beforeAll(async () => {
 // จาก migration) - เทสที่ไม่ได้สนใจ org_unit/position โดยเฉพาะยังคงได้แถวที่ผ่านกฎคุณภาพทุกข้อ
 function defaultRow(overrides = {}) {
   return validRow({ positionNo: positionA, orgUnitCode: orgUnitA.code, ...overrides });
+}
+
+// ตำแหน่งทดสอบ "สั้น" สำหรับเทสต์ที่ต้องต่อท้าย "(ถ)" แล้วห้ามเกิน varchar(50) ของ mdm.position.position_no -
+// ต่างจาก makePosition() ที่ยาวพอดี 48 ตัวอักษร (POS-MIGRATE-<uuid>) ต่อท้าย "  (ถ)" แล้วเกิน 50 ทันที (ไม่แก้
+// makePosition() เพราะเทสต์อื่นในไฟล์นี้ผูกความยาวเดิมไว้อยู่) ใช้ prefix "TST-" + hex 8 ตัว = 12 ตัวอักษร
+async function makeShortPosition(adminPool, orgUnitId) {
+  const positionNo = `TST-${crypto.randomBytes(4).toString('hex')}`;
+  const { rows } = await adminPool.query(
+    `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+     VALUES ($1, 'ตำแหน่งทดสอบสั้น', 'GENERAL', $2) RETURNING position_id`,
+    [positionNo, orgUnitId]
+  );
+  return { positionNo, positionId: rows[0].position_id };
 }
 
 afterAll(async () => {
@@ -204,6 +218,129 @@ describe('runQualityCheck (§5.3 ระยะ 1: กฎคุณภาพ 5 ข�
     const { batchId } = await loadAndCheck([defaultRow()]);
     const { rows } = await adminPool.query(`SELECT status FROM stg_hr.import_batch WHERE batch_id = $1`, [batchId]);
     expect(rows[0].status).toBe('QUALITY_CHECKED');
+  });
+});
+
+// PR 2: wire api/src/services/positionNoMatch.js เข้า checkRow/loadLookups - แยก "พิมพ์เลขต่างแค่ format"
+// (POSITION_NO_SIMILAR_EXISTS) ออกจาก "ไม่มีตำแหน่งนี้จริง" (POSITION_NOT_FOUND) ไม่ resolve ให้อัตโนมัติ
+describe('runQualityCheck: POSITION_NO_SIMILAR_EXISTS / POSITION_NO_KEY_COLLISION (normalize เลขที่ตำแหน่ง)', () => {
+  test('position_no ไม่ตรงตัว แต่ normalize แล้วตรงกับตำแหน่งที่มีอยู่ (เว้นวรรค 2 ช่องก่อน "(ถ)") -> POSITION_NO_SIMILAR_EXISTS ระบุเลขที่ตรง ไม่มี POSITION_NOT_FOUND ปน resolved_position_id เป็น null', async () => {
+    const { positionNo: shortNo, positionId: shortId } = await makeShortPosition(adminPool, orgUnitA.orgUnitId);
+    const similarInput = `${shortNo}  (ถ)`;
+    expect(similarInput.length).toBeLessThanOrEqual(50); // กันล้มซ้ำแบบ "value too long for type character varying(50)"
+    try {
+      const { rawRows } = await loadAndCheck([defaultRow({ rowRef: 'r1', positionNo: similarInput })]);
+      expect(codesFor(rawRows, 'r1')).toContain('POSITION_NO_SIMILAR_EXISTS');
+      expect(codesFor(rawRows, 'r1')).not.toContain('POSITION_NOT_FOUND');
+      const row = rawRows.find((r) => r.row_ref === 'r1');
+      const similarError = row.quality_errors.find((e) => e.code === 'POSITION_NO_SIMILAR_EXISTS');
+      expect(similarError.message).toContain(shortNo);
+      expect(row.resolved_position_id).toBeNull();
+    } finally {
+      await adminPool.query(`DELETE FROM mdm.position WHERE position_id = $1`, [shortId]);
+    }
+  });
+
+  // กัน regression ของเทสต์เดิม (บรรทัด "เลขที่ตำแหน่งไม่พบใน mdm.position -> POSITION_NOT_FOUND" ด้านบน) หลังเพิ่ม
+  // branch POSITION_NO_SIMILAR_EXISTS: ต้องยังคงเป็น POSITION_NOT_FOUND เท่านั้นเมื่อไม่ตรงใครเลยแม้ normalize แล้ว
+  test('position_no ไม่ตรงใครเลยแม้ normalize แล้ว -> POSITION_NOT_FOUND เท่านั้น ไม่มี POSITION_NO_SIMILAR_EXISTS', async () => {
+    const { rawRows } = await loadAndCheck([defaultRow({ rowRef: 'r1', positionNo: 'POS-NOPE' })]);
+    expect(codesFor(rawRows, 'r1')).toContain('POSITION_NOT_FOUND');
+    expect(codesFor(rawRows, 'r1')).not.toContain('POSITION_NO_SIMILAR_EXISTS');
+  });
+
+  // ยืนยันแล้วว่า mdm.position มี UNIQUE INDEX บน position_no จริง (position_position_no_unique_index, migration
+  // 1700000000006) - INSERT ตำแหน่งทดสอบของเทสต์นี้ต้องใช้ position_no ที่สุ่มไม่ซ้ำกับข้อมูลจริงที่ seed มา
+  // (makeShortPosition ใช้ "TST-" + hex สุ่มจึงปลอดภัย) และลบออกด้วย position_id จาก RETURNING เท่านั้น ไม่ใช่ position_no
+  test('มี 2 ตำแหน่ง active ใน mdm.position ที่ normalize แล้วชนกัน -> runQualityCheck throw code POSITION_NO_KEY_COLLISION ไม่ crash แบบไม่มีคำอธิบาย และ batch ไม่กลายเป็น QUALITY_CHECKED', async () => {
+    const { positionNo: collisionBaseNo, positionId: collisionBaseId } = await makeShortPosition(
+      adminPool,
+      orgUnitA.orgUnitId
+    );
+    const collisionSimilarNo = `${collisionBaseNo}  (ถ)`;
+    expect(collisionSimilarNo.length).toBeLessThanOrEqual(50); // กันล้มซ้ำแบบ "value too long for type character varying(50)"
+
+    const { rows: similarRows } = await adminPool.query(
+      `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+       VALUES ($1, 'ตำแหน่งทดสอบชนกัน', 'GENERAL', $2) RETURNING position_id`,
+      [collisionSimilarNo, orgUnitA.orgUnitId]
+    );
+    const collisionSimilarId = similarRows[0].position_id;
+
+    try {
+      const { batchId } = await loadBatch(pool, {
+        csvContent: buildCsv([defaultRow({ rowRef: 'r1' })]),
+        columnMap: defaultColumnMap,
+        sourceFilename: 'collision.csv',
+        importedBy: 'tester',
+      });
+
+      let thrown;
+      try {
+        await runQualityCheck(pool, batchId);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeDefined();
+      expect(thrown.code).toBe('POSITION_NO_KEY_COLLISION');
+
+      const { rows } = await adminPool.query(`SELECT status FROM stg_hr.import_batch WHERE batch_id = $1`, [batchId]);
+      expect(rows[0].status).not.toBe('QUALITY_CHECKED');
+    } finally {
+      // ต้องลบตำแหน่งทดสอบทั้งสองออกเสมอ (ด้วย position_id เท่านั้น) ไม่งั้นทุกเทสต์หลังจากนี้ในไฟล์นี้จะ throw
+      // ตามไปด้วย (positionBySimilarKey สร้างจากตำแหน่ง active "ทั้งหมด" ไม่ใช่เฉพาะของเทสต์นี้)
+      await adminPool.query(`DELETE FROM mdm.position WHERE position_id = ANY($1::uuid[])`, [
+        [collisionBaseId, collisionSimilarId],
+      ]);
+    }
+  });
+
+  test('position_no ว่างสำหรับประเภทที่ไม่บังคับมีตำแหน่ง -> ไม่เกิด POSITION_NO_SIMILAR_EXISTS', async () => {
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'r1', personnelTypeRaw: 'พนักงานจ้าง', positionNo: '' }),
+    ]);
+    expect(codesFor(rawRows, 'r1')).not.toContain('POSITION_NO_SIMILAR_EXISTS');
+    expect(codesFor(rawRows, 'r1')).not.toContain('POSITION_NOT_FOUND');
+  });
+
+  // เคสจริงของระบบ (ยืนยันจากฐานข้อมูลจริง): mdm.position ที่ seed มาจากไฟล์จริงมีแถว "52-1-06-3601-007 (ถ)" อยู่แล้ว
+  // (ไม่ใช่ข้อมูลที่เทสต์สร้างเอง) - ใช้แถวนี้ตรงๆ ห้าม INSERT ซ้ำ (จะชน UNIQUE INDEX ของ position_no) และห้าม DELETE
+  // ข้อมูล seed จริงทิ้ง ถ้าแถวนี้หายไปจาก seed ในอนาคต ให้เทสต์ fail ชัดเจนแทนการสร้างใหม่เงียบๆ
+  test('เคสจริงของระบบ: mdm.position (seed จริง) มี "52-1-06-3601-007 (ถ)" ไฟล์ส่ง "52-1-06-3601-007" เฉยๆ -> POSITION_NO_SIMILAR_EXISTS', async () => {
+    const realPositionNo = '52-1-06-3601-007 (ถ)';
+    const { rows: existing } = await adminPool.query(`SELECT position_id FROM mdm.position WHERE position_no = $1`, [
+      realPositionNo,
+    ]);
+    if (existing.length === 0) {
+      throw new Error(
+        `ไม่พบตำแหน่ง seed จริง "${realPositionNo}" ใน mdm.position ของ DB ทดสอบ - เทสต์นี้อ้างอิงข้อมูลจริงจาก ` +
+          'position-seed-data.csv โดยตรง ถ้าข้อมูล seed เปลี่ยน ต้องปรับเทสต์นี้ใหม่ ไม่ใช่สร้างตำแหน่งนี้ขึ้นเอง'
+      );
+    }
+
+    const { rawRows } = await loadAndCheck([defaultRow({ rowRef: 'r1', positionNo: '52-1-06-3601-007' })]);
+    expect(codesFor(rawRows, 'r1')).toContain('POSITION_NO_SIMILAR_EXISTS');
+    const row = rawRows.find((r) => r.row_ref === 'r1');
+    const similarError = row.quality_errors.find((e) => e.code === 'POSITION_NO_SIMILAR_EXISTS');
+    expect(similarError.message).toContain(realPositionNo);
+  });
+
+  // เช่นเดียวกับข้างบน: "2" เป็นตำแหน่ง seed จริง (ลูกจ้างประจำสังกัด SC) ไม่ใช่ตำแหน่งที่เทสต์สร้างเอง
+  test('เลขที่ตำแหน่งล้วนไม่มีขีด ("2", seed จริง) ที่พบตรงตัว -> ผ่านปกติ resolved_position_id ไม่เป็น null ไม่ติด SIMILAR/NOT_FOUND', async () => {
+    const { rows: existing } = await adminPool.query(`SELECT position_id FROM mdm.position WHERE position_no = '2'`);
+    if (existing.length === 0) {
+      throw new Error(
+        'ไม่พบตำแหน่ง seed จริง position_no = "2" ใน mdm.position ของ DB ทดสอบ - เทสต์นี้อ้างอิงข้อมูลจริงจาก ' +
+          'position-seed-data.csv โดยตรง ถ้าข้อมูล seed เปลี่ยน ต้องปรับเทสต์นี้ใหม่ ไม่ใช่สร้างตำแหน่งนี้ขึ้นเอง'
+      );
+    }
+    const bareNumberPositionId = existing[0].position_id;
+
+    const { rawRows } = await loadAndCheck([defaultRow({ rowRef: 'r1', positionNo: '2' })]);
+    expect(codesFor(rawRows, 'r1')).not.toContain('POSITION_NOT_FOUND');
+    expect(codesFor(rawRows, 'r1')).not.toContain('POSITION_NO_SIMILAR_EXISTS');
+    const row = rawRows.find((r) => r.row_ref === 'r1');
+    expect(row.resolved_position_id).toBe(bareNumberPositionId);
   });
 });
 
