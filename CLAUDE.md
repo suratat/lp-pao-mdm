@@ -87,6 +87,13 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 4. Before opening a new branch, confirm main is up to date: `git checkout main && git pull`
 
 ### Status Log
+- PR #55 (feat/position-no-match-utility): MERGED (2026-10-02) — adds api/src/services/positionNoMatch.js
+  (normalizePositionNo + buildPositionNoIndex, pure function, no DB/HTTP) to normalize position_no as a
+  comparison key only (never overwrites the stored position_no) - handles whitespace/NBSP/tab/newline and
+  the trailing "(ถ)" suffix (half-width + full-width parens); buildPositionNoIndex throws on key collision
+  instead of silently resolving. Utility only - not wired into migrate/ or POST /positions yet (PR 2 next:
+  wire into migrate/src/quality/rules.js for POSITION_NO_SIMILAR_EXISTS detection). 20 unit tests, mutation
+  testing 5/5 killed. No migration, no deploy needed (pure utility, not called from anywhere yet)
 - PR #52 (fix/personnel-type-map-civil-servant): OPEN — data-only fix: add "ข้าราชการองค์การบริหารส่วนจังหวัด"
   (full name) as a synonym key for "ข้าราชการ อบจ." in migrate/config/personnel-type-map.json, both -> CIVIL_SERVANT
   (confirmed from real HR file). No code/migration touched; migrate suite 41/41 (2026-10-01)
