@@ -7,6 +7,7 @@
 #                                -> api/src/services/jobTitleText.js       -> api/src/security/httpProblem.js
 #                                                                          -> api/src/services/personnelPositionRules.js
 #                                                                             -> api/src/security/httpProblem.js (ซ้ำ)
+#                                -> api/src/services/positionNoMatch.js    (ไม่ require อะไรต่อเลย - ตรวจแล้ว)
 # personnelPositionRules.js เป็นไฟล์ที่ jobTitleText.js require ต่อ (transitive) - ต้อง copy ด้วยไม่งั้น
 # MODULE_NOT_FOUND ตอน require('./jobTitleText') ภายใน container
 FROM node:22-alpine
@@ -22,6 +23,7 @@ COPY api/src/security/pid.js ./api/src/security/pid.js
 COPY api/src/security/httpProblem.js ./api/src/security/httpProblem.js
 COPY api/src/services/jobTitleText.js ./api/src/services/jobTitleText.js
 COPY api/src/services/personnelPositionRules.js ./api/src/services/personnelPositionRules.js
+COPY api/src/services/positionNoMatch.js ./api/src/services/positionNoMatch.js
 
 WORKDIR /repo/migrate
 

@@ -9,6 +9,12 @@ const {
   validateJobTitleText,
   assertJobTitleMatchesPersonnelType,
 } = require(path.join(__dirname, '..', '..', '..', 'api', 'src', 'services', 'jobTitleText'));
+// normalize เลขที่ตำแหน่งเป็นกุญแจเทียบ (ใช้ร่วมกับ api/src/services/positionNoMatch.js ตัวเดียวกับที่ API ใช้ -
+// pure function ล้วน ไม่มี require ต่อเลย) เพื่อตรวจ "ตำแหน่งที่คล้ายกันหลัง normalize" ก่อนจะถือว่าไม่พบตำแหน่งเลย
+const {
+  normalizePositionNo,
+  buildPositionNoIndex,
+} = require(path.join(__dirname, '..', '..', '..', 'api', 'src', 'services', 'positionNoMatch'));
 
 // รหัสสถานะที่ API (/sync/hr/employment-batch) รองรับตอนนี้เท่านั้น - EmploymentUpsert (openapi) ไม่มีฟิลด์
 // employmentStatus เลย จึงนำเข้าได้เฉพาะคนที่ "ปฏิบัติงาน" (ACTIVE) ผ่าน endpoint นี้ คนที่พ้นสภาพก่อน
@@ -35,7 +41,10 @@ function err(code, message) {
 
 // ตรวจกฎคุณภาพ 5 ข้อตาม §5.3 ระยะ 1 กับแถวเดียว (ไม่รวมกฎ "ซ้ำ" ซึ่งต้องเทียบทั้ง batch - ดู checkBatch)
 // orgUnitLookup/positionLookup: Map<code, { id, orgUnitId? }> ที่ query จาก mdm ไว้ล่วงหน้าทั้ง batch
-function checkRow(row, { orgUnitLookup, positionLookup }) {
+// positionBySimilarKey: Map<normalizePositionNo(position_no), แถว mdm.position ดิบ> - ใช้เฉพาะตอนหาตำแหน่งตรงตัว
+// ไม่เจอ เพื่อแยก "พิมพ์เลขต่างแค่ format" (POSITION_NO_SIMILAR_EXISTS) ออกจาก "ไม่มีตำแหน่งนี้จริง" (POSITION_NOT_FOUND)
+// - ไม่ resolve ให้อัตโนมัติไม่ว่ากรณีใด (resolvedPositionId ยังคง null ทั้งคู่)
+function checkRow(row, { orgUnitLookup, positionLookup, positionBySimilarKey }) {
   const errors = [];
 
   // 1) checksum เลขบัตร
@@ -86,7 +95,18 @@ function checkRow(row, { orgUnitLookup, positionLookup }) {
       errors.push(err('POSITION_NOT_FOUND', 'ไม่มีเลขที่ตำแหน่งในแถวนี้'));
     }
   } else if (!position) {
-    errors.push(err('POSITION_NOT_FOUND', `ไม่พบตำแหน่งเลขที่ ${row.position_no} ใน mdm.position`));
+    const normalizedKey = normalizePositionNo(row.position_no);
+    const similar = normalizedKey ? positionBySimilarKey.get(normalizedKey) : null;
+    if (similar) {
+      errors.push(
+        err(
+          'POSITION_NO_SIMILAR_EXISTS',
+          `เลขที่ตำแหน่ง "${row.position_no}" ในไฟล์ไม่พบตรงตัว แต่ normalize แล้วตรงกับตำแหน่งที่มีอยู่เลขที่ "${similar.position_no}" ใน mdm.position - ตรวจว่าเป็นตำแหน่งเดียวกันหรือพิมพ์เลขผิดก่อนจะสร้างตำแหน่งใหม่`
+        )
+      );
+    } else {
+      errors.push(err('POSITION_NOT_FOUND', `ไม่พบตำแหน่งเลขที่ ${row.position_no} ใน mdm.position`));
+    }
   } else {
     resolvedPositionId = position.positionId;
     if (orgUnit && position.orgUnitId !== orgUnit.orgUnitId) {
@@ -166,7 +186,25 @@ async function loadLookups(pool) {
   const positionLookup = new Map(
     positions.rows.map((r) => [r.position_no, { positionId: r.position_id, orgUnitId: r.org_unit_id }])
   );
-  return { orgUnitLookup, positionLookup };
+
+  // positionBySimilarKey: Map<normalizePositionNo(position_no), แถว mdm.position ดิบ> ของตำแหน่ง active ทั้งหมด -
+  // ถ้าสองตำแหน่งจริง (position_no ต่างกัน) normalize แล้วชนกัน แปลว่าข้อมูลใน mdm.position เองขัดแย้งกัน
+  // (ไม่เกี่ยวกับไฟล์ที่กำลังตรวจ) ต้อง throw ทันทีก่อนเริ่มตรวจทีละแถว (ก่อนมี UPDATE stg_hr.raw_row ใดๆ) เพื่อให้
+  // batch ค้างสถานะเดิมไว้ (ไม่ใช่ QUALITY_CHECKED) แก้ข้อมูลแล้วตรวจซ้ำได้ ไม่ใช่ crash แบบไม่มีคำอธิบาย
+  let positionBySimilarKey;
+  try {
+    positionBySimilarKey = buildPositionNoIndex(positions.rows);
+  } catch (e) {
+    if (e.code !== 'POSITION_NO_KEY_COLLISION') throw e;
+    const wrapped = new Error(
+      `ตรวจคุณภาพไม่ได้: พบเลขที่ตำแหน่งใน mdm.position ที่ normalize แล้วตรงกัน ("${e.existingPositionNo}" ` +
+        `กับ "${e.incomingPositionNo}") - ไม่เกี่ยวกับไฟล์ที่กำลังตรวจ ต้องแก้ข้อมูลตำแหน่งใน mdm.position ก่อน`
+    );
+    wrapped.code = e.code;
+    throw wrapped;
+  }
+
+  return { orgUnitLookup, positionLookup, positionBySimilarKey };
 }
 
 // ตรวจคุณภาพทั้ง batch แล้วเขียนผลกลับ stg_hr.raw_row (quality_status, quality_errors, resolved_*_id)
@@ -180,7 +218,7 @@ async function runQualityCheck(pool, batchId) {
     [batchId]
   );
 
-  const { orgUnitLookup, positionLookup } = await loadLookups(pool);
+  const { orgUnitLookup, positionLookup, positionBySimilarKey } = await loadLookups(pool);
   const duplicatedPids = findDuplicatePids(rows);
 
   let okCount = 0;
@@ -188,7 +226,7 @@ async function runQualityCheck(pool, batchId) {
   const errorsByCode = {};
 
   for (const row of rows) {
-    const result = checkRow(row, { orgUnitLookup, positionLookup });
+    const result = checkRow(row, { orgUnitLookup, positionLookup, positionBySimilarKey });
     const errors = [...result.errors];
     if (row.pid_plaintext && duplicatedPids.has(row.pid_plaintext)) {
       errors.push(err('DUPLICATE_PID', 'เลขบัตรประชาชนซ้ำกับแถวอื่นในไฟล์เดียวกัน'));
