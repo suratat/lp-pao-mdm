@@ -77,4 +77,32 @@ describe('loadBatch (§5.3 ระยะ 1: "export ระบบเดิม -> s
     expect(rawRows[0].pid_plaintext).toBeNull();
     expect(rawRows[0].pid_loaded_at).toBeNull();
   });
+
+  test('loaded_at ตั้งเป็นเวลาโหลดเดียวกับ pid_loaded_at และไม่เป็น NULL แม้แถวไม่มี pid', async () => {
+    const loadTime = new Date('2026-03-01T10:00:00Z');
+    const csv = buildCsv([
+      validRow({ positionNo: fixturePositionNo, orgUnitCode: fixtureOrgUnitCode }),
+      validRow({ pid: '', positionNo: fixturePositionNo, orgUnitCode: fixtureOrgUnitCode }),
+    ]);
+
+    const { batchId } = await loadBatch(pool, {
+      csvContent: csv,
+      columnMap: defaultColumnMap,
+      sourceFilename: 'loaded-at.csv',
+      importedBy: 'tester',
+      now: () => loadTime,
+    });
+
+    const { rows: rawRows } = await adminPool.query(
+      `SELECT pid_plaintext, pid_loaded_at, loaded_at, source_purged_at FROM stg_hr.raw_row WHERE batch_id = $1`,
+      [batchId]
+    );
+    expect(rawRows).toHaveLength(2);
+    for (const row of rawRows) {
+      expect(row.loaded_at.toISOString()).toBe(loadTime.toISOString());
+      expect(row.source_purged_at).toBeNull();
+    }
+    const withPid = rawRows.find((r) => r.pid_plaintext !== null);
+    expect(withPid.pid_loaded_at.toISOString()).toBe(loadTime.toISOString());
+  });
 });
