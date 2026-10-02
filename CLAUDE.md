@@ -90,13 +90,24 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 - build/รัน `migrate-cli` บน VPN-MDM ต้องใช้ `docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml --profile tools <build|run> migrate-cli` เสมอ (ไม่ใส่ `--env-file` ตัวแปรจะว่างและ build ล้มด้วย "no port specified") **ห้ามใส่ `--remove-orphans`** เด็ดขาด เพราะจะลบ `infra-keycloak-1` ทิ้งไปด้วย (อยู่คนละ compose file)
 
 ### Status Log
-- PR #61 (feat/stg-hr-purge-source-data-a, T8): OPEN (2026-10-03) — PR A of 2: migration 1700000000043 (stg_hr.raw_row
-  loaded_at NOT NULL backfilled COALESCE(pid_loaded_at, import_batch.imported_at, now()), source_purged_at, partial
-  index, column-level grants + trigger so mdm_worker can only write source_data = '{}') and worker stgHrPurge now
-  clears pid_plaintext + source_data in one statement (loaded_at < now() - STG_HR_PID_RETENTION_DAYS). NOT deployed:
-  needs DB backup before migrating + worker image rebuild. batch b8cf1d3c-73a8-4325-896c-1a247150633b ages unchanged,
-  purged after 2026-10-31. Names/phone/personal email/email_work/employee_no/external_value/quality_errors NOT purged,
-  waiting for DPO. PR B (redact() in err() of migrate/src/quality/rules.js + sentinel test) not started
+- PR #62 (fix/migrate-import-chunk-by-bytes, T8): OPEN (2026-10-03) — fixes 413 on HR import: runImport now splits
+  requests by real body size (MAX_BODY_BYTES 61440 = 60% of express.json() 100 KB default in api/src/app.js, API limit
+  NOT raised) via migrate/src/import/chunkByBytes.js; retry 2x on 5xx/network only; 401 fails immediately (TOKEN_EXPIRED,
+  says whether earlier chunks were committed); partial report (-partial.json) when a chunk fails midway, batch not set to
+  APPLIED, rerun on same batch is safe (committed rows become unchanged; use reconcile to verify). Per-chunk durationMs in
+  report to judge token lifetime. No migration, no api/infra change; deploy = rebuild migrate-cli only (needs --env-file
+  infra/.env.staging, never --remove-orphans). Not yet run against real HR batch
+- PR #61 (feat/stg-hr-purge-source-data-a, T8): MERGED (a15ce07) — DEPLOYED on VPN-MDM (2026-10-02 UTC). PR A of 2:
+  migration 1700000000043 (stg_hr.raw_row loaded_at NOT NULL backfilled COALESCE(pid_loaded_at, import_batch.imported_at,
+  now()), source_purged_at, partial index, column-level grants + trigger so mdm_worker can only write source_data = '{}')
+  and worker stgHrPurge now clears pid_plaintext + source_data in one statement (loaded_at < now() -
+  STG_HR_PID_RETENTION_DAYS). Deploy evidence: backup mdm-backup-20261002-183722.dump (checked with pg_restore --list,
+  copied off-site); git pull --ff-only -> a15ce07; migration 1700000000043 applied; verified loaded_at filled 11/11 rows,
+  already_purged = 0, oldest_loaded = 2026-10-01, trigger raw_row_guard_worker_source_data present; worker image rebuilt
+  and only infra-worker-1 restarted, no errors in its log. batch b8cf1d3c-73a8-4325-896c-1a247150633b ages unchanged,
+  purged after 2026-10-31. NOT purged yet, waiting for DPO: expected_first_name_th, expected_last_name_th, phone_raw,
+  email_personal_raw, email_work, employee_no, external_value, quality_errors. PR B (redact() in err() of
+  migrate/src/quality/rules.js + sentinel test) not started
 - PR #59 (feat/migrate-position-no-similar): MERGED (53b6a46) — deployed on VPN-MDM (2026-10-02, no migration).
   Wires api/src/services/positionNoMatch.js (PR #55) into migrate/src/quality/rules.js: check-quality now emits
   POSITION_NO_SIMILAR_EXISTS when position_no doesn't match exactly but normalizes to an existing position

@@ -4,7 +4,7 @@ const path = require('node:path');
 const { Pool } = require('pg');
 const { loadBatch } = require('./loader/loadBatch');
 const { runQualityCheck } = require('./quality/rules');
-const { runImport } = require('./import/runImport');
+const { runImport, ImportError } = require('./import/runImport');
 const { reconcileBatch } = require('./reconcile/reconcile');
 const { writeReport } = require('./report/writeReport');
 
@@ -59,16 +59,26 @@ async function cmdCheckQuality(pool, options) {
 
 async function cmdImport(pool, options) {
   const mode = (options.mode || 'DRY_RUN').toUpperCase();
-  const summary = await runImport(pool, {
-    apiBaseUrl: options['api-base-url'] || process.env.MDM_API_BASE_URL,
-    token: options.token || process.env.MDM_API_TOKEN,
-    batchId: options.batch,
-    mode,
-    createIfMissing: Boolean(options['create-if-missing']),
-    sourceSystem: options['source-system'] || 'LHR',
-  });
   const outDir = options['out-dir'] || path.join(process.cwd(), 'reports');
   const reportName = mode === 'APPLY' ? `apply-report-${options.batch}.json` : `dry-run-report-${options.batch}.json`;
+  let summary;
+  try {
+    summary = await runImport(pool, {
+      apiBaseUrl: options['api-base-url'] || process.env.MDM_API_BASE_URL,
+      token: options.token || process.env.MDM_API_TOKEN,
+      batchId: options.batch,
+      mode,
+      createIfMissing: Boolean(options['create-if-missing']),
+      sourceSystem: options['source-system'] || 'LHR',
+    });
+  } catch (err) {
+    // ล้มกลางทาง: chunk ก่อนหน้าใน APPLY ถูก commit ไปแล้ว ต้องมีรายงานบางส่วนเสมอ แล้วโยน error ต่อ (exit code != 0)
+    if (err instanceof ImportError && err.partialSummary) {
+      const partialPath = await writeReport(outDir, reportName.replace(/\.json$/, '-partial.json'), err.partialSummary);
+      console.error(`${mode} ล้มกลางทาง - รายงานบางส่วน: ${partialPath}`);
+    }
+    throw err;
+  }
   const filePath = await writeReport(outDir, reportName, summary);
   console.log(`${mode} เสร็จ: created=${summary.created} updated=${summary.updated} unchanged=${summary.unchanged} errors=${summary.errors.length} (${filePath})`);
   return summary;

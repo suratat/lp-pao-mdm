@@ -71,7 +71,11 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
       mode: 'DRY_RUN',
       createIfMissing: true,
     });
-    expect(dryRun).toEqual({ mode: 'DRY_RUN', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+    expect(dryRun).toEqual({
+      mode: 'DRY_RUN', total: 1, created: 1, updated: 0, unchanged: 0, errors: [],
+      chunks: [expect.objectContaining({ index: 1, rows: 1, attempts: 1 })],
+      elapsedMs: expect.any(Number),
+    });
 
     // DRY_RUN ต้อง rollback จริง - ยังไม่มี person ที่ pid_hash นี้
     const pepper = await apiCtx.vault.getPepper();
@@ -86,7 +90,11 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
       mode: 'APPLY',
       createIfMissing: true,
     });
-    expect(apply).toEqual({ mode: 'APPLY', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+    expect(apply).toEqual({
+      mode: 'APPLY', total: 1, created: 1, updated: 0, unchanged: 0, errors: [],
+      chunks: [expect.objectContaining({ index: 1, rows: 1, attempts: 1 })],
+      elapsedMs: expect.any(Number),
+    });
 
     const person = await adminPool.query(
       `SELECT status FROM mdm.person WHERE pid_hash = $1`,
@@ -147,7 +155,11 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
     expect(qualitySummary.error).toBe(0);
 
     const dryRun = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'DRY_RUN', createIfMissing: true });
-    expect(dryRun).toEqual({ mode: 'DRY_RUN', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+    expect(dryRun).toEqual({
+      mode: 'DRY_RUN', total: 1, created: 1, updated: 0, unchanged: 0, errors: [],
+      chunks: [expect.objectContaining({ index: 1, rows: 1, attempts: 1 })],
+      elapsedMs: expect.any(Number),
+    });
 
     const pepper = await apiCtx.vault.getPepper();
     const hash = pidHash(row.pid, pepper);
@@ -155,7 +167,11 @@ describe('T8 pipeline: load -> check-quality -> DRY_RUN -> APPLY -> reconcile (�
     expect(beforeApply.rows).toHaveLength(0); // DRY_RUN ต้อง rollback จริง
 
     const apply = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'APPLY', createIfMissing: true });
-    expect(apply).toEqual({ mode: 'APPLY', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+    expect(apply).toEqual({
+      mode: 'APPLY', total: 1, created: 1, updated: 0, unchanged: 0, errors: [],
+      chunks: [expect.objectContaining({ index: 1, rows: 1, attempts: 1 })],
+      elapsedMs: expect.any(Number),
+    });
 
     const employment = await adminPool.query(
       `SELECT position_id, job_title_text FROM mdm.employment WHERE employee_no = $1`,
