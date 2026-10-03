@@ -1,0 +1,15 @@
+infra/postgres/data
+infra/vault/data
+infra/vault/secrets
+node_modules
+**/node_modules
+.git
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.staging.example
+infra/keycloak/*backup*.json
+infra/keycloak/*noscopes*.json
+hr*.csv
+migrate/*.csv
+*.dump
