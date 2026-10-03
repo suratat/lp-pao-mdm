@@ -99,6 +99,10 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 7. ข้อสังเกตจากการอ่านโค้ด (ยังไม่แก้): PROVISION ใน HR Console ไม่ตรวจ pid_hash ซ้ำกับ person ที่นำเข้า และไม่ตรวจว่า employeeNo ตรงกับ pid_hash ของคำขอ ไม่มี endpoint ยกเลิกการอนุมัติ ปุ่มอนุมัติใช้กับ 782 คนที่นำเข้าไม่ได้ (ให้แต่ละคนล็อกอิน ThaID แทน)
 
 ### Status Log
+- [2026-10-03] PR #70 (0864673) fix(infra): KC_PROXY_HEADERS=xforwarded in infra/docker-compose.keycloak.yml — MERGED. Branch
+  chore/dockerignore (PR not opened yet): commits the root .dockerignore that existed only on the server (excludes data/secrets
+  dirs, node_modules, .git, .env* except the *.example files, keycloak backup JSONs, HR csv files, *.dump from the build
+  context); all 7 Dockerfiles under infra/ (api, migrate-cli, migrate, worker, portal, hr-console, dpo-console) still build with it
 - [2026-10-03] Keycloak: "Non-secure context detected" came back on VPN-MDM because KC_PROXY_HEADERS was only set on the
   server (2026-09-25) and never committed; put it back and recreated keycloak on VPN-MDM. This branch
   (fix/keycloak-proxy-headers) adds KC_PROXY_HEADERS: "xforwarded" to infra/docker-compose.keycloak.yml so it survives
