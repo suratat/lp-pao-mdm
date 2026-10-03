@@ -22,6 +22,10 @@ services:
       # Administration Console") - พบและยืนยันจริงบน VM production (192.168.0.5, WireGuard) หลัง Cloudflare
       # Tunnel ชี้ iam.lp-pao.go.th มาที่ container นี้แล้ว 2026-09-19
       KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL}
+      # Cloudflare Tunnel ตัด TLS แล้วส่ง HTTP เข้ามา ถ้าไม่มีบรรทัดนี้ Keycloak จะไม่เชื่อ X-Forwarded-Proto
+      # cookie จึงไม่ Secure ("Non-secure context detected") และล็อกอินผ่าน broker ล้มแบบสุ่ม (แก้บนเซิร์ฟเวอร์
+      # 2026-09-25 แต่ไม่ได้ commit จึงหายไป)
+      KC_PROXY_HEADERS: "xforwarded"
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"

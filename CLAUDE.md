@@ -99,6 +99,15 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 7. ข้อสังเกตจากการอ่านโค้ด (ยังไม่แก้): PROVISION ใน HR Console ไม่ตรวจ pid_hash ซ้ำกับ person ที่นำเข้า และไม่ตรวจว่า employeeNo ตรงกับ pid_hash ของคำขอ ไม่มี endpoint ยกเลิกการอนุมัติ ปุ่มอนุมัติใช้กับ 782 คนที่นำเข้าไม่ได้ (ให้แต่ละคนล็อกอิน ThaID แทน)
 
 ### Status Log
+- [2026-10-03] Keycloak: "Non-secure context detected" came back on VPN-MDM because KC_PROXY_HEADERS was only set on the
+  server (2026-09-25) and never committed; put it back and recreated keycloak on VPN-MDM. This branch
+  (fix/keycloak-proxy-headers) adds KC_PROXY_HEADERS: "xforwarded" to infra/docker-compose.keycloak.yml so it survives
+  redeploys (PR not opened yet). PR #69 (09392ab, PROVISION duplicate pid_hash 409 / employeeNo pid mismatch 422 /
+  claim_request.display_name spacing) — MERGED, DEPLOYED api1/api2 on VPN-MDM
+- [2026-10-03] Pilot on prod: PENDING_CLAIM -> CLAIMED passed (1 ข้าราชการ อบจ., via my.lp-pao.go.th, MDM
+  ACTIVE/VERIFIED). Not tested yet: พนักงานจ้าง. Found: switching browsers on mobile gives thaid-sso no_login_cookie
+  (11 times in metrics); the "เริ่มใหม่" button goes to check.lp-pao.go.th, so users wrongly think the login succeeded.
+  Fix option A (clearer error message, in-app browser warning, user announcement) is on hold
 - [2026-10-03] PR #67 (b857364) fix(api): require personnel:read:basic on POST /persons, deactivate, reactivate and
   GET /reverify/stale (403 insufficient-scope before any DB write, instead of a 500 after commit when the token lacks
   read:basic) — MERGED, DEPLOYED api1/api2 on VPN-MDM (2026-10-03); hr-console's token scopes include read:basic (checked).
