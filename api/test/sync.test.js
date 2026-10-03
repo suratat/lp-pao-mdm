@@ -57,6 +57,40 @@ async function insertEmployment(personId, employeeNo) {
   );
 }
 
+async function insertPosition() {
+  const { rows } = await ctx.pool.query(
+    `INSERT INTO mdm.position (position_no, title_th, position_type, org_unit_id)
+     VALUES ($1, 'ตำแหน่งทดสอบ', 'GENERAL', $2) RETURNING position_id`,
+    [`POS-TEST-${crypto.randomUUID()}`, fixtureOrgUnitId]
+  );
+  return rows[0].position_id;
+}
+
+// อ่านจาก DB จริง (ไม่ใช่จาก response) เพื่อเทียบสถานะก่อน/หลัง claim
+async function fetchPersonState(personId) {
+  const { rows } = await ctx.pool.query(
+    `SELECT status, verification_status, claimed_at, thaid_verified_at, pid_enc, key_id, version
+     FROM mdm.person WHERE person_id = $1`,
+    [personId]
+  );
+  return rows[0];
+}
+
+async function fetchEmploymentRows(personId) {
+  const { rows } = await ctx.pool.query(
+    `SELECT employment_id, is_current, employee_no, personnel_type, position_id, org_unit_id,
+            effective_from, effective_to, employment_status, updated_by
+     FROM mdm.employment WHERE person_id = $1 ORDER BY employment_id`,
+    [personId]
+  );
+  return rows;
+}
+
+async function findPersonIdByPid(pid) {
+  const { rows } = await ctx.pool.query(`SELECT person_id FROM mdm.person WHERE pid_hash = $1`, [pidHash(pid, pepper)]);
+  return rows[0].person_id;
+}
+
 function baseClaims(pid, overrides = {}) {
   return {
     pid,
@@ -141,6 +175,8 @@ describe('POST /sync/thaid - CLAIMED', () => {
       expectedLastNameTh: 'ระบบ',
     });
     await insertEmployment(personId, 'EMP-CLAIM-001');
+    const employmentBefore = await fetchEmploymentRows(personId);
+    expect(employmentBefore).toHaveLength(1);
 
     const onePixelPngBase64 =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -166,6 +202,13 @@ describe('POST /sync/thaid - CLAIMED', () => {
     expect(person.rows[0].version).toBe(2);
     expect(person.rows[0].key_id).toBe('vault:transit:mdm-pid:v1');
     expect(person.rows[0].pid_enc).not.toBeNull();
+    // ตรวจจาก DB จริง (ไม่ใช่แค่ response): verification_status และเวลา claim/ยืนยันตัวตน
+    expect(person.rows[0].verification_status).toBe('VERIFIED');
+    expect(person.rows[0].claimed_at).not.toBeNull();
+    expect(person.rows[0].thaid_verified_at).not.toBeNull();
+
+    // employment เดิมต้องไม่ถูกแตะ (ไม่ปิด/เปิดใหม่ ไม่มีแถวเพิ่ม)
+    expect(await fetchEmploymentRows(personId)).toEqual(employmentBefore);
 
     // pid_enc ต้องถอดรหัสกลับมาตรงกับ pid เดิมได้ (ผูก context = person_id)
     const ciphertext = person.rows[0].pid_enc.toString('utf8');
@@ -212,6 +255,86 @@ describe('POST /sync/thaid - CLAIMED', () => {
 
     const person = await ctx.pool.query(`SELECT status FROM mdm.person WHERE person_id = $1`, [personId]);
     expect(person.rows[0].status).toBe('ACTIVE');
+  });
+});
+
+// person ที่สร้างผ่านเส้นทางจริงของ import/provision (มี pid_enc เข้ารหัสไว้แล้วตั้งแต่ตอนสร้าง ต่างจาก insertPerson ด้านบนที่
+// ไม่มี pid_enc) แล้วล็อกอิน ThaID ด้วย pid เดียวกัน: handleClaim ต้องเขียน pid_enc ทับได้ (ยังถอดรหัสได้ pid เดิม) และไม่แตะ employment
+describe('POST /sync/thaid - CLAIMED หลังสร้างผ่าน import / provision (มี pid_enc อยู่แล้ว)', () => {
+  async function expectClaimKeepsEmployment(pid) {
+    const personId = await findPersonIdByPid(pid);
+
+    const personBefore = await fetchPersonState(personId);
+    expect(personBefore.status).toBe('PENDING_CLAIM');
+    expect(personBefore.verification_status).toBe('UNVERIFIED');
+    expect(personBefore.claimed_at).toBeNull();
+    expect(personBefore.thaid_verified_at).toBeNull();
+    expect(personBefore.pid_enc).not.toBeNull(); // เงื่อนไขตั้งต้นของกรณีนี้: เข้ารหัสไว้แล้วตอนสร้าง
+    const employmentBefore = await fetchEmploymentRows(personId);
+    expect(employmentBefore).toHaveLength(1);
+    expect(employmentBefore[0].is_current).toBe(true);
+
+    const res = await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBe('CLAIMED');
+    expect(res.body.personId).toBe(personId);
+    assertNoPidLeak(res, pid);
+
+    const personAfter = await fetchPersonState(personId);
+    expect(personAfter.status).toBe('ACTIVE');
+    expect(personAfter.verification_status).toBe('VERIFIED');
+    expect(personAfter.claimed_at).not.toBeNull();
+    expect(personAfter.thaid_verified_at).not.toBeNull();
+    expect(personAfter.version).toBe(personBefore.version + 1);
+    expect(personAfter.key_id).toBe('vault:transit:mdm-pid:v1');
+
+    // pid_enc ถูกเขียนใหม่แต่ต้องถอดรหัสได้ pid เดิม (ไม่ assert ว่า ciphertext ต่างจากเดิม เพื่อไม่ผูกกับพฤติกรรมของ vault)
+    expect(personAfter.pid_enc).not.toBeNull();
+    const decrypted = await ctx.vault.decrypt('mdm-pid', personAfter.pid_enc.toString('utf8'), personId);
+    expect(decrypted.toString('utf8')).toBe(pid);
+
+    // employment เดิมไม่ถูกแตะ: employment_id/is_current/ตำแหน่ง/สังกัด เหมือนก่อน claim และไม่มีแถวใหม่
+    expect(await fetchEmploymentRows(personId)).toEqual(employmentBefore);
+
+    const identity = await ctx.pool.query(`SELECT count(*)::int AS n FROM mdm.person_identity WHERE person_id = $1`, [
+      personId,
+    ]);
+    expect(identity.rows[0].n).toBe(1);
+  }
+
+  test('สร้างผ่าน POST /sync/hr/employment-batch (APPLY, createIfMissing) -> ล็อกอิน ThaID แล้ว ACTIVE/VERIFIED, pid_enc ถอดรหัสได้, employment ไม่ถูกแตะ', async () => {
+    const pid = makeFakePid();
+    const positionId = await insertPosition();
+    const importToken = await ctx.auth.signToken({ scope: 'personnel:import' });
+
+    const imported = await request(ctx.app)
+      .post('/api/v1/sync/hr/employment-batch')
+      .set('Authorization', `Bearer ${importToken}`)
+      .send({
+        mode: 'APPLY',
+        createIfMissing: true,
+        rows: [
+          {
+            rowRef: 'r1',
+            pid,
+            expectedFirstNameTh: 'ทดสอบ',
+            expectedLastNameTh: 'ระบบ',
+            // employeeNo = pid เสมอ เหมือน migrate/src/mapping/toImportRow.js
+            employment: {
+              employeeNo: pid,
+              personnelType: 'CIVIL_SERVANT',
+              positionId,
+              orgUnitId: fixtureOrgUnitId,
+              effectiveFrom: '2024-01-01',
+            },
+          },
+        ],
+      });
+    expect(imported.status).toBe(200);
+    expect(imported.body).toMatchObject({ mode: 'APPLY', total: 1, created: 1, updated: 0, unchanged: 0, errors: [] });
+
+    await expectClaimKeepsEmployment(pid);
   });
 });
 
