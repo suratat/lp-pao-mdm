@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid, pidHash } = require('../src/security/pid');
-const { insertFixtureOrgUnit } = require('./fixtures');
+const { insertFixtureOrgUnit, bindClaimToEmployeeNo } = require('./fixtures');
 const { POSITION_RULES, positionRuleFor } = require('../src/services/personnelPositionRules');
 
 // กฎเลขที่ตำแหน่งตามประเภทบุคลากร (ยืนยันโดยเจ้าของระบบ) - เขียนซ้ำเป็น literal ตรงนี้โดยตั้งใจ: ถ้าใครแก้ตารางกฎใน
@@ -182,11 +182,11 @@ describe('POST /claim-requests/{id}/resolve (PROVISION)', () => {
     );
     return rows[0].claim_request_id;
   }
-  const resolve = async (claimId, personnelType, withPosition) =>
-    (await api('post', `/claim-requests/${claimId}/resolve`, 'personnel:provision')).send({
-      action: 'PROVISION',
-      employment: await employmentBody(personnelType, withPosition),
-    });
+  const resolve = async (claimId, personnelType, withPosition) => {
+    const employment = await employmentBody(personnelType, withPosition);
+    await bindClaimToEmployeeNo(adminPool, pepper, claimId, employment.employeeNo);
+    return (await api('post', `/claim-requests/${claimId}/resolve`, 'personnel:provision')).send({ action: 'PROVISION', employment });
+  };
 
   test('พนักงานจ้างพร้อมตำแหน่ง -> 422 (ไม่ใช่ 500) และ claim ยังรอ HR อยู่', async () => {
     const claimId = await makeClaim();

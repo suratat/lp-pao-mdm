@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid, pidHash } = require('../src/security/pid');
-const { insertFixtureOrgUnit, insertFixturePosition } = require('./fixtures');
+const { insertFixtureOrgUnit, insertFixturePosition, bindClaimToEmployeeNo } = require('./fixtures');
 const { HttpProblem } = require('../src/security/httpProblem');
 const { mapEmploymentConstraintError } = require('../src/services/employmentShared');
 
@@ -201,6 +201,7 @@ describe('POST /claim-requests/{id}/resolve (action=PROVISION) - 4 error code à¸
   test.each(HTTP_REACHABLE_CODES)('%s', async (code) => {
     const { status, type, body } = (await bodiesForEachCode())[code];
     const claimId = await makeClaim();
+    await bindClaimToEmployeeNo(adminPool, pepper, claimId, body.employeeNo);
     const res = await (await api('post', `/claim-requests/${claimId}/resolve`, 'personnel:provision')).send({
       action: 'PROVISION',
       employment: body,

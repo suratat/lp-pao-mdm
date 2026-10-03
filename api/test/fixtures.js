@@ -68,4 +68,14 @@ async function insertFixturePerson(pool) {
   );
 }
 
-module.exports = { insertFixturePerson, insertFixtureOrgUnit, insertFixturePosition, FIXTURE_PERSON_ID };
+// PROVISION ผ่าน claim_request ตรวจว่า pidHash(employeeNo) = claim.pid_hash (employeeNo = เลขบัตรเสมอ) - เทสต์เดิมที่ใช้
+// pid_hash สุ่มกับ employeeNo สุ่ม ต้องผูกสองค่านี้เข้าด้วยกันก่อนยิง (hash ของสตริงใดๆ ก็ได้ ไม่ต้องเป็น pid ที่ผ่าน checksum)
+async function bindClaimToEmployeeNo(pool, pepper, claimRequestId, employeeNo) {
+  const { pidHash } = require('../src/security/pid');
+  await pool.query(`UPDATE mdm.claim_request SET pid_hash = $2 WHERE claim_request_id = $1`, [
+    claimRequestId,
+    pidHash(employeeNo, pepper),
+  ]);
+}
+
+module.exports = { bindClaimToEmployeeNo, insertFixturePerson, insertFixtureOrgUnit, insertFixturePosition, FIXTURE_PERSON_ID };

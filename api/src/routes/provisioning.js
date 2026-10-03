@@ -57,7 +57,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
   router.post('/claim-requests/:claimRequestId/resolve', requireScope('personnel:provision'), async (req, res, next) => {
     try {
       const result = await provisioningService.resolveClaimRequest(
-        { pool, vault },
+        { pool, vault, pepper },
         req.params.claimRequestId,
         req.body,
         req.auth
