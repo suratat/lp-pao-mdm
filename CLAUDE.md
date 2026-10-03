@@ -89,14 +89,32 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 ### หมายเหตุ Deploy
 - build/รัน `migrate-cli` บน VPN-MDM ต้องใช้ `docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml --profile tools <build|run> migrate-cli` เสมอ (ไม่ใส่ `--env-file` ตัวแปรจะว่างและ build ล้มด้วย "no port specified") **ห้ามใส่ `--remove-orphans`** เด็ดขาด เพราะจะลบ `infra-keycloak-1` ทิ้งไปด้วย (อยู่คนละ compose file)
 
+### เงื่อนไขก่อนขึ้นระบบจริง (pre-production checklist)
+1. แยกบทบาท: ตอนนี้บัญชีผู้พัฒนา/ผู้ดูแล (suratat) ถือ hr_officer + hr_master_data_admin + auditor ชั่วคราวระหว่างตั้งระบบและทดสอบ ก่อนขึ้นระบบจริงต้องย้าย auditor (และ dpo ถ้ามี) ไปให้ผู้อื่นที่เป็นอิสระจากผู้แก้ข้อมูล เพื่อให้การตรวจสอบเป็นอิสระ (ตัดสินใจโดยเจ้าของระบบ 2026-10-03 ว่าพร้อมแล้วจะเปลี่ยน)
+2. role mdm_admin (break-glass): สร้างบัญชี local แยก 1-2 บัญชีพร้อม OTP ตามภาคผนวก ก ข้อ 7 ไม่ผูกกับบัญชีส่วนตัว เอกสารไม่ได้กำหนดที่เก็บรหัสผ่านและผู้ตรวจ log ต้องกำหนดก่อนขึ้นระบบจริง
+3. หมุนค่าลับทั้งหมดที่เคยอยู่ใน ~/.bash_history ของ VPN-MDM (รหัสผ่านฐานข้อมูล, client secret ของ hr-console/dpo-console/portal/check-broker/keycloak admin, session secret, shared secret, App Password ของอีเมลแจ้งเตือน, secret ของ client migrate-tool) แล้วล้างประวัติ และตรวจสำเนาสำรองที่อาจมีไฟล์ประวัติ
+4. client migrate-tool: ปิด Service accounts หรือหมุน secret หลังนำเข้าเสร็จ และถ้าต้องใช้นำเข้าอีก ให้สร้าง client แคบเฉพาะ personnel:import
+5. stg_hr ยังเก็บชื่อ เบอร์โทร อีเมลส่วนตัว quality_errors ของ 786 แถว รอ DPO ตัดสินระยะเก็บ (pid_plaintext และ source_data ล้างอัตโนมัติหลัง 30 วัน: batch 782fb229 ล้างวันที่ 2026-11-01 (โหลด 2026-10-02 + 30 วัน), batch ทดสอบ b8cf1d3c ล้างหลัง 2026-10-31)
+6. ลำดับ 126, 221, 515 (เลขบัตรไม่ผ่าน checksum) แจ้งฝ่ายบุคคลแล้ว รอไฟล์แก้ไข แล้วนำเข้าเป็น batch ใหม่
+7. ข้อสังเกตจากการอ่านโค้ด (ยังไม่แก้): PROVISION ใน HR Console ไม่ตรวจ pid_hash ซ้ำกับ person ที่นำเข้า และไม่ตรวจว่า employeeNo ตรงกับ pid_hash ของคำขอ ไม่มี endpoint ยกเลิกการอนุมัติ ปุ่มอนุมัติใช้กับ 782 คนที่นำเข้าไม่ได้ (ให้แต่ละคนล็อกอิน ThaID แทน)
+
 ### Status Log
-- PR #62 (fix/migrate-import-chunk-by-bytes, T8): OPEN (2026-10-03) — fixes 413 on HR import: runImport now splits
+- [2026-10-02] HR import batch 782fb229-5edb-45f9-b4df-f35413812d58 on VPN-MDM (real HR file, 786 rows): load 786 rows
+  (stg_hr 786 rows incl. the 3 failing ones); check-quality OK=783 ERROR=3 (row refs 126, 221, 515 PID_CHECKSUM_INVALID,
+  HR notified, waiting for corrected file -> import as a new batch); DRY_RUN created=782 updated=1 unchanged=0 errors=0
+  in 5 chunks (180/178/177/168/80 rows, ~61 KB each; 897/571/572/478/248 ms, total 3742 ms; the first DRY_RUN attempt
+  failed with 413 because it was one request -> PR #62); APPLY created=782 updated=1 unchanged=0 errors=0 in one run, no
+  mid-way failure, after backup mdm-backup-20261002-192759.dump; reconcile matched=783/783 mismatches=0. State after
+  import: 782 persons PENDING_CLAIM/UNVERIFIED + 1 ACTIVE/VERIFIED (mdm.person = 783). stg_hr purge of pid_plaintext +
+  source_data for this batch: 2026-11-01. See "เงื่อนไขก่อนขึ้นระบบจริง" above for open items
+- PR #62 (fix/migrate-import-chunk-by-bytes, T8): MERGED (1bebdc6) — fixes 413 on HR import: runImport now splits
   requests by real body size (MAX_BODY_BYTES 61440 = 60% of express.json() 100 KB default in api/src/app.js, API limit
   NOT raised) via migrate/src/import/chunkByBytes.js; retry 2x on 5xx/network only; 401 fails immediately (TOKEN_EXPIRED,
   says whether earlier chunks were committed); partial report (-partial.json) when a chunk fails midway, batch not set to
   APPLIED, rerun on same batch is safe (committed rows become unchanged; use reconcile to verify). Per-chunk durationMs in
   report to judge token lifetime. No migration, no api/infra change; deploy = rebuild migrate-cli only (needs --env-file
-  infra/.env.staging, never --remove-orphans). Not yet run against real HR batch
+  infra/.env.staging, never --remove-orphans). DEPLOYED on VPN-MDM (2026-10-02 UTC); verified on real batch 782fb229:
+  5 chunks, no 413, APPLY single run, reconcile 783/783
 - PR #61 (feat/stg-hr-purge-source-data-a, T8): MERGED (a15ce07) — DEPLOYED on VPN-MDM (2026-10-02 UTC). PR A of 2:
   migration 1700000000043 (stg_hr.raw_row loaded_at NOT NULL backfilled COALESCE(pid_loaded_at, import_batch.imported_at,
   now()), source_purged_at, partial index, column-level grants + trigger so mdm_worker can only write source_data = '{}')
