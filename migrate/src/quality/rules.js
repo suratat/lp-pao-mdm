@@ -2,6 +2,7 @@ const path = require('node:path');
 const { isValidPid } = require(path.join(__dirname, '..', '..', '..', 'api', 'src', 'security', 'pid'));
 const { convertToIsoDate } = require('./dateConvert');
 const { mapPersonnelType } = require('./personnelTypeMap');
+const { redact } = require('../util/redact');
 // ใช้ฟังก์ชันตรวจ jobTitleText ชุดเดียวกับ API ตรงๆ (ไม่ duplicate logic) - validateJobTitleText/
 // assertJobTitleMatchesPersonnelType เป็น pure function ล้วน (ไม่แตะ DB/HTTP) เหมือน isValidPid ด้านบน
 // จึง require ข้ามแพ็กเกจแบบนี้ได้อย่างปลอดภัย (รูปแบบเดียวกับที่ไฟล์นี้ทำกับ security/pid.js อยู่แล้ว)
@@ -35,8 +36,10 @@ const POSITION_OPTIONAL_TYPES = new Set([
   'POLITICAL_APPOINTEE',
 ]);
 
+// message ถูกเก็บลง stg_hr.raw_row.quality_errors (ไม่ถูกล้างอัตโนมัติ) และหลายกฎแทรกค่าดิบจาก CSV ลงในข้อความ
+// ถ้าคอลัมน์เลื่อน เลขบัตร 13 หลักอาจปนมา - redact ที่จุดเดียวนี้ (กฎข้อ 1 ของ CLAUDE.md) ครอบทุกกฎ รวมกฎที่เพิ่มในอนาคต
 function err(code, message) {
-  return { code, message };
+  return { code, message: redact(message) };
 }
 
 // ตรวจกฎคุณภาพ 5 ข้อตาม §5.3 ระยะ 1 กับแถวเดียว (ไม่รวมกฎ "ซ้ำ" ซึ่งต้องเทียบทั้ง batch - ดู checkBatch)

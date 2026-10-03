@@ -405,3 +405,28 @@ describe('runQualityCheck: jobTitleText (ชื่อตำแหน่ง/ล�
     expect(codesFor(rawRows, 'r1')).toEqual([]);
   });
 });
+
+describe('runQualityCheck: redact เลขบัตร 13 หลักใน quality_errors (CLAUDE.md กฎข้อ 1)', () => {
+  // ค่าดิบจาก CSV ที่ถูกแทรกลงในข้อความ error ของกฎต่างๆ - ถ้าคอลัมน์เลื่อน เลขบัตรจะปนมาในช่องเหล่านี้
+  // (sentinel = pid สังเคราะห์จาก makeFakePid; ต้องไม่ปรากฏใน quality_errors ทั้งก้อน)
+  test('เลขบัตรในรหัสสังกัด/เลขที่ตำแหน่ง/ประเภทบุคลากร/สถานะ/วันที่ ไม่หลุดลง quality_errors', async () => {
+    const { makeFakePid } = require('../../api/src/security/pid');
+    const sentinel = makeFakePid();
+    const { rawRows } = await loadAndCheck([
+      defaultRow({ rowRef: 'org', orgUnitCode: `ORG-${sentinel}` }),
+      defaultRow({ rowRef: 'pos', positionNo: `POS-${sentinel}` }),
+      defaultRow({ rowRef: 'type', personnelTypeRaw: `ประเภท ${sentinel}` }),
+      defaultRow({ rowRef: 'status', employmentStatusRaw: `สถานะ ${sentinel}` }),
+      defaultRow({ rowRef: 'eff', effectiveFromRaw: `วันที่ ${sentinel}` }),
+      defaultRow({ rowRef: 'app', appointedDateRaw: `วันที่ ${sentinel}` }),
+    ]);
+
+    // เทสต์ต้องมีผลจริง: ทุกแถวต้อง error (ไม่ใช่ผ่านเพราะไม่มี error ให้ตรวจ) และมี [REDACTED_PID] แทนค่าเดิม
+    for (const row of rawRows) {
+      expect(row.quality_status).toBe('ERROR');
+    }
+    const serialized = JSON.stringify(rawRows.map((r) => r.quality_errors));
+    expect(serialized).not.toContain(sentinel);
+    expect(serialized).toContain('[REDACTED_PID]');
+  });
+});
