@@ -161,9 +161,11 @@ MDM API เลย
 
 ### เพิ่ม scope ให้ client `hr-console` ใน Keycloak admin (realm-export.json ไม่ถูก apply ซ้ำ)
 
-Clients -> `hr-console` -> Client scopes -> Add client scope -> เลือก scope -> เลือก **Default**
+Clients -> `hr-console` -> Client scopes -> Add client scope -> เลือก scope แล้วเลือก Assigned type
 
-- **ชุด A (เปิดได้ทันที):** `personnel:read:employment`, `personnel:read:inactive`
-- **ชุด B (เปิดเมื่อ DPO เห็นชอบเท่านั้น):** `personnel:read:pid_masked`, `personnel:read:pid`
+- **ชุด A (เปิดได้ทันที):** `personnel:read:employment`, `personnel:read:inactive` -> Assigned type = **Default**
+- **ชุด B (เฉพาะเมื่อ DPO เห็นชอบ):** `personnel:read:pid_masked`, `personnel:read:pid`
+  - เพิ่มเป็น **Optional** ก่อนได้ (token ไม่มี scope นี้จนกว่า hr-console จะขอใน `HR_CONSOLE_SCOPES`) ตรงกับ `realm-export.json` ที่ใส่ไว้ใน `optionalClientScopes`
+  - **เปลี่ยน Assigned type เป็น Default เมื่อ DPO เห็นชอบแล้วเท่านั้น** (Default = ผู้ใช้ hr_officer ทุกคนได้ scope นี้ใน token ทันที)
   - `personnel:read:pid_masked` ยังไม่มี client scope นี้ใน realm จริง ต้องสร้างก่อน: Client scopes -> Create client scope (Type: None, Protocol: OpenID Connect, ชื่อ `personnel:read:pid_masked`, Include in token scope = On, Display on consent screen = Off) แล้วค่อยเพิ่มให้ client
-  - หลังเพิ่ม ให้ผู้ใช้ logout/login ใหม่เพื่อให้ token มี scope ใหม่
+  - หลังเปลี่ยน ให้ผู้ใช้ logout/login ใหม่เพื่อให้ token มี scope ใหม่

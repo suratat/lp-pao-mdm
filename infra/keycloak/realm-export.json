@@ -183,8 +183,8 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference", "personnel:read:employment", "personnel:read:inactive", "personnel:read:pid_masked", "personnel:read:pid"],
-      "optionalClientScopes": []
+      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference", "personnel:read:employment", "personnel:read:inactive"],
+      "optionalClientScopes": ["personnel:read:pid_masked", "personnel:read:pid"]
     },
     {
       "clientId": "dpo-console",
