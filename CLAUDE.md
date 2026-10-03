@@ -99,6 +99,18 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 7. ข้อสังเกตจากการอ่านโค้ด (ยังไม่แก้): PROVISION ใน HR Console ไม่ตรวจ pid_hash ซ้ำกับ person ที่นำเข้า และไม่ตรวจว่า employeeNo ตรงกับ pid_hash ของคำขอ ไม่มี endpoint ยกเลิกการอนุมัติ ปุ่มอนุมัติใช้กับ 782 คนที่นำเข้าไม่ได้ (ให้แต่ละคนล็อกอิน ThaID แทน)
 
 ### Status Log
+- [2026-10-03] PR #67 (b857364) fix(api): require personnel:read:basic on POST /persons, deactivate, reactivate and
+  GET /reverify/stale (403 insufficient-scope before any DB write, instead of a 500 after commit when the token lacks
+  read:basic) — MERGED, DEPLOYED api1/api2 on VPN-MDM (2026-10-03); hr-console's token scopes include read:basic (checked).
+  PR #68 (2245915) T8: redact 13-digit numbers in migrate quality_errors messages (err() in migrate/src/quality/rules.js)
+  — MERGED, DEPLOYED migrate-cli on VPN-MDM. 2 stale claim_request rows (PENDING_HR) rejected in HR Console; cause: created
+  by test logins before the HR import, and their pid_hash differs from the current persons'
+- Branch fix/provision-duplicate-and-pid-check (PR not opened yet): resolveClaimRequest action=PROVISION now returns 409
+  duplicate-pid (with existingPersonId) when a person with the same pid_hash exists, and 422 employee-no-pid-mismatch when
+  pidHash(employeeNo) != claim.pid_hash, both before any DB write; claim_request.display_name from handleUnmatched is now
+  separated by spaces (old rows unchanged). No OpenAPI change (409 is not declared for this operation in the YAML; error
+  responses bypass the response validator, same as the existing 409 already-resolved). Not done: auto-LINK of claim_request
+  during /sync/thaid, endpoint to cancel an approval
 - [2026-10-03] PR #65 (6c70c09, fix/omit-position-title) fix(api): omit tokenClaims.positionTitle when employment has no
   position — MERGED. PR #64 (447b38e) test(api): cover ThaID claim of persons created via import — MERGED (test only).
   Deploy on VPN-MDM: main = 447b38e; migrate-cli (#62) and api1/api2 (#65) rebuilt, after backup

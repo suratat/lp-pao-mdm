@@ -230,7 +230,7 @@ async function listClaimRequests(pool, { status = 'PENDING_HR', cursor, limit })
 }
 
 // POST /claim-requests/{id}/resolve
-async function resolveClaimRequest({ pool, vault }, claimRequestId, body, actor) {
+async function resolveClaimRequest({ pool, vault, pepper }, claimRequestId, body, actor) {
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(`SELECT * FROM mdm.claim_request WHERE claim_request_id = $1 FOR UPDATE`, [
       claimRequestId,
@@ -250,6 +250,24 @@ async function resolveClaimRequest({ pool, vault }, claimRequestId, body, actor)
     } else if (body.action === 'PROVISION') {
       if (!body.employment) {
         throw new HttpProblem(400, 'bad-request', 'ต้องระบุ employment สำหรับ action=PROVISION');
+      }
+      // ตรวจก่อนเขียน DB ทุกอย่าง (ไม่ปล่อยให้ชน person_pid_hash_uk แล้วหลุดเป็น 500):
+      // (1) มี person ที่ pid_hash เดียวกันอยู่แล้ว (เช่น นำเข้าจาก HR หลังคนนั้นเคยล็อกอินจนเกิด claim_request) -> 409 เหมือน POST /persons
+      const { rows: existing } = await client.query(`SELECT person_id FROM mdm.person WHERE pid_hash = $1`, [claim.pid_hash]);
+      if (existing.length > 0) {
+        throw new HttpProblem(409, 'duplicate-pid', 'มี record ของ pid นี้อยู่แล้ว', undefined, {
+          existingPersonId: existing[0].person_id,
+        });
+      }
+      // (2) employeeNo = เลขบัตรประชาชนเสมอ (employee_no is pid) ต้อง hash แล้วตรงกับคำขอที่กำลังอนุมัติ ไม่งั้น HR พิมพ์เลขผิดคนแล้ว
+      // เลขบัตรของอีกคนจะถูกเก็บลง employment.employee_no - ข้อความ error ห้ามมีค่าที่ส่งมา (กฎข้อ 1)
+      if (typeof body.employment.employeeNo !== 'string' || pidHash(body.employment.employeeNo, pepper) !== claim.pid_hash) {
+        throw new HttpProblem(
+          422,
+          'employee-no-pid-mismatch',
+          'เลขประจำตัวไม่ตรงกับคำขอ',
+          'employeeNo (เลขบัตรประชาชน) ไม่ตรงกับผู้ที่ล็อกอินตามคำขอนี้ ตรวจสอบเลขที่กรอกอีกครั้ง'
+        );
       }
       // pid_enc ยังเข้ารหัสไม่ได้ตรงนี้เพราะ claim_request ไม่เก็บ pid จริง (มีแต่ pid_hash) - จะเข้ารหัส
       // ตอน login ThaID ครั้งแรก (T3 syncService.handleClaim) เหมือนกรณีทั่วไป

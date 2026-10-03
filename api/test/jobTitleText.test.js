@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid, pidHash } = require('../src/security/pid');
-const { insertFixtureOrgUnit } = require('./fixtures');
+const { insertFixtureOrgUnit, bindClaimToEmployeeNo } = require('./fixtures');
 const { POSITION_RULES } = require('../src/services/personnelPositionRules');
 const {
   MAX_LENGTH,
@@ -475,8 +475,11 @@ describe('ทุกทางเขียน employment ใช้กฎเดี�
       );
       return rows[0].claim_request_id;
     }
-    const resolve = async (claimId, type, opts) =>
-      (await api('post', `/claim-requests/${claimId}/resolve`, 'personnel:provision')).send({ action: 'PROVISION', employment: await body(type, opts) });
+    const resolve = async (claimId, type, opts) => {
+      const employment = await body(type, opts);
+      await bindClaimToEmployeeNo(adminPool, pepper, claimId, employment.employeeNo);
+      return (await api('post', `/claim-requests/${claimId}/resolve`, 'personnel:provision')).send({ action: 'PROVISION', employment });
+    };
     const status = async (id) => (await adminPool.query(`SELECT status FROM mdm.claim_request WHERE claim_request_id = $1`, [id])).rows[0].status;
 
     test('พนักงานจ้าง/OTHER + ข้อความ -> 200', async () => {

@@ -142,6 +142,16 @@ describe('POST /sync/thaid - UNMATCHED', () => {
     expect(syncEvent.rows).toHaveLength(1);
   });
 
+  test('claim_request.display_name คั่นคำนำหน้า/ชื่อ/สกุลด้วยเว้นวรรค', async () => {
+    const pid = makeFakePid();
+    const claims = baseClaims(pid, { titleTh: 'นาย', firstNameTh: 'ทดสอบ', lastNameTh: 'ระบบ' });
+
+    await syncThaid({ claims, context: baseContext() });
+
+    const claim = await ctx.pool.query(`SELECT display_name FROM mdm.claim_request WHERE pid_hash = $1`, [pidHash(pid, pepper)]);
+    expect(claim.rows[0].display_name).toBe('นาย ทดสอบ ระบบ');
+  });
+
   test('เรียกซ้ำด้วย pid เดิม -> attempt_count เพิ่ม ไม่สร้างแถวใหม่', async () => {
     const pid = makeFakePid();
     const hash = pidHash(pid, pepper);

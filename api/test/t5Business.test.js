@@ -3,7 +3,7 @@ const request = require('supertest');
 const { Pool } = require('pg');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
-const { makeFakePid } = require('../src/security/pid');
+const { makeFakePid, pidHash } = require('../src/security/pid');
 const { insertFixtureOrgUnit } = require('./fixtures');
 
 // T5: ทดสอบกฎธุรกิจที่ contract.test.js (happy-path ล้วนๆ) ไม่ครอบคลุม - optimistic lock, duplicate pid,
@@ -13,11 +13,13 @@ process.env.WEBHOOK_ALLOWED_HOSTS = process.env.WEBHOOK_ALLOWED_HOSTS || 'exampl
 
 let ctx;
 let adminPool;
+let pepper;
 let fixtureOrgUnitId;
 
 beforeAll(async () => {
   ctx = await buildTestApp();
   adminPool = new Pool({ connectionString: MIGRATOR_DATABASE_URL });
+  pepper = await ctx.vault.getPepper();
   fixtureOrgUnitId = await insertFixtureOrgUnit(adminPool);
 });
 
@@ -286,17 +288,18 @@ describe('Field masking ตาม scope (§2.2, hard rule ข้อ 5)', () => {
 });
 
 describe('POST /claim-requests/{id}/resolve - PROVISION/LINK (§2.1)', () => {
-  async function makePendingClaim() {
+  async function makePendingClaim(hash = crypto.randomBytes(32).toString('hex')) {
     const { rows } = await adminPool.query(
       `INSERT INTO mdm.claim_request (pid_hash, display_name, status, attempt_count, first_seen_at, last_seen_at)
        VALUES ($1, 'ผู้ทดสอบ resolve', 'PENDING_HR', 1, now(), now()) RETURNING claim_request_id`,
-      [crypto.randomBytes(32).toString('hex')]
+      [hash]
     );
     return rows[0].claim_request_id;
   }
 
   test('action=PROVISION สร้าง person ใหม่สถานะ PENDING_CLAIM และ LINKED claim_request', async () => {
-    const claimRequestId = await makePendingClaim();
+    const pid = makeFakePid();
+    const claimRequestId = await makePendingClaim(pidHash(pid, pepper));
     const positionId = await makePosition();
     const token = await ctx.auth.signToken({ scope: 'personnel:provision' });
 
@@ -306,7 +309,7 @@ describe('POST /claim-requests/{id}/resolve - PROVISION/LINK (§2.1)', () => {
       .send({
         action: 'PROVISION',
         employment: {
-          employeeNo: `EMP-CLAIM-${crypto.randomUUID()}`,
+          employeeNo: pid,
           personnelType: 'CIVIL_SERVANT',
           positionId,
           orgUnitId: fixtureOrgUnitId,
@@ -322,6 +325,73 @@ describe('POST /claim-requests/{id}/resolve - PROVISION/LINK (§2.1)', () => {
       res.body.resolvedPersonId,
     ]);
     expect(rows[0].status).toBe('PENDING_CLAIM');
+  });
+
+  describe('PROVISION ตรวจ pid ก่อนเขียน DB', () => {
+    const employmentFor = async (employeeNo) => ({
+      employeeNo,
+      personnelType: 'CIVIL_SERVANT',
+      positionId: await makePosition(),
+      orgUnitId: fixtureOrgUnitId,
+      effectiveFrom: '2024-01-01',
+    });
+    const provision = async (claimRequestId, employment) => {
+      const token = await ctx.auth.signToken({ scope: 'personnel:provision' });
+      return request(ctx.app)
+        .post(`/api/v1/claim-requests/${claimRequestId}/resolve`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ action: 'PROVISION', employment });
+    };
+    const claimStatus = async (id) =>
+      (await adminPool.query('SELECT status, resolved_person_id FROM mdm.claim_request WHERE claim_request_id = $1', [id])).rows[0];
+
+    test('มี person ที่ pid_hash เดียวกันอยู่แล้ว -> 409 duplicate-pid พร้อม existingPersonId ไม่มีแถวใหม่ และ claim ยังรอ HR', async () => {
+      const pid = makeFakePid();
+      const hash = pidHash(pid, pepper);
+      const existingPersonId = crypto.randomUUID();
+      await adminPool.query(
+        `INSERT INTO mdm.person (person_id, pid_hash, status, verification_status) VALUES ($1, $2, 'PENDING_CLAIM', 'UNVERIFIED')`,
+        [existingPersonId, hash]
+      );
+      const claimRequestId = await makePendingClaim(hash);
+      const employeeNo = pid;
+
+      const res = await provision(claimRequestId, await employmentFor(employeeNo));
+
+      expect(res.status).toBe(409);
+      expect(res.body.type).toMatch(/duplicate-pid$/);
+      expect(res.body.existingPersonId).toBe(existingPersonId);
+      expect((await adminPool.query('SELECT 1 FROM mdm.person WHERE pid_hash = $1', [hash])).rowCount).toBe(1);
+      expect((await adminPool.query('SELECT 1 FROM mdm.employment WHERE employee_no = $1', [employeeNo])).rowCount).toBe(0);
+      expect(await claimStatus(claimRequestId)).toEqual({ status: 'PENDING_HR', resolved_person_id: null });
+    });
+
+    test('pidHash(employeeNo) ไม่ตรงกับ claim -> 422 ไม่มีแถวใหม่ และไม่ echo ค่าที่ส่งมา', async () => {
+      const claimPid = makeFakePid();
+      const claimHash = pidHash(claimPid, pepper);
+      const claimRequestId = await makePendingClaim(claimHash);
+      const wrongPid = makeFakePid();
+
+      const res = await provision(claimRequestId, await employmentFor(wrongPid));
+
+      expect(res.status).toBe(422);
+      expect(res.body.type).toMatch(/employee-no-pid-mismatch$/);
+      expect(JSON.stringify(res.body)).not.toContain(wrongPid);
+      expect(JSON.stringify(res.body)).not.toContain(claimPid);
+      expect((await adminPool.query('SELECT 1 FROM mdm.person WHERE pid_hash = $1', [claimHash])).rowCount).toBe(0);
+      expect((await adminPool.query('SELECT 1 FROM mdm.employment WHERE employee_no = $1', [wrongPid])).rowCount).toBe(0);
+      expect(await claimStatus(claimRequestId)).toEqual({ status: 'PENDING_HR', resolved_person_id: null });
+    });
+
+    test('employeeNo ตรงกับ claim และยังไม่มี person -> ผ่าน (200, LINKED, person PENDING_CLAIM)', async () => {
+      const pid = makeFakePid();
+      const claimRequestId = await makePendingClaim(pidHash(pid, pepper));
+
+      const res = await provision(claimRequestId, await employmentFor(pid));
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('LINKED');
+    });
   });
 
   test('action=LINK ผูกกับ person ที่ไม่มี pid_hash อยู่ก่อนได้ และ 409 ถ้ามี pid_hash แล้ว', async () => {

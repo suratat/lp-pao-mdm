@@ -34,6 +34,12 @@ const ADDRESS_FIELD_COLUMNS = {
   fullText: { column: 'reg_address_text', fieldKey: 'identity.reg_address_text' },
 };
 
+// display_name ของ claim_request (HR อ่านในรายการรออนุมัติ): คั่นคำนำหน้า/ชื่อ/สกุลด้วยเว้นวรรค (แถวเก่าที่ติดกันไม่แก้)
+// แยกจาก buildDisplayName ที่ใช้กับ tokenClaims.name ซึ่งคงรูปแบบเดิมไว้ ไม่ให้ claim ของแอปปลายทางเปลี่ยน
+function buildClaimRequestDisplayName(claims) {
+  return [claims.titleTh, claims.firstNameTh, claims.lastNameTh].filter(Boolean).join(' ');
+}
+
 function buildDisplayName(claims) {
   return [claims.titleTh, claims.firstNameTh, claims.lastNameTh].filter(Boolean).join('');
 }
@@ -166,7 +172,7 @@ async function handleUnmatched(client, { hash, claims, context, trigger }) {
          display_name = EXCLUDED.display_name,
          attempt_count = mdm.claim_request.attempt_count + 1,
          last_seen_at = now()`,
-      [hash, buildDisplayName(claims)]
+      [hash, buildClaimRequestDisplayName(claims)]
     );
   }
 
