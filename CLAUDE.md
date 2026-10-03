@@ -99,6 +99,20 @@ git fetch --all && git status && git log --oneline -10 --all --graph
 7. ข้อสังเกตจากการอ่านโค้ด (ยังไม่แก้): PROVISION ใน HR Console ไม่ตรวจ pid_hash ซ้ำกับ person ที่นำเข้า และไม่ตรวจว่า employeeNo ตรงกับ pid_hash ของคำขอ ไม่มี endpoint ยกเลิกการอนุมัติ ปุ่มอนุมัติใช้กับ 782 คนที่นำเข้าไม่ได้ (ให้แต่ละคนล็อกอิน ThaID แทน)
 
 ### Status Log
+- [2026-10-03] PR #65 (6c70c09, fix/omit-position-title) fix(api): omit tokenClaims.positionTitle when employment has no
+  position — MERGED. PR #64 (447b38e) test(api): cover ThaID claim of persons created via import — MERGED (test only).
+  Deploy on VPN-MDM: main = 447b38e; migrate-cli (#62) and api1/api2 (#65) rebuilt, after backup
+  mdm-backup-20261003-044700.dump; no migration
+- [2026-10-03] State of HR import batch 782fb229: 783 persons, reconcile 783/783, PENDING_CLAIM 782 / ACTIVE 1
+- [2026-10-03] check-app prod check (sso-server):
+  - MDM_SYNC_MODE=shadow (not enforce as noted on 23 Sep); the process has loaded the latest .env and the PR #2 code
+    (e84c682). Decision: keep shadow during the pilot, switch to enforce once the pilot passes
+  - audit baseline_id=222; only NO_CHANGE events of the admin account
+  - check-app deploy key moved from root to user sso; run git in /opt/check-app with sudo -u sso
+  - installed sqlite3 CLI on sso-server (use -readonly)
+  - sso-server has a pending kernel upgrade (6.8.0-139 -> 142), reboot during the maintenance window
+- Open: small-group ThaID login pilot (include at least 1 พนักงานจ้าง) — waiting for testers; CLAIMED / UNMATCHED /
+  job_title_text paths not yet tested on prod
 - [2026-10-02] HR import batch 782fb229-5edb-45f9-b4df-f35413812d58 on VPN-MDM (real HR file, 786 rows): load 786 rows
   (stg_hr 786 rows incl. the 3 failing ones); check-quality OK=783 ERROR=3 (row refs 126, 221, 515 PID_CHECKSUM_INVALID,
   HR notified, waiting for corrected file -> import as a new batch); DRY_RUN created=782 updated=1 unchanged=0 errors=0
