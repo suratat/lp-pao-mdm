@@ -5,6 +5,7 @@ const { createAuthRoutes } = require('./routes/authRoutes');
 const { createClaimRequestRoutes } = require('./routes/claimRequestRoutes');
 const { createReverifyRoutes } = require('./routes/reverifyRoutes');
 const { createMasterDataRoutes } = require('./routes/masterDataRoutes');
+const { createPersonRoutes } = require('./routes/personRoutes');
 const { layout } = require('./views/html');
 
 // config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionStore, isProduction }
@@ -21,6 +22,7 @@ function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore 
   app.use(createClaimRequestRoutes({ mdmClient }));
   app.use(createReverifyRoutes({ mdmClient }));
   app.use(createMasterDataRoutes({ mdmClient }));
+  app.use(createPersonRoutes({ mdmClient }));
 
   app.get('/', (req, res) => res.redirect(302, '/hr/claim-requests'));
 

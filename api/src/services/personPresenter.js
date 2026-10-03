@@ -2,6 +2,8 @@
 // endpoint ที่คืน Person (getPerson/getMe/provisionPerson/deactivate/reactivate/listStalePersons ฯลฯ)
 // เพื่อไม่ให้ logic การประกอบ response กระจัดกระจาย/ไม่ตรงกันระหว่าง endpoint
 
+const { maskPid } = require('../security/pid');
+
 const PHOTO_BASE_URL = process.env.PUBLIC_API_BASE_URL || 'https://mdm.lp-pao.go.th/api/v1';
 
 async function loadPersonAggregate(pool, personId) {
@@ -148,6 +150,8 @@ function presentPerson(aggregate) {
     firstNameEn: identity?.first_name_en ?? undefined,
     lastNameEn: identity?.last_name_en ?? undefined,
     employeeNo: employment?.employee_no ?? undefined,
+    // ปิดที่นี่ที่เดียว (API) - fieldMask ตัด key นี้ทั้งก้อนเมื่อ token ไม่มี personnel:read:pid_masked
+    employeeNoMasked: maskPid(employment?.employee_no),
     personnelType: employment?.personnel_type ?? undefined,
     positionTitle: employment?.position_title_th ?? undefined,
     positionNo: employment?.position_no ?? undefined,

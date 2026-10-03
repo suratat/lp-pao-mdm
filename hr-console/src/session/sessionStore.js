@@ -68,7 +68,12 @@ function createSessionStore({ ttlMs = SESSION_TTL_MS, maxSessions = MAX_SESSIONS
     timer = null;
   }
 
-  return { create, get, update, delete: remove, sweep, startSweeper, stopSweeper, size: () => sessions.size };
+  // สำหรับเทสต์เท่านั้น (ห้ามเรียกจากโค้ด production): สำเนาข้อมูลทุก session เรียงตามการใช้งาน (ล่าสุดอยู่ท้าย)
+  function allDataForTest() {
+    return [...sessions.values()].map((entry) => ({ ...entry.data }));
+  }
+
+  return { create, get, update, delete: remove, sweep, startSweeper, stopSweeper, size: () => sessions.size, allDataForTest };
 }
 
 module.exports = { createSessionStore, SESSION_TTL_MS, MAX_SESSIONS, SID_PATTERN };

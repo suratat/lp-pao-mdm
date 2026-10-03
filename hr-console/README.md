@@ -150,3 +150,20 @@ npm test
 `db/docker-compose.yml` ตัวเดียวกับ `api/test`) และ mock Keycloak token endpoint (เซ็น id_token/access_token
 ด้วย private key เดียวกับที่ MDM API test instance เชื่อ — ดู `test/mockKeycloakServer.js`) ไม่ mock
 MDM API เลย
+
+## หน้า "ข้อมูลบุคคล" (/hr/persons) - ดูอย่างเดียว
+
+- `/hr/persons` ค้นหา (ชื่อ หรือ "ชื่อ นามสกุล" แบบขึ้นต้นด้วย), กรองสถานะ/หน่วยงาน/ประเภทบุคลากร, หน้าถัดไปแบบ cursor
+- `/hr/persons/:id` รายละเอียด + ตำแหน่งปัจจุบัน (รวม job_title_text) + ประวัติ employment
+- `/hr/persons/:id/reveal-pid` ฟอร์มเหตุผล (POST + CSRF, 10-500 ตัวอักษร, ห้ามมีเลข 13 หลัก) -> แสดงเลขเต็มใน response ของ POST เท่านั้น (`no-store`, ไม่ redirect, ไม่เก็บใน session)
+- `mdmClient` ส่ง `?pidFormat=masked` ใน searchPersons/getPerson/getEmployment เสมอ และลบ key `employeeNo` ออกจากผลลัพธ์ทุกครั้ง (เฉพาะ `revealPid` ที่คืนเลขเต็ม)
+- ปุ่ม/คอลัมน์ซ่อนตาม scope ใน access token (UI เท่านั้น MDM API ตรวจซ้ำ)
+
+### เพิ่ม scope ให้ client `hr-console` ใน Keycloak admin (realm-export.json ไม่ถูก apply ซ้ำ)
+
+Clients -> `hr-console` -> Client scopes -> Add client scope -> เลือก scope -> เลือก **Default**
+
+- **ชุด A (เปิดได้ทันที):** `personnel:read:employment`, `personnel:read:inactive`
+- **ชุด B (เปิดเมื่อ DPO เห็นชอบเท่านั้น):** `personnel:read:pid_masked`, `personnel:read:pid`
+  - `personnel:read:pid_masked` ยังไม่มี client scope นี้ใน realm จริง ต้องสร้างก่อน: Client scopes -> Create client scope (Type: None, Protocol: OpenID Connect, ชื่อ `personnel:read:pid_masked`, Include in token scope = On, Display on consent screen = Off) แล้วค่อยเพิ่มให้ client
+  - หลังเพิ่ม ให้ผู้ใช้ logout/login ใหม่เพื่อให้ token มี scope ใหม่

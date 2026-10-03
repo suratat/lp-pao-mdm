@@ -13,6 +13,10 @@ const REDIRECT_URI = 'http://hr-console.test/auth/callback';
 const HR_SCOPE = 'openid personnel:provision personnel:write:employment personnel:import personnel:read:basic';
 // T10: ใน Keycloak จริง scope นี้เป็น default client scope ของ hr-console จึงอยู่ใน token ของ hr_officer ทุกคน
 const HR_SCOPE_WITH_MANAGE = `${HR_SCOPE} personnel:manage:reference`;
+// งานหน้าข้อมูลบุคคล: ชุด A (employment, inactive) / ชุด B (pid_masked ต้องรอ DPO) / ชุด B เต็ม (+ pid สำหรับแสดงเลขบัตร)
+const HR_SCOPE_PERSONS_A = `${HR_SCOPE_WITH_MANAGE} personnel:read:employment personnel:read:inactive`;
+const HR_SCOPE_PERSONS_MASKED = `${HR_SCOPE_PERSONS_A} personnel:read:pid_masked`;
+const HR_SCOPE_PERSONS_PID = `${HR_SCOPE_PERSONS_MASKED} personnel:read:pid`;
 
 // role/scope ทั้งหมดที่มีใน realm จริง (อ่านจาก infra/keycloak/realm-export.json) - ใช้จำลองผู้ใช้ที่มีครบทุกอย่าง
 const REALM_EXPORT = require('../../infra/keycloak/realm-export.json');
@@ -63,6 +67,9 @@ function defaultScenarios() {
       expiresIn: 1,
       rotateRefresh: true,
     },
+    'persons-a-code': { roles: ['hr_officer'], displayName: 'HR ชุด A', username: 'hr.persons.a', scope: HR_SCOPE_PERSONS_A },
+    'persons-masked-code': { roles: ['hr_officer'], displayName: 'HR เห็นเลขปิด', username: 'hr.persons.masked', scope: HR_SCOPE_PERSONS_MASKED },
+    'persons-pid-code': { roles: ['hr_officer'], displayName: 'HR แสดงเลขบัตรได้', username: 'hr.persons.pid', scope: HR_SCOPE_PERSONS_PID },
     'no-role-code': { roles: ['staff'], displayName: 'พนักงานทั่วไป', username: 'staff.user', scope: 'personnel:self' },
     'no-id-token-code': { roles: ['hr_officer'], omitIdToken: true, scope: HR_SCOPE },
     'short-lived-code': { roles: ['hr_officer'], displayName: 'เจ้าหน้าที่หมดอายุเร็ว', username: 'hr.shortlived', scope: HR_SCOPE, expiresIn: 1 },

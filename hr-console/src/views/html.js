@@ -35,12 +35,18 @@ function layout(title, bodyHtml, { displayName, isMasterDataAdmin } = {}) {
     .muted { color: #888; }
     .tabs a { margin-right: 1rem; }
     .row { display: flex; gap: 1rem; } .row > * { flex: 1; }
+    .badge-pending_claim, .badge-unverified { background: #fff3cd; }
+    .badge-inactive { background: #e2e3e5; }
+    dl.kv { display: grid; grid-template-columns: 12rem 1fr; gap: 0.3rem 1rem; }
+    dl.kv dt { font-weight: 600; } dl.kv dd { margin: 0; }
+    .pid { font-family: ui-monospace, monospace; font-size: 1.3em; letter-spacing: 0.05em; }
     .actions form, .actions a { margin-right: 0.5rem; }
   </style>
 </head>
 <body>
   <nav>
     <a href="/hr/claim-requests">คำขอเชื่อมตัวตน (Claim Requests)</a>
+    <a href="/hr/persons">ข้อมูลบุคคล</a>
     <a href="/hr/reverify">รายชื่อต้อง Reverify</a>
     ${isMasterDataAdmin ? '<a href="/hr/master-data">จัดการหน่วยงาน/ตำแหน่ง</a>' : ''}
     <a href="/auth/logout">ออกจากระบบ</a>
