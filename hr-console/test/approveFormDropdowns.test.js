@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const { Pool } = require('pg');
 const { buildIntegrationHarness, loginAsHrOfficer } = require('./testHarness');
 const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
-const { makeFakePid } = require('../../api/src/security/pid');
+const { insertClaimWithFakePid, fakePidForClaim } = require('./claimHelpers');
 const { loadApproveForm, selectHtmlOf, parseOptions } = require('./approveFormDom');
 const { orgUnitOptions, positionOptions } = require('../src/routes/claimRequestRoutes');
 
@@ -65,12 +65,7 @@ afterAll(async () => {
 });
 
 async function makeClaim() {
-  const { rows } = await adminPool.query(
-    `INSERT INTO mdm.claim_request (pid_hash, display_name, status, attempt_count, first_seen_at, last_seen_at)
-     VALUES ($1, 'นายทดสอบ ดรอปดาวน์', 'PENDING_HR', 1, now(), now()) RETURNING claim_request_id`,
-    [crypto.randomBytes(32).toString('hex')]
-  );
-  return rows[0].claim_request_id;
+  return insertClaimWithFakePid(adminPool, harness.apiCtx.vault, 'นายทดสอบ ดรอปดาวน์');
 }
 
 const claimStatus = async (id) => (await adminPool.query('SELECT status FROM mdm.claim_request WHERE claim_request_id = $1', [id])).rows[0].status;
@@ -83,7 +78,7 @@ async function getForm() {
 }
 
 const approve = (agent, claimId, fields) =>
-  agent.post(`/hr/claim-requests/${claimId}/approve`).type('form').send({ employeeNo: makeFakePid(), effectiveFrom: '2024-01-01', ...fields });
+  agent.post(`/hr/claim-requests/${claimId}/approve`).type('form').send({ employeeNo: fakePidForClaim(claimId), effectiveFrom: '2024-01-01', ...fields });
 
 describe('render รายการ', () => {
   test('หน่วยงานเป็น select ค่า = orgUnitId (UUID) แสดง "รหัส — ชื่อ" เฉพาะที่ active, ไม่มีช่องพิมพ์ UUID เหลือ', async () => {

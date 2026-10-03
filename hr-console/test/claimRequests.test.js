@@ -3,7 +3,7 @@ const request = require('supertest');
 const { Pool } = require('pg');
 const { buildIntegrationHarness, loginAsHrOfficer } = require('./testHarness');
 const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
-const { makeFakePid } = require('../../api/src/security/pid');
+const { insertClaimWithFakePid, fakePidForClaim } = require('./claimHelpers');
 const { insertFixtureOrgUnit, insertFixturePosition } = require('../../api/test/fixtures');
 
 let harness;
@@ -24,12 +24,7 @@ afterAll(async () => {
 });
 
 async function makePendingClaim(displayName) {
-  const { rows } = await adminPool.query(
-    `INSERT INTO mdm.claim_request (pid_hash, display_name, status, attempt_count, first_seen_at, last_seen_at)
-     VALUES ($1, $2, 'PENDING_HR', 1, now(), now()) RETURNING claim_request_id`,
-    [crypto.randomBytes(32).toString('hex'), displayName]
-  );
-  return rows[0].claim_request_id;
+  return insertClaimWithFakePid(adminPool, harness.apiCtx.vault, displayName);
 }
 
 describe('HR Console: claim requests', () => {
@@ -52,7 +47,7 @@ describe('HR Console: claim requests', () => {
       .post(`/hr/claim-requests/${claimRequestId}/approve`)
       .type('form')
       .send({
-        employeeNo: makeFakePid(),
+        employeeNo: fakePidForClaim(claimRequestId),
         personnelType: 'CIVIL_SERVANT',
         orgUnitId,
         positionId,
@@ -84,7 +79,7 @@ describe('HR Console: claim requests', () => {
       .post(`/hr/claim-requests/${claimRequestId}/approve`)
       .type('form')
       .send({
-        employeeNo: makeFakePid(),
+        employeeNo: fakePidForClaim(claimRequestId),
         personnelType: 'CIVIL_SERVANT',
         orgUnitId: crypto.randomUUID(),
         positionId, // ต้องมีเพราะ CIVIL_SERVANT บังคับมีตำแหน่ง - ให้ผ่านกฎนี้แล้วไปชนการตรวจ orgUnitId ที่ไม่มีจริง
