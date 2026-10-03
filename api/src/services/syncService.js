@@ -150,7 +150,9 @@ async function buildTokenClaims(client, personId, claims) {
     sub: personId,
     name: buildDisplayName(claims),
     orgUnitCode: employment?.org_unit_code,
-    positionTitle: employment?.position_title,
+    // พนักงานที่ไม่มีเลขที่ตำแหน่ง (พนักงานจ้าง/จ้างเหมา/ฝ่ายการเมือง/อื่นๆ) ต้องไม่ส่ง null: สเปกกำหนด positionTitle เป็น string
+    // ถ้าส่ง null ตัวตรวจ response จะตอบ 500 หลัง claim/sync commit แล้ว - ใช้ undefined เพื่อตัดคีย์ออก
+    positionTitle: employment?.position_title ?? undefined,
     roles: [],
   };
 }
