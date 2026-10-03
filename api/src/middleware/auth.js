@@ -80,12 +80,18 @@ function createAuthMiddleware({ jwks, issuer, audience, actingAssertion }) {
 }
 
 // ตรวจ scope ตาม security requirement ของแต่ละ operation ใน OpenAPI (§2.2 ข้อ 2)
-function requireScope(requiredScope) {
+// รับได้หลาย scope (ต้องมีครบทุกตัว) - ใช้กับ endpoint ที่คืน schema Person: Person.required มี `basic` ซึ่ง
+// fieldMask ตัดทิ้งเมื่อไม่มี personnel:read:basic ทำให้ response validator ตอบ 500 หลัง commit ไปแล้ว
+// จึงต้องตรวจก่อนเข้า service ด้วย (ใช้ SCOPE_READ_BASIC ต่อท้าย)
+const SCOPE_READ_BASIC = 'personnel:read:basic';
+
+function requireScope(...requiredScopes) {
   return function (req, res, next) {
     const scopes = req.auth?.scope || [];
-    if (!scopes.includes(requiredScope)) {
+    const missing = requiredScopes.filter((s) => !scopes.includes(s));
+    if (missing.length > 0) {
       return next(
-        new HttpProblem(403, 'insufficient-scope', 'สิทธิ์ไม่เพียงพอ', `ต้องมี scope "${requiredScope}"`)
+        new HttpProblem(403, 'insufficient-scope', 'สิทธิ์ไม่เพียงพอ', `ต้องมี scope ${missing.map((s) => `"${s}"`).join(', ')}`)
       );
     }
     next();
@@ -106,4 +112,4 @@ function requireRole(requiredRole) {
   };
 }
 
-module.exports = { createAuthMiddleware, requireScope, requireRole };
+module.exports = { createAuthMiddleware, requireScope, requireRole, SCOPE_READ_BASIC };
