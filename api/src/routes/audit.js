@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireScope, requireRole } = require('../middleware/auth');
 const { getPersonChangeLog, listChangeLogs, listAccessLogs, reviewPidAccess } = require('../services/auditService');
+const { listAlerts, actOnAlert } = require('../services/alertService');
 
 function createAuditRouter(pool) {
   const router = express.Router();
@@ -70,6 +71,38 @@ function createAuditRouter(pool) {
       next(err);
     }
   });
+
+  router.get('/audit/alerts', requireScope('audit:read'), async (req, res, next) => {
+    try {
+      const result = await listAlerts(pool, {
+        status: req.query.status,
+        ruleCode: req.query.ruleCode,
+        from: req.query.from,
+        to: req.query.to,
+        actorSub: req.query.actorSub,
+        cursor: req.query.cursor,
+        limit: req.query.limit ? Number(req.query.limit) : 50,
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // รับทราบ/ปิดเรื่อง alert: scope audit:review + role dpo (ตรวจ role ใน API เสมอ - เหตุผลเดียวกับ POST /audit/access-logs/{id}/review)
+  for (const [path, action] of [
+    ['ack', 'ACK'],
+    ['close', 'CLOSE'],
+  ]) {
+    router.post(`/audit/alerts/:alertId/${path}`, requireScope('audit:review'), requireRole('dpo'), async (req, res, next) => {
+      try {
+        const result = await actOnAlert(pool, req.params.alertId, { action, note: req.body?.note }, { sub: req.auth.sub, azp: req.auth.azp });
+        res.status(201).json(result);
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
 
   return router;
 }

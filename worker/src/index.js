@@ -10,6 +10,9 @@ const { runReverifyEscalate } = require('./jobs/reverifyEscalate');
 const { runRevokeAccess } = require('./jobs/revokeAccess');
 const { runStgHrPurge } = require('./jobs/stgHrPurge');
 const { runAccessLogPartitionEnsure } = require('./jobs/accessLogPartitionEnsure');
+const { runAccessAnomalyScan } = require('./jobs/accessAnomalyScan');
+const { loadAnomalyConfig } = require('./anomalyConfig');
+const { createTelegramNotifier } = require('./services/telegramNotifier');
 
 const OUTBOX_DISPATCH_QUEUE = 'outbox-dispatch';
 const WEBHOOK_ATTEMPT_QUEUE = 'webhook-attempt';
@@ -18,11 +21,15 @@ const REVERIFY_SCAN_QUEUE = 'reverify-scan';
 const REVERIFY_ESCALATE_QUEUE = 'reverify-escalate';
 const STG_HR_PURGE_QUEUE = 'stg-hr-purge';
 const ACCESS_LOG_PARTITION_ENSURE_QUEUE = 'access-log-partition-ensure';
+const ACCESS_ANOMALY_SCAN_QUEUE = 'access-anomaly-scan';
 
 // seq-01: "loop ทุก 5 วินาที หรือเมื่อมี NOTIFY" - ใช้ self-requeue ทุก 5 วินาทีแทน (ไม่ implement NOTIFY)
 const POLL_INTERVAL_SECONDS = 5;
 
 async function main() {
+  // ตรวจ env ของ access-anomaly-scan ก่อนทำอย่างอื่น: ค่าผิด = ไม่เริ่ม worker (ไม่ปล่อยให้ job ทำงานด้วยค่าที่เดาเอง)
+  const anomalyConfig = loadAnomalyConfig(process.env);
+
   const pool = getPool();
   const boss = await createBoss(process.env.DATABASE_URL);
 
@@ -45,6 +52,7 @@ async function main() {
   await boss.createQueue(REVERIFY_ESCALATE_QUEUE);
   await boss.createQueue(STG_HR_PURGE_QUEUE);
   await boss.createQueue(ACCESS_LOG_PARTITION_ENSURE_QUEUE);
+  await boss.createQueue(ACCESS_ANOMALY_SCAN_QUEUE);
 
   await boss.work(OUTBOX_DISPATCH_QUEUE, async () => {
     await runOutboxDispatch({ pool });
@@ -80,18 +88,33 @@ async function main() {
     await runAccessLogPartitionEnsure({ pool });
   });
 
+  // PR-C (DPO): ตรวจพฤติกรรมการเข้าถึงข้อมูลผิดปกติทุก 5 นาที -> audit.access_alert (+ Telegram ถ้าตั้ง DPO_TELEGRAM_* ครบ)
+  const telegram = anomalyConfig.telegram.enabled
+    ? createTelegramNotifier({
+        botToken: anomalyConfig.telegram.botToken,
+        chatId: anomalyConfig.telegram.chatId,
+        consoleBaseUrl: anomalyConfig.telegram.consoleBaseUrl,
+      })
+    : null;
+  await boss.work(ACCESS_ANOMALY_SCAN_QUEUE, async () => {
+    await runAccessAnomalyScan({ pool, config: anomalyConfig, notifier: telegram });
+  });
+
   // seq-02: "ทุกวัน 02:00" - escalate รันตามหลัง scan (ไม่มีเวลาระบุชัดในเอกสาร เลือก 02:30)
   await boss.schedule(REVERIFY_SCAN_QUEUE, '0 2 * * *', {});
   await boss.schedule(REVERIFY_ESCALATE_QUEUE, '30 2 * * *', {});
   await boss.schedule(STG_HR_PURGE_QUEUE, '0 3 * * *', {});
   await boss.schedule(ACCESS_LOG_PARTITION_ENSURE_QUEUE, '15 3 * * *', {});
+  await boss.schedule(ACCESS_ANOMALY_SCAN_QUEUE, '*/5 * * * *', {});
 
   await boss.send(OUTBOX_DISPATCH_QUEUE, {});
   await boss.send(WEBHOOK_ATTEMPT_QUEUE, {});
   await boss.send(REVOKE_ACCESS_QUEUE, {});
 
   // eslint-disable-next-line no-console
-  console.log('MDM Worker เริ่มทำงานแล้ว');
+  console.log(
+    `MDM Worker เริ่มทำงานแล้ว (access-anomaly-scan: เฝ้า client ${anomalyConfig.monitoredClients.join(',')}, Telegram ${telegram ? 'เปิด' : 'ปิด'})`
+  );
 }
 
 main().catch((err) => {

@@ -147,6 +147,20 @@ services:
       REVERIFY_MAX_AGE_DAYS: ${REVERIFY_MAX_AGE_DAYS}
       REVERIFY_ON_CARD_EXPIRY_DAYS: ${REVERIFY_ON_CARD_EXPIRY_DAYS}
       GRACE_DAYS: ${GRACE_DAYS}
+      # PR-C: job access-anomaly-scan (ทุก 5 นาที) - ค่าเริ่มต้นใส่ไว้ที่นี่ด้วย (${VAR:-ค่า}) เพื่อให้ .env.staging เดิมที่ยังไม่มีตัวแปรเหล่านี้ใช้ได้ต่อ
+      # worker ตรวจค่าตอนบูต: ผิดรูปแบบ = ไม่เริ่ม (ดู worker/src/anomalyConfig.js)
+      ANOMALY_MONITORED_CLIENTS: ${ANOMALY_MONITORED_CLIENTS:-hr-console}
+      ANOMALY_BULK_VIEW_THRESHOLD: ${ANOMALY_BULK_VIEW_THRESHOLD:-30}
+      ANOMALY_BULK_VIEW_WINDOW_MIN: ${ANOMALY_BULK_VIEW_WINDOW_MIN:-10}
+      ANOMALY_PID_REVEAL_THRESHOLD: ${ANOMALY_PID_REVEAL_THRESHOLD:-5}
+      ANOMALY_PID_REVEAL_WINDOW_MIN: ${ANOMALY_PID_REVEAL_WINDOW_MIN:-60}
+      ANOMALY_OFFHOURS_START: ${ANOMALY_OFFHOURS_START:-16:30}
+      ANOMALY_OFFHOURS_END: ${ANOMALY_OFFHOURS_END:-08:30}
+      ANOMALY_SCAN_LOOKBACK_MIN: ${ANOMALY_SCAN_LOOKBACK_MIN:-30}
+      # Telegram (opt-in): ไม่ตั้งทั้ง DPO_TELEGRAM_BOT_TOKEN และ DPO_TELEGRAM_CHAT_ID = ปิด (ค่าว่าง); ตั้งตัวเดียว = worker ไม่เริ่ม
+      DPO_TELEGRAM_BOT_TOKEN: ${DPO_TELEGRAM_BOT_TOKEN:-}
+      DPO_TELEGRAM_CHAT_ID: ${DPO_TELEGRAM_CHAT_ID:-}
+      DPO_CONSOLE_BASE_URL: ${DPO_CONSOLE_BASE_URL:-}
     volumes:
       - ./vault/secrets:/vault/secrets:ro
     depends_on:
