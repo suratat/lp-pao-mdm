@@ -1128,6 +1128,64 @@ paths:
                 items: { $ref: '#/components/schemas/PositionType' }
 
   # ------------------------------------------------------------------ Audit
+  /audit/change-logs:
+    get:
+      tags: [Audit]
+      summary: Change history across persons / master data (DPO / auditor)
+      description: |
+        ประวัติการเปลี่ยนแปลงข้อมูลทั้งระบบ เรียงใหม่ -> เก่า เลือกตารางด้วย `source`:
+        `PERSON` (audit.data_change_log - ข้อมูลบุคคล, กรองด้วย `personId`/`changedBy`) หรือ
+        `REFERENCE` (audit.reference_change_log - หน่วยงาน/ตำแหน่ง, กรองด้วย `action`)
+        ฟิลด์ชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED ปกปิดค่า (`oldValue`/`newValue` = null, `valuesHidden` = true)
+        เหลือเฉพาะชื่อฟิลด์ที่เปลี่ยน; ข้อความทุกช่องถูกปกปิดเลข 13 หลัก
+        แถวที่เขียนก่อน PR-A ไม่มี `actorSub`/`actorClient` (null)
+      operationId: listChangeLogs
+      security:
+        - keycloak: [audit:read]
+      parameters:
+        - name: source
+          in: query
+          schema: { type: string, enum: [PERSON, REFERENCE], default: PERSON }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actorSub
+          in: query
+          schema: { type: string }
+        - name: tableName
+          in: query
+          description: เช่น employment, person, person_contact, person_identity (PERSON) หรือ org_unit, position (REFERENCE)
+          schema: { type: string }
+        - name: personId
+          in: query
+          description: เฉพาะ source=PERSON
+          schema: { type: string, format: uuid }
+        - name: changedBy
+          in: query
+          description: เฉพาะ source=PERSON
+          schema: { type: string, enum: [THAID_SYNC, SELF, HR, HR_IMPORT, ADMIN] }
+        - name: action
+          in: query
+          description: เฉพาะ source=REFERENCE
+          schema: { type: string, enum: [CREATE, UPDATE] }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditChangeLogEntry' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
   /audit/access-logs:
     get:
       tags: [Audit]
@@ -1886,7 +1944,29 @@ components:
         oldValue: { description: ค่าเดิม (mask เมื่อฟิลด์เป็น RESTRICTED) }
         newValue: { description: ค่าใหม่ }
         changedBy: { type: string, enum: [THAID_SYNC, SELF, HR, HR_IMPORT, ADMIN] }
+        actorSub: { type: [string, 'null'], description: "ผู้กระทำ: sub ของผู้ใช้, personId (SELF), หรือ system:thaid-sync / system:hr-import; null = แถวก่อน PR-A" }
+        actorClient: { type: [string, 'null'], description: azp ของ token ที่เรียก }
+        valuesHidden: { type: boolean, description: ค่าถูกปกปิดเพราะฟิลด์ชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED }
+        syncEventId: { type: [string, 'null'], format: uuid }
+        reason: { type: [string, 'null'] }
+
+    AuditChangeLogEntry:
+      type: object
+      properties:
+        source: { type: string, enum: [PERSON, REFERENCE] }
+        logId: { type: integer, format: int64 }
+        changedAt: { type: string, format: date-time }
+        personId: { type: string, format: uuid, description: เฉพาะ source=PERSON }
+        recordId: { type: string, format: uuid, description: เฉพาะ source=REFERENCE }
+        tableName: { type: string }
+        action: { type: string, enum: [CREATE, UPDATE], description: เฉพาะ source=REFERENCE }
+        fieldKey: { type: string }
+        oldValue: {}
+        newValue: {}
+        valuesHidden: { type: boolean }
+        changedBy: { type: string, enum: [THAID_SYNC, SELF, HR, HR_IMPORT, ADMIN], description: เฉพาะ source=PERSON }
         actorSub: { type: [string, 'null'] }
+        actorClient: { type: [string, 'null'] }
         syncEventId: { type: [string, 'null'], format: uuid }
         reason: { type: [string, 'null'] }
 

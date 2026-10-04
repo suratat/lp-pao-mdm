@@ -11,7 +11,7 @@ function createSyncRouter({ pool, vault, pepper }) {
   // T3: implement ครบ 5 branch (UNMATCHED/CLAIMED/NO_CHANGE/UPDATED/REJECTED_INACTIVE) ตาม §3.1, §3.3
   router.post('/sync/thaid', requireScope('sync:thaid'), async (req, res, next) => {
     try {
-      const { httpStatus, body } = await syncFromThaid({ pool, vault, pepper }, req.body);
+      const { httpStatus, body } = await syncFromThaid({ pool, vault, pepper }, req.body, { actorClient: req.auth.azp });
       res.status(httpStatus).json(body);
     } catch (err) {
       next(err);
@@ -22,7 +22,7 @@ function createSyncRouter({ pool, vault, pepper }) {
   router.post('/sync/hr/employment-batch', requireScope('personnel:import'), async (req, res, next) => {
     try {
       const { mode = 'DRY_RUN', createIfMissing = false, rows } = req.body;
-      const result = await importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing, rows });
+      const result = await importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing, rows, actorClient: req.auth.azp });
       res.json(result);
     } catch (err) {
       next(err);

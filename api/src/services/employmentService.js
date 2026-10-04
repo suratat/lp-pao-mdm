@@ -2,6 +2,7 @@ const { withTransaction } = require('../db/transaction');
 const { HttpProblem } = require('../security/httpProblem');
 const { presentEmployment } = require('./personPresenter');
 const { closeAndOpenEmployment } = require('./employmentShared');
+const { writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
 
 const EMPLOYMENT_SELECT = `
   SELECT e.*, pos.position_no, pos.title_th AS position_title_th, pos.position_type,
@@ -25,12 +26,9 @@ async function getEmploymentHistory(pool, personId, currentOnly) {
   return rows.map(presentEmployment);
 }
 
-function mapChangeLogValue(value) {
-  return value === null || value === undefined ? null : JSON.stringify(value);
-}
-
 // PUT /persons/{id}/employment (§2.1, §1.6 optimistic lock ผ่าน expectedVersion)
-async function upsertEmployment(pool, personId, body) {
+async function upsertEmployment(pool, personId, body, auth) {
+  const actor = actorFromAuth(auth);
   return withTransaction(pool, async (client) => {
     const { rows: personRows } = await client.query(
       `SELECT version FROM mdm.person WHERE person_id = $1 FOR UPDATE`,
@@ -60,14 +58,14 @@ async function upsertEmployment(pool, personId, body) {
     }
 
     if (changes.length > 0) {
-      for (const change of changes) {
-        // eslint-disable-next-line no-await-in-loop
-        await client.query(
-          `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, reason)
-           VALUES ($1, 'employment', $2, $3, $4, 'HR', $5)`,
-          [personId, change.fieldKey, mapChangeLogValue(change.oldValue), mapChangeLogValue(change.newValue), body.referenceDocument ?? null]
-        );
-      }
+      await writeChangeLogs(client, {
+        personId,
+        tableName: 'employment',
+        changes,
+        changedBy: 'HR',
+        actor,
+        reason: body.referenceDocument,
+      });
 
       const newVersion = currentVersion + 1;
       await client.query(`UPDATE mdm.person SET version = $2 WHERE person_id = $1`, [personId, newVersion]);

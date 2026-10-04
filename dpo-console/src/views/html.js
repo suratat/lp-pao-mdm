@@ -10,6 +10,12 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// กฎข้อ 1 ของ CLAUDE.md: เลข 13 หลักห้ามปรากฏในหน้าจอ - MDM API ปกปิดมาให้แล้ว (auditService) ที่นี่เป็นชั้นที่สอง
+// ครอบข้อความอิสระ/ค่าที่แสดงจาก change log (รวมกรณีคั่นด้วยช่องว่าง/ขีด)
+function redactPid(value) {
+  return typeof value === 'string' ? value.replace(/\d(?:[ -]?\d){12}/g, '[ปกปิดเลข 13 หลัก]') : value;
+}
+
 function layout(title, bodyHtml, { displayName } = {}) {
   return `<!doctype html>
 <html lang="th">
@@ -38,6 +44,7 @@ function layout(title, bodyHtml, { displayName } = {}) {
 <body>
   <nav>
     <a href="/dpo/access-logs">Access Log</a>
+    <a href="/dpo/change-logs">ประวัติการเปลี่ยนแปลง</a>
     <a href="/auth/logout">ออกจากระบบ</a>
     ${displayName ? `<span class="who">${escapeHtml(displayName)}</span>` : ''}
   </nav>
@@ -47,4 +54,4 @@ function layout(title, bodyHtml, { displayName } = {}) {
 </html>`;
 }
 
-module.exports = { escapeHtml, layout };
+module.exports = { escapeHtml, redactPid, layout };

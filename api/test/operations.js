@@ -530,6 +530,14 @@ function buildOperationDescriptors() {
       scope: 'audit:read',
       expectStatus: 200,
     },
+    {
+      name: 'listChangeLogs',
+      method: 'get',
+      pathTemplate: '/audit/change-logs',
+      path: () => '/audit/change-logs',
+      scope: 'audit:read',
+      expectStatus: 200,
+    },
     { name: 'health', method: 'get', pathTemplate: '/health', path: () => '/health', noAuth: true, expectStatus: 200 },
   ];
 }

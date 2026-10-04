@@ -28,7 +28,7 @@ function createMeRouter(pool) {
   router.put('/me/contact', requireScope('personnel:self'), async (req, res, next) => {
     try {
       const personId = requireOwnPersonId(req);
-      const contact = await updateMyContact(pool, personId, req.body);
+      const contact = await updateMyContact(pool, personId, req.body, req.auth);
       res.json(contact);
     } catch (err) {
       next(err);
@@ -48,7 +48,7 @@ function createMeRouter(pool) {
   router.post('/me/report-identity-issue', requireScope('personnel:self'), async (req, res, next) => {
     try {
       const personId = requireOwnPersonId(req);
-      await reportIdentityIssue(pool, personId, req.body);
+      await reportIdentityIssue(pool, personId, req.body, req.auth);
       res.status(202).end();
     } catch (err) {
       next(err);
