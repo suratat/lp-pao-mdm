@@ -1,3 +1,6 @@
+# ห้ามใช้ negation (!pattern) แบบ ** ในไฟล์นี้: เมื่อมี !pattern BuildKit ไม่รู้ว่า path ที่ exclude ไว้จะมีไฟล์ที่ถูก "ยกเว้น" อยู่ข้างในหรือไม่
+# จึงต้องเดินเข้าไปทุกโฟลเดอร์ที่ exclude (รวม infra/postgres/data ที่เป็นของ uid postgres อ่านไม่ได้) -> build ล้มด้วย
+# "open infra/postgres/data: permission denied" ไม่มี Dockerfile ใดต้องใช้ไฟล์ .env*.example ใน image (ตรวจแล้ว) จึงตัดทิ้ง
 infra/postgres/data
 infra/vault/data
 infra/vault/secrets
@@ -6,8 +9,6 @@ node_modules
 .git
 **/.env
 **/.env.*
-!**/.env.example
-!**/.env.staging.example
 infra/keycloak/*backup*.json
 infra/keycloak/*noscopes*.json
 hr*.csv
