@@ -31,17 +31,14 @@ jobs:
           # ตรงกับ node:22-alpine ใน infra/api/Dockerfile (และ Dockerfile อื่นทุกตัวใน infra/)
           node-version: '22'
 
-      # db ใช้ directory "." (รากของ repo) ส่วน workspace อื่นใช้ชื่อโฟลเดอร์ของตัวเอง - คำนวณครั้งเดียวแล้วใช้
-      # ต่อในทุก step ด้านล่าง กัน error จากการเขียน path ผิดซ้ำหลายที่
+      # workspace ที่จะรัน npm test: db ใช้ราก repo (jest.config.js + package.json ที่ราก รัน db/test/**) ส่วนที่เหลือใช้โฟลเดอร์ของตัวเอง
       - name: Resolve workspace directory
         id: workdir
         run: |
           if [ "${{ matrix.workspace }}" = "db" ]; then
             echo "dir=." >> "$GITHUB_OUTPUT"
-            echo "lockfile=package-lock.json" >> "$GITHUB_OUTPUT"
           else
             echo "dir=${{ matrix.workspace }}" >> "$GITHUB_OUTPUT"
-            echo "lockfile=${{ matrix.workspace }}/package-lock.json" >> "$GITHUB_OUTPUT"
           fi
 
       # cache ~/.npm (npm's download cache) ไม่ใช่ node_modules เพราะ `npm ci` ลบ node_modules ทิ้งแล้วติดตั้งใหม่
@@ -51,21 +48,43 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ matrix.workspace }}-${{ hashFiles(steps.workdir.outputs.lockfile) }}
+          key: ${{ runner.os }}-npm-${{ matrix.workspace }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-${{ matrix.workspace }}-
 
+      # repo นี้ "ไม่ใช่" npm workspaces: ราก, api, worker, migrate, hr-console, portal, dpo-console ต่างมี package.json +
+      # package-lock.json ของตัวเอง (Dockerfile แต่ละตัวก็ npm ci ต่อโฟลเดอร์) แต่เทสต์ข้ามโฟลเดอร์กันจริง:
+      #   - globalSetup ของทุก workspace เรียก api/test/globalSetup.js (require 'pg') ซึ่งเรียก db/test/helpers.js (require 'node-pg-migrate' จากราก)
+      #   - hr-console/portal/dpo-console/migrate/worker ใช้ api/src และ api/test (express, express-openapi-validator, jose, js-yaml, supertest ฯลฯ)
+      # Node หา module จากโฟลเดอร์ของไฟล์ที่ require ขึ้นไป ดังนั้นต้อง npm ci ให้ครบ 3 ที่: ราก (jest, pg, node-pg-migrate) + api + ตัว workspace เอง
+      # (เดิมติดตั้งแค่โฟลเดอร์ของ workspace เดียว -> 6 จาก 7 job ล้มที่ "Cannot find module 'pg'" ตั้งแต่ก่อนรันเทสต์ ดูข้อถัดไปว่าทำไมไม่แดง)
       - name: Install dependencies
-        working-directory: ${{ steps.workdir.outputs.dir }}
-        run: npm ci
+        shell: bash
+        run: |
+          # sort -u: db (dir=.) และ api ซ้ำกับรายการคงที่ ไม่ต้อง npm ci สองรอบ
+          for dir in $(printf '%s\n' . api "${{ steps.workdir.outputs.dir }}" | sort -u); do
+            echo "::group::npm ci ($dir)"
+            (cd "$dir" && npm ci)
+            echo "::endgroup::"
+          done
 
       # ไม่ต้องตั้ง env var หรือ secret ใดๆ - globalSetup.js ของแต่ละ workspace เรียก docker compose (Postgres 16
       # บน db/docker-compose.yml) + node-pg-migrate + สร้าง login role ทดสอบเองอัตโนมัติ (ดู db/test/globalSetup.js,
       # api/test/globalSetup.js ฯลฯ) Vault ใช้ in-memory fake client เสมอในเทสต์ ไม่ต้องมี Vault จริง
       # ubuntu-latest มี Docker + Docker Compose v2 plugin ติดตั้งมาให้อยู่แล้ว
+      #
+      # shell: bash (ไม่ใช่ default `bash -e {0}`) เพื่อให้ได้ `-eo pipefail`: เดิม `npm test | tee` คืน exit code ของ tee (0) เสมอ
+      # ต่อให้ jest ล้ม/พังก่อนเริ่ม job ก็เขียวทั้งที่ไม่ได้รันเทสต์เลย (เห็นว่าผ่านเฉพาะ db)
+      # และตรวจซ้ำว่า jest "รันเทสต์จริง" ด้วยการหาบรรทัดสรุป "Tests: N ..." ใน log - ไม่มี = ล้ม (กัน jest จบเงียบๆ โดยไม่มีเทสต์)
       - name: Run tests
+        shell: bash
         working-directory: ${{ steps.workdir.outputs.dir }}
-        run: npm test 2>&1 | tee jest-output.log
+        run: |
+          npm test 2>&1 | tee jest-output.log
+          if ! grep -Eq '^Tests:[[:space:]]+[0-9]+' jest-output.log; then
+            echo "::error::jest did not report a 'Tests:' summary - tests did not actually run"
+            exit 1
+          fi
 
       # อัปโหลด log เสมอ (ทั้งผ่านและไม่ผ่าน) เพื่อดู output ของ jest ง่ายๆ จากหน้า PR (แท็บ Checks -> artifact)
       # โดยไม่ต้องไล่ดู Actions log ยาวๆ

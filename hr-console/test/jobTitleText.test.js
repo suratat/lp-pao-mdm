@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const { buildIntegrationHarness, loginAsHrOfficer } = require('./testHarness');
 const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
 const { makeFakePid } = require('../../api/src/security/pid');
+const { insertClaimWithFakePid, fakePidForClaim } = require('./claimHelpers');
 const { loadApproveForm } = require('./approveFormDom');
 const { PERSONNEL_TYPES, jobTitleAllowedFor } = require('../src/personnelTypes');
 const { checkJobTitleText, normalizeJobTitleText, MAX_LENGTH } = require('../src/jobTitleText');
@@ -48,12 +49,7 @@ async function freshPositionId() {
 }
 
 async function makeClaim() {
-  const { rows } = await adminPool.query(
-    `INSERT INTO mdm.claim_request (pid_hash, display_name, status, attempt_count, first_seen_at, last_seen_at)
-     VALUES ($1, 'นายทดสอบ ข้อความตำแหน่ง', 'PENDING_HR', 1, now(), now()) RETURNING claim_request_id`,
-    [crypto.randomBytes(32).toString('hex')]
-  );
-  return rows[0].claim_request_id;
+  return insertClaimWithFakePid(adminPool, harness.apiCtx.vault, 'นายทดสอบ ข้อความตำแหน่ง');
 }
 const claimStatus = async (id) => (await adminPool.query('SELECT status FROM mdm.claim_request WHERE claim_request_id = $1', [id])).rows[0].status;
 
@@ -64,7 +60,7 @@ async function getForm() {
   return { agent, html: res.text };
 }
 const approve = (agent, claimId, fields) =>
-  agent.post(`/hr/claim-requests/${claimId}/approve`).type('form').send({ employeeNo: makeFakePid(), orgUnitId, effectiveFrom: '2024-01-01', ...fields });
+  agent.post(`/hr/claim-requests/${claimId}/approve`).type('form').send({ employeeNo: fakePidForClaim(claimId), orgUnitId, effectiveFrom: '2024-01-01', ...fields });
 
 const savedRow = async (claimId) =>
   (
