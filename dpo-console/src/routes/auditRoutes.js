@@ -82,12 +82,15 @@ function renderAccessLogTable(entries) {
   const rows = entries
     .map(
       (e) => `<tr>
+        <td>${escapeHtml(e.accessId)}</td>
         <td>${escapeHtml(fmt(e.accessedAt))}</td>
         <td><a href="/dpo/persons/${encodeURIComponent(e.subjectPersonId)}/change-log">${escapeHtml(e.subjectPersonId)}</a></td>
         <td><span class="badge badge-${escapeHtml(e.actorType.toLowerCase())}">${escapeHtml(e.actorType)}</span> ${escapeHtml(e.actorSub || '-')}</td>
         <td>${escapeHtml(e.clientId || '-')}</td>
         <td>${escapeHtml(e.endpoint)}</td>
         <td>${escapeHtml(e.purposeCode || '-')}</td>
+        <td>${escapeHtml(redactPid(e.justification) || '-')}</td>
+        <td>${e.reviewStatus ? `<span class="badge badge-${escapeHtml(e.reviewStatus.toLowerCase())}">${escapeHtml(e.reviewStatus)}</span>` : '-'}</td>
         <td>${escapeHtml(e.responseStatus)}</td>
         <td>${(e.fieldsReturned || []).map(escapeHtml).join(', ') || '-'}</td>
         <td>${escapeHtml(e.requestId || '-')}</td>
@@ -96,8 +99,8 @@ function renderAccessLogTable(entries) {
     .join('\n');
 
   return `<table>
-    <tr><th>เวลาเข้าถึง</th><th>บุคคลที่ถูกเข้าถึง (personId)</th><th>ผู้เรียก</th><th>Client</th><th>Endpoint</th><th>Purpose</th><th>Status</th><th>ฟิลด์ที่ส่งคืน</th><th>Request ID</th></tr>
-    ${rows || '<tr><td colspan="9">ไม่มีรายการ</td></tr>'}
+    <tr><th>Access ID</th><th>เวลาเข้าถึง</th><th>บุคคลที่ถูกเข้าถึง (personId)</th><th>ผู้เรียก</th><th>Client</th><th>Endpoint</th><th>Purpose</th><th>เหตุผล (justification)</th><th>สถานะรีวิว</th><th>Status</th><th>ฟิลด์ที่ส่งคืน</th><th>Request ID</th></tr>
+    ${rows || '<tr><td colspan="12">ไม่มีรายการ</td></tr>'}
   </table>`;
 }
 
@@ -237,7 +240,7 @@ function createAuditRoutes({ mdmClient }) {
         layout(
           'ประวัติการเปลี่ยนแปลงทั้งระบบ',
           `<h1>ประวัติการเปลี่ยนแปลง</h1>
-           <p class="hint">เห็นเฉพาะ "ฟิลด์ใดเปลี่ยน ใครเปลี่ยน เมื่อไหร่" ค่าของข้อมูลส่วนบุคคลถูกปกปิด แถวที่เขียนก่อนระบบบันทึกผู้กระทำจะแสดงผู้กระทำว่า "ไม่ทราบ"</p>
+           <p class="hint">เห็นเฉพาะ "ฟิลด์ใดเปลี่ยน ใครเปลี่ยน เมื่อไหร่" ค่าของข้อมูลชั้น CONFIDENTIAL ขึ้นไปถูกปกปิด แถวที่เขียนก่อนระบบบันทึกผู้กระทำจะแสดงผู้กระทำว่า "ไม่ทราบ"</p>
            ${renderChangeLogFilters(form)}
            ${renderChangeLogTable(source, result.data)}
            ${nextLink}`,
@@ -309,4 +312,4 @@ function createAuditRoutes({ mdmClient }) {
   return router;
 }
 
-module.exports = { createAuditRoutes };
+module.exports = { createAuditRoutes, fmt, toIsoDateTime, renderApiError };

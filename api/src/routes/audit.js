@@ -1,6 +1,6 @@
 const express = require('express');
-const { requireScope } = require('../middleware/auth');
-const { getPersonChangeLog, listChangeLogs, listAccessLogs } = require('../services/auditService');
+const { requireScope, requireRole } = require('../middleware/auth');
+const { getPersonChangeLog, listChangeLogs, listAccessLogs, reviewPidAccess } = require('../services/auditService');
 
 function createAuditRouter(pool) {
   const router = express.Router();
@@ -46,10 +46,26 @@ function createAuditRouter(pool) {
         from: req.query.from,
         to: req.query.to,
         pidAccessOnly: req.query.pidAccessOnly === 'true' || req.query.pidAccessOnly === true,
+        reviewStatus: req.query.reviewStatus,
         cursor: req.query.cursor,
         limit: req.query.limit ? Number(req.query.limit) : 50,
       });
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // scope audit:review ผูกกับ realm role dpo เท่านั้น (auditor อ่านอย่างเดียว): ตรวจ role ใน API เสมอเพราะ scope ใน token ไม่ใช่ตัวกั้นสิทธิ์
+  // (client dpo-console ผูก scope ให้ผู้ใช้ทุกคนของ client - ดู infra/keycloak/README.md)
+  router.post('/audit/access-logs/:accessId/review', requireScope('audit:review'), requireRole('dpo'), async (req, res, next) => {
+    try {
+      const result = await reviewPidAccess(
+        pool,
+        { accessId: req.params.accessId, accessedAt: req.body.accessedAt, status: req.body.status, note: req.body.note },
+        { sub: req.auth.sub, azp: req.auth.azp }
+      );
+      res.status(201).json(result);
     } catch (err) {
       next(err);
     }

@@ -161,7 +161,18 @@ async function seedFixtures({ adminPool, vault }) {
   const refOrgUnitId = await insertFixtureOrgUnit(adminPool);
   const refPositionId = await makePosition(adminPool, refOrgUnitId);
 
+  // PR-B: รายการเปิดเลขบัตรของ "ผู้อื่น" (actor_sub ไม่ตรงกับ sub ของ token ทดสอบ) ให้ POST /audit/access-logs/{id}/review รีวิวได้
+  const { rows: revealRows } = await adminPool.query(
+    `INSERT INTO audit.access_log
+       (subject_person_id, actor_type, actor_sub, keycloak_client_id, endpoint, http_method, fields_returned, justification, request_id, response_status)
+     VALUES ($1, 'SERVICE', 'contract-revealer', 'hr-console', $2, 'GET', '["pid"]', 'เหตุผลสำหรับทดสอบ contract', gen_random_uuid()::text, 200)
+     RETURNING access_id, accessed_at`,
+    [readPersonId, `/api/v1/persons/${readPersonId}/pid`]
+  );
+
   return {
+    pidRevealAccessId: Number(revealRows[0].access_id),
+    pidRevealAccessedAt: revealRows[0].accessed_at.toISOString(),
     orgUnitId,
     refOrgUnitId,
     refPositionId,
@@ -529,6 +540,16 @@ function buildOperationDescriptors() {
       path: () => '/audit/access-logs',
       scope: 'audit:read',
       expectStatus: 200,
+    },
+    {
+      name: 'reviewPidAccess',
+      method: 'post',
+      pathTemplate: '/audit/access-logs/:accessId/review',
+      path: (ids) => `/audit/access-logs/${ids.pidRevealAccessId}/review`,
+      scope: 'audit:review',
+      roles: ['dpo'],
+      body: (ids) => ({ accessedAt: ids.pidRevealAccessedAt, status: 'REVIEWED', note: 'ตรวจแล้ว' }),
+      expectStatus: 201,
     },
     {
       name: 'listChangeLogs',

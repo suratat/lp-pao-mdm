@@ -3,6 +3,7 @@ const { createAuthGate } = require('./session/authGate');
 const { createSessionStore } = require('./session/sessionStore');
 const { createAuthRoutes } = require('./routes/authRoutes');
 const { createAuditRoutes } = require('./routes/auditRoutes');
+const { createPidRevealRoutes } = require('./routes/pidRevealRoutes');
 const { layout } = require('./views/html');
 
 // config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionStore, isProduction }
@@ -17,6 +18,7 @@ function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore 
   const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction });
   app.use((req, res, next) => (req.path === '/dpo' || req.path.startsWith('/dpo/') ? authGate(req, res, next) : next()));
   app.use(createAuditRoutes({ mdmClient }));
+  app.use(createPidRevealRoutes({ mdmClient }));
 
   app.get('/', (req, res) => res.redirect(302, '/dpo/access-logs'));
 

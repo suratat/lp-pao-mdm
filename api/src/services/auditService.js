@@ -1,5 +1,5 @@
 const { HttpProblem } = require('../security/httpProblem');
-const { redactPidText, redactPidDeep } = require('../security/redact');
+const { redactPidText, redactPidDeep, containsPidLike } = require('../security/redact');
 
 // หน้า DPO ต้องเห็นว่า "ฟิลด์ไหนเปลี่ยน ใครเปลี่ยน เมื่อไหร่" ไม่ใช่ค่าข้อมูลส่วนบุคคล: ฟิลด์ชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED
 // ปกปิดค่าทั้งหมด (คืน null + valuesHidden = true) ฟิลด์ชั้น INTERNAL หรือฟิลด์ที่ไม่อยู่ใน field_policy (เช่น status) แสดงค่า
@@ -149,42 +149,64 @@ async function listChangeLogs(
   return { data, page: { nextCursor: hasMore ? page[page.length - 1].log_id : null, limit } };
 }
 
+// แถว access_log ที่เป็น "การเปิดเลขบัตร" (GET /persons/{uuid}/pid ที่สำเร็จ) - นิยามเดียวใช้ทั้งตอนแสดงสถานะรีวิว, กรอง reviewStatus และตรวจก่อนรีวิว
+// endpoint รุ่นก่อน #73 มี ?justification=... ต่อท้าย จึงยอมให้ตามหลัง /pid ด้วย ? หรือจบสตริง
+const PID_REVEAL_SQL = `(al.http_method = 'GET' AND al.response_status = 200
+  AND al.endpoint ~ '/persons/[0-9a-fA-F-]{36}/pid(\\?|$)')`;
+
+const REVIEW_STATUSES = ['PENDING', 'REVIEWED', 'NEEDS_EXPLANATION'];
+
 // GET /audit/access-logs (DPO / auditor)
-async function listAccessLogs(pool, { personId, clientId, from, to, pidAccessOnly, cursor, limit }) {
+// reviewStatus: เฉพาะการเปิดเลขบัตร (PID_REVEAL_SQL) ที่สถานะรีวิวล่าสุดตรงค่า (PENDING = ยังไม่มีแถวรีวิว)
+async function listAccessLogs(pool, { personId, clientId, from, to, pidAccessOnly, reviewStatus, cursor, limit }) {
   const conditions = [];
   const params = [];
 
   if (personId) {
     params.push(personId);
-    conditions.push(`subject_person_id = $${params.length}`);
+    conditions.push(`al.subject_person_id = $${params.length}`);
   }
   if (clientId) {
     params.push(clientId);
-    conditions.push(`keycloak_client_id = $${params.length}`);
+    conditions.push(`al.keycloak_client_id = $${params.length}`);
   }
   if (from) {
     params.push(from);
-    conditions.push(`accessed_at >= $${params.length}`);
+    conditions.push(`al.accessed_at >= $${params.length}`);
   }
   if (to) {
     params.push(to);
-    conditions.push(`accessed_at <= $${params.length}`);
+    conditions.push(`al.accessed_at <= $${params.length}`);
   }
   if (pidAccessOnly) {
-    conditions.push(`(endpoint LIKE '%/pid%' OR endpoint LIKE '%/lookup%')`);
+    conditions.push(`(al.endpoint LIKE '%/pid%' OR al.endpoint LIKE '%/lookup%')`);
+  }
+  if (reviewStatus) {
+    conditions.push(PID_REVEAL_SQL);
+    params.push(reviewStatus);
+    conditions.push(`COALESCE(rv.status, 'PENDING') = $${params.length}`);
   }
   if (cursor) {
     params.push(cursor);
-    conditions.push(`access_id > $${params.length}`);
+    conditions.push(`al.access_id > $${params.length}`);
   }
   params.push(limit + 1);
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await pool.query(
-    `SELECT access_id, accessed_at, subject_person_id, actor_type, actor_sub, keycloak_client_id,
-            endpoint, http_method, fields_returned, purpose_code, justification, request_id, response_status
-     FROM audit.access_log ${whereClause}
-     ORDER BY access_id
+    `SELECT al.access_id, al.accessed_at, al.subject_person_id, al.actor_type, al.actor_sub, al.keycloak_client_id,
+            al.endpoint, al.http_method, al.fields_returned, al.purpose_code, al.justification, al.request_id, al.response_status,
+            CASE WHEN ${PID_REVEAL_SQL} THEN COALESCE(rv.status, 'PENDING') END AS review_status,
+            rv.reviewed_at, rv.reviewer_sub, rv.note AS review_note
+     FROM audit.access_log al
+     LEFT JOIN LATERAL (
+       SELECT r.status, r.reviewed_at, r.reviewer_sub, r.note
+       FROM audit.pid_access_review r
+       WHERE r.access_id = al.access_id AND r.accessed_at = al.accessed_at
+       ORDER BY r.review_id DESC LIMIT 1
+     ) rv ON true
+     ${whereClause}
+     ORDER BY al.access_id
      LIMIT $${params.length}`,
     params
   );
@@ -193,6 +215,7 @@ async function listAccessLogs(pool, { personId, clientId, from, to, pidAccessOnl
   const page = hasMore ? rows.slice(0, limit) : rows;
 
   const data = page.map((r) => ({
+    accessId: Number(r.access_id),
     accessedAt: r.accessed_at,
     subjectPersonId: r.subject_person_id,
     actorType: r.actor_type,
@@ -201,12 +224,67 @@ async function listAccessLogs(pool, { personId, clientId, from, to, pidAccessOnl
     endpoint: r.endpoint,
     fieldsReturned: r.fields_returned || [],
     purposeCode: r.purpose_code,
-    justification: r.justification,
+    // ข้อความอิสระ: แถวเก่าอาจมีเลข 13 หลักหลุดมา (ก่อนมีการปฏิเสธตอนรับ) - ปกปิดตอนแสดงเสมอ
+    justification: r.justification === null ? null : redactPidText(r.justification),
     requestId: r.request_id,
     responseStatus: r.response_status,
+    reviewStatus: r.review_status ?? null,
+    // nullable แบบ array ([string, 'null']) ต้องแปลง Date เป็น ISO string เอง (validator แปลงให้เฉพาะ type: string เดี่ยวๆ)
+    reviewedAt: r.reviewed_at ? r.reviewed_at.toISOString() : null,
+    reviewerSub: r.reviewer_sub ?? null,
+    reviewNote: r.review_note === null || r.review_note === undefined ? null : redactPidText(r.review_note),
   }));
 
   return { data, page: { nextCursor: hasMore ? page[page.length - 1].access_id : null, limit } };
 }
 
-module.exports = { getPersonChangeLog, listChangeLogs, listAccessLogs, presentChangeValues };
+// POST /audit/access-logs/{accessId}/review - เขียนแถวรีวิวใหม่ (append-only; รีวิวซ้ำได้ แถวล่าสุดชนะ)
+// accessedAt จาก API มีความละเอียดระดับ ms (JS Date) แต่ timestamptz ใน DB ละเอียดถึง µs จึงจับคู่แบบช่วง 1 ms แล้วบันทึกค่าจริงจากแถว access_log
+// (INSERT ... SELECT) ไม่ใช่ค่าที่ผู้เรียกส่งมา - ตรวจในคำสั่งเดียวว่ารายการมีจริง เป็นการเปิด pid และไม่ใช่ของผู้รีวิวเอง
+async function reviewPidAccess(pool, { accessId, accessedAt, status, note }, reviewer) {
+  const cleanNote = typeof note === 'string' ? note.trim() : '';
+  if (status === 'NEEDS_EXPLANATION' && cleanNote.length === 0) {
+    throw new HttpProblem(422, 'note-required', 'ต้องระบุหมายเหตุ', 'การขอคำชี้แจง (NEEDS_EXPLANATION) ต้องระบุว่าต้องการให้ชี้แจงเรื่องใด');
+  }
+  if (containsPidLike(cleanNote)) {
+    throw new HttpProblem(422, 'note-contains-pid', 'หมายเหตุมีเลขบัตรประชาชน', 'note ห้ามมีเลข 13 หลัก');
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO audit.pid_access_review (access_id, accessed_at, status, note, reviewer_sub, reviewer_client)
+     SELECT al.access_id, al.accessed_at, $3::varchar, $4::text, $5::varchar, $6::varchar
+     FROM audit.access_log al
+     WHERE al.access_id = $1
+       AND al.accessed_at >= $2::timestamptz AND al.accessed_at < $2::timestamptz + interval '1 millisecond'
+       AND ${PID_REVEAL_SQL}
+       AND al.actor_sub IS DISTINCT FROM $5::varchar
+     RETURNING review_id, access_id, accessed_at, status, note, reviewer_sub, reviewed_at`,
+    [accessId, accessedAt, status, cleanNote || null, reviewer.sub, reviewer.azp ?? null]
+  );
+  if (rows.length > 0) {
+    const r = rows[0];
+    return {
+      reviewId: Number(r.review_id),
+      accessId: Number(r.access_id),
+      accessedAt: r.accessed_at,
+      status: r.status,
+      note: r.note,
+      reviewerSub: r.reviewer_sub,
+      reviewedAt: r.reviewed_at,
+    };
+  }
+
+  // INSERT ไม่ได้แถว: แยกสาเหตุเพื่อตอบ 404 หรือ 403 ให้ถูก (ไม่เปิดเผยรายละเอียดของแถวที่ผู้รีวิวไม่มีสิทธิ์รีวิว)
+  const { rows: target } = await pool.query(
+    `SELECT al.actor_sub FROM audit.access_log al
+     WHERE al.access_id = $1 AND al.accessed_at >= $2::timestamptz AND al.accessed_at < $2::timestamptz + interval '1 millisecond'
+       AND ${PID_REVEAL_SQL}`,
+    [accessId, accessedAt]
+  );
+  if (target.length === 0) {
+    throw new HttpProblem(404, 'not-found', 'ไม่พบรายการ', 'ไม่พบรายการเปิดเลขบัตรตาม accessId/accessedAt ที่ระบุ');
+  }
+  throw new HttpProblem(403, 'self-review-forbidden', 'รีวิวรายการของตนเองไม่ได้', 'ผู้ที่เปิดเลขบัตรรีวิวรายการของตนเองไม่ได้ ต้องให้ผู้อื่นที่เป็นอิสระรีวิว');
+}
+
+module.exports = { getPersonChangeLog, listChangeLogs, listAccessLogs, reviewPidAccess, presentChangeValues, REVIEW_STATUSES };

@@ -1,4 +1,6 @@
 const { COOKIE_NAME, parseCookies, clearSessionCookie } = require('./sessionCookie');
+const { newCsrfToken } = require('./csrf');
+const { decodeScopes } = require('./tokenScopes');
 
 const REFRESH_BUFFER_MS = 15_000;
 
@@ -69,7 +71,21 @@ function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isPro
         if (!session) return res.redirect(302, '/auth/login'); // logout/หมดอายุระหว่างรอ refresh
       }
 
-      req.dpoAuth = { accessToken: session.accessToken, displayName: session.displayName };
+      // session ที่สร้างก่อนมี CSRF token (ค้างอยู่ตอน deploy) -> ออก token ให้ตอนนี้
+      if (!session.csrfToken) {
+        sessionStore.update(sid, { csrfToken: newCsrfToken() });
+        session = sessionStore.get(sid);
+      }
+
+      const scopes = decodeScopes(session.accessToken); // สำหรับ UI เท่านั้น ดู tokenScopes.js
+      req.dpoAuth = {
+        accessToken: session.accessToken,
+        displayName: session.displayName,
+        csrfToken: session.csrfToken,
+        scopes,
+        // ซ่อน/แสดงฟอร์มรีวิวเท่านั้น: MDM API ตรวจ scope audit:review และ realm role dpo ซ้ำทุก request (auditor ได้ 403)
+        canReview: scopes.has('audit:review') && session.isDpo === true,
+      };
       return next();
     } catch (err) {
       return next(err);

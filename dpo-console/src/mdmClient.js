@@ -9,10 +9,14 @@ class MdmApiError extends Error {
 // เรียก MDM API ด้วย access token ของผู้ใช้ dpo/auditor ที่ล็อกอินอยู่ตรง ๆ (ไม่ต้องมี X-Acting-Person
 // เหมือน Portal เพราะ scope audit:read ไม่ใช่ user context personnel:self - แนวทางเดียวกับ hr-console)
 function createMdmClient({ baseUrl }) {
-  async function call(method, path, accessToken) {
+  async function call(method, path, accessToken, body) {
     const res = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
 
     const text = await res.text();
@@ -24,13 +28,14 @@ function createMdmClient({ baseUrl }) {
     return data;
   }
 
-  function listAccessLogs(accessToken, { personId, clientId, from, to, pidAccessOnly, cursor, limit } = {}) {
+  function listAccessLogs(accessToken, { personId, clientId, from, to, pidAccessOnly, reviewStatus, cursor, limit } = {}) {
     const qs = new URLSearchParams();
     if (personId) qs.set('personId', personId);
     if (clientId) qs.set('clientId', clientId);
     if (from) qs.set('from', from);
     if (to) qs.set('to', to);
     if (pidAccessOnly) qs.set('pidAccessOnly', 'true');
+    if (reviewStatus) qs.set('reviewStatus', reviewStatus);
     if (cursor) qs.set('cursor', cursor);
     if (limit) qs.set('limit', String(limit));
     const query = qs.toString();
@@ -57,7 +62,16 @@ function createMdmClient({ baseUrl }) {
     return call('GET', `/api/v1/audit/change-logs${query ? `?${query}` : ''}`, accessToken);
   }
 
-  return { listAccessLogs, getPersonChangeLog, listChangeLogs };
+  // POST /audit/access-logs/{accessId}/review (scope audit:review + role dpo) - accessedAt คู่กับ accessId ระบุแถวของ access_log
+  function reviewPidAccess(accessToken, accessId, { accessedAt, status, note }) {
+    return call('POST', `/api/v1/audit/access-logs/${encodeURIComponent(accessId)}/review`, accessToken, {
+      accessedAt,
+      status,
+      ...(note ? { note } : {}),
+    });
+  }
+
+  return { listAccessLogs, getPersonChangeLog, listChangeLogs, reviewPidAccess };
 }
 
 module.exports = { createMdmClient, MdmApiError };
