@@ -148,7 +148,8 @@ describe('trigger raw_row_guard_worker_source_data', () => {
   });
 });
 
-// ทดสอบ backfill และ reversibility: ถอย migration 043 ลง 1 ขั้น (ตารางมีแถว) แล้วขึ้นใหม่ - jest รัน --runInBand
+// ทดสอบ backfill และ reversibility: ถอย migration 043 (ตารางมีแถว) แล้วขึ้นใหม่ - ถอยทีละ 1 จนกว่า 043 จะถูกย้อน (migration ที่ใหม่กว่า 043 ถูกย้อนก่อนโดยอัตโนมัติ
+// ไม่ผูกกับ count:1 ซึ่งจะย้อนผิดตัวทันทีที่มี migration ใหม่กว่า) - jest รัน --runInBand
 // และ finally ขึ้นกลับเสมอ เพื่อไม่ให้ suite อื่นเห็นสถานะค้าง
 describe('migration 043: backfill loaded_at และ down/up', () => {
   const T_PID = '2026-01-10T00:00:00Z';
@@ -160,7 +161,13 @@ describe('migration 043: backfill loaded_at และ down/up', () => {
 
   test('down ลบ trigger/function/index/คอลัมน์ครบ; up backfill COALESCE(pid_loaded_at, imported_at, now())', async () => {
     await pool.query('TRUNCATE stg_hr.raw_row, stg_hr.import_batch CASCADE');
-    await migrate(DATABASE_URL, 'down', { count: 1 });
+    const applied043 = async () =>
+      (await pool.query(`SELECT 1 FROM pgmigrations WHERE name LIKE '%043_stg_hr_source_purge'`)).rowCount > 0;
+    for (let i = 0; i < 100 && (await applied043()); i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await migrate(DATABASE_URL, 'down', { count: 1 });
+    }
+    expect(await applied043()).toBe(false);
 
     const { rows: cols } = await pool.query(
       `SELECT column_name FROM information_schema.columns

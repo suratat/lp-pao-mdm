@@ -67,3 +67,55 @@ test(
   },
   120000
 );
+
+// migration 1700000000044: up -> down -> up เฉพาะตัวนี้ (ต่อจากเทสต์ด้านบนที่ปล่อยให้ DB อยู่ที่ "up" ครบ) - เดินถอยทีละ 1 จนกว่า 044 จะถูกย้อน
+// (ไม่ผูกกับ count:1 เพราะจะผิดตัวเมื่อมี migration ใหม่กว่า) แล้วตรวจฟังก์ชัน/สิทธิ์ทั้งสองทิศ และว่า partition ที่สร้างไว้ไม่หาย
+test(
+  'migration 044 (ensure_access_log_partition): up -> down -> up',
+  async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const FN = 'audit.ensure_access_log_partition(date)';
+    const state = async () => {
+      const {
+        rows: [row],
+      } = await pool.query(
+        `SELECT prosecdef, proconfig,
+                has_function_privilege('mdm_app', oid, 'EXECUTE') AS app_can,
+                has_function_privilege('mdm_worker', oid, 'EXECUTE') AS worker_can
+         FROM pg_proc WHERE oid = '${FN}'::regprocedure`
+      );
+      return row;
+    };
+    const partitions = async () =>
+      (
+        await pool.query(
+          `SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+           WHERE i.inhparent = 'audit.access_log'::regclass ORDER BY c.relname`
+        )
+      ).rows.map((r) => r.relname);
+    const applied = async () =>
+      (await pool.query(`SELECT 1 FROM pgmigrations WHERE name LIKE '%044_access_log_partition_ensure_definer'`)).rowCount > 0;
+
+    expect(await applied()).toBe(true);
+    expect(await state()).toMatchObject({ prosecdef: true, proconfig: ['search_path=pg_catalog, audit'], app_can: false, worker_can: true });
+    const partitionsUp = await partitions();
+    expect(partitionsUp.length).toBeGreaterThanOrEqual(5); // 4 เดือน + default
+
+    for (let i = 0; i < 100 && (await applied()); i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await migrate(DATABASE_URL, 'down', { count: 1 });
+    }
+    expect(await applied()).toBe(false);
+    // กลับเป็นฟังก์ชันเดิม: SECURITY INVOKER, ไม่มี search_path, EXECUTE ให้ PUBLIC (รวม mdm_app) - และ partition ที่สร้างไว้ยังอยู่
+    expect(await state()).toMatchObject({ prosecdef: false, proconfig: null, app_can: true });
+    expect(await partitions()).toEqual(partitionsUp);
+
+    await migrate(DATABASE_URL, 'up');
+    expect(await applied()).toBe(true);
+    expect(await state()).toMatchObject({ prosecdef: true, proconfig: ['search_path=pg_catalog, audit'], app_can: false, worker_can: true });
+    expect(await partitions()).toEqual(partitionsUp); // up ซ้ำบนเดือนที่มีอยู่แล้วไม่ error ไม่เกิด partition ซ้ำ
+
+    await pool.end();
+  },
+  120000
+);

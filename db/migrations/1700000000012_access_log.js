@@ -28,8 +28,10 @@ exports.up = (pgm) => {
 
   pgm.sql(`CREATE INDEX access_log_subject_accessed_idx ON audit.access_log (subject_person_id, accessed_at);`);
 
-  // สร้าง partition รายเดือนล่วงหน้า (เดือนปัจจุบัน + 2 เดือนถัดไป) และ default partition กันตกหล่น
-  // การสร้าง partition เดือนถัดไปเป็นงานบำรุงรักษาของ mdm-worker (T4) ฟังก์ชันนี้ให้ worker เรียกซ้ำได้ (idempotent)
+  // ตอน migrate นี้สร้าง partition 2 เดือน (เดือนปัจจุบัน + เดือนถัดไป) และ default partition กันตกหล่น (ดู 3 บรรทัดสุดท้ายของ up)
+  // การสร้างเดือนถัดๆ ไปเป็นงานบำรุงรักษาที่ต้องมีคนเรียก: ฟังก์ชันนี้เรียกซ้ำได้ (idempotent) แต่เดิมไม่มีใครเรียกและ worker
+  // เรียกเองไม่ได้ - แก้โดย migration 1700000000044 (SECURITY DEFINER + GRANT mdm_worker + สร้างล่วงหน้า 3 เดือน)
+  // และ worker job access-log-partition-ensure รายวัน (worker/src/jobs/accessLogPartitionEnsure.js)
   pgm.sql(`
     CREATE OR REPLACE FUNCTION audit.ensure_access_log_partition(for_month date)
     RETURNS void AS $$
