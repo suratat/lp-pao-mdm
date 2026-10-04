@@ -1,3 +1,4 @@
+const express = require('express');
 const request = require('supertest');
 const { buildTestApp } = require('../../api/test/testApp');
 const { createApp: createDpoConsoleApp } = require('../src/app');
@@ -32,15 +33,13 @@ function defaultScenarios() {
       scope: `openid ${ALL_CLIENT_SCOPES.join(' ')}`,
       expiresIn: 1,
     },
-    // เลียนแบบ revokeRefreshToken=true (refresh token ใช้ได้ครั้งเดียว) + หน่วงตอบ เพื่อให้ request พร้อมกันชนกัน
+    // เลียนแบบ revokeRefreshToken=true (refresh token ใช้ได้ครั้งเดียว) - เทสต์บังคับให้ token หมดอายุเองผ่าน sessionStore (ดู session.test.js)
     'rotating-code': {
       roles: ['dpo'],
       displayName: 'DPO refresh token หมุนเวียน',
       username: 'dpo.rotating',
       scope: DPO_SCOPE,
-      expiresIn: 1,
       rotateRefresh: true,
-      refreshDelayMs: 150,
     },
     'no-role-code': { roles: ['staff'], displayName: 'พนักงานทั่วไป', username: 'staff.user', scope: 'personnel:self' },
     'no-id-token-code': { roles: ['dpo'], omitIdToken: true, scope: DPO_SCOPE },
@@ -93,7 +92,7 @@ async function buildIntegrationHarness({ scenarios } = {}) {
   const mdmClient = createMdmClient({ baseUrl: apiBaseUrl });
 
   const sessionStore = createSessionStore();
-  const dpoConsoleApp = createDpoConsoleApp({
+  const innerDpoConsoleApp = createDpoConsoleApp({
     keycloakAuthClient,
     verifyIdToken,
     mdmClient,
@@ -101,9 +100,30 @@ async function buildIntegrationHarness({ scenarios } = {}) {
     isProduction: false,
   });
 
+  // นับ request ที่ "ถึงเซิร์ฟเวอร์แล้ว" (ก่อนเข้า authGate แบบ synchronous) - ให้เทสต์ single-flight รอจนครบทุกตัวโดยไม่ใช้เวลา
+  const arrivals = { count: 0, waiters: [] };
+  const dpoConsoleApp = express();
+  dpoConsoleApp.use((req, res, next) => {
+    arrivals.count += 1;
+    for (const w of arrivals.waiters.filter((x) => arrivals.count >= x.n)) w.resolve();
+    arrivals.waiters = arrivals.waiters.filter((x) => arrivals.count < x.n);
+    next();
+  });
+  dpoConsoleApp.use(innerDpoConsoleApp);
+  const requestArrivals = {
+    reset() {
+      arrivals.count = 0;
+    },
+    waitFor(n) {
+      if (arrivals.count >= n) return Promise.resolve();
+      return new Promise((resolve) => arrivals.waiters.push({ n, resolve }));
+    },
+  };
+
   return {
     apiCtx,
     dpoConsoleApp,
+    requestArrivals,
     sessionStore,
     mockKeycloak,
     async close() {
