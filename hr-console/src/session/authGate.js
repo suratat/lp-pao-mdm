@@ -1,3 +1,5 @@
+const { decodeScopes } = require('./tokenScopes');
+const { newCsrfToken } = require('./csrf');
 const { COOKIE_NAME, parseCookies, clearSessionCookie } = require('./sessionCookie');
 
 const REFRESH_BUFFER_MS = 15_000;
@@ -70,10 +72,18 @@ function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isPro
         if (!session) return res.redirect(302, '/auth/login'); // logout/หมดอายุระหว่างรอ refresh
       }
 
+      // session ที่สร้างก่อนมี CSRF token (ค้างอยู่ตอน deploy) -> ออก token ให้ตอนนี้
+      if (!session.csrfToken) {
+        sessionStore.update(sid, { csrfToken: newCsrfToken() });
+        session = sessionStore.get(sid);
+      }
+
       req.hrAuth = {
         accessToken: session.accessToken,
         displayName: session.displayName,
         isMasterDataAdmin: session.isMasterDataAdmin === true,
+        csrfToken: session.csrfToken,
+        scopes: decodeScopes(session.accessToken), // สำหรับ UI เท่านั้น ดู tokenScopes.js
       };
       return next();
     } catch (err) {

@@ -67,6 +67,7 @@ paths:
       description: |
         ค้นหาบุคลากรด้วยชื่อ สังกัด ตำแหน่ง หรือสถานะ คืนเฉพาะฟิลด์ตาม scope ของผู้เรียก
         โดยค่าเริ่มต้นคืนเฉพาะ `status = ACTIVE` การดู record ที่ INACTIVE ต้องมี scope `personnel:read:inactive`
+        ถ้าระบุ `status` ที่มี INACTIVE โดยไม่มี scope นี้ ตอบ 403 `insufficient-scope`
       operationId: searchPersons
       security:
         - keycloak: [personnel:read:basic]
@@ -105,6 +106,7 @@ paths:
           description: คืนเฉพาะ record ที่ `updatedAt` มากกว่าค่านี้ (ใช้ทำ incremental sync แบบง่าย)
           schema: { type: string, format: date-time }
         - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/PidFormat'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -215,6 +217,7 @@ paths:
         - keycloak: [personnel:read:basic]
       parameters:
         - $ref: '#/components/parameters/Fields'
+        - $ref: '#/components/parameters/PidFormat'
         - name: If-None-Match
           in: header
           description: ETag จากครั้งก่อน (`"<version>"`) เพื่อรับ 304 เมื่อไม่มีการเปลี่ยนแปลง
@@ -304,6 +307,7 @@ paths:
         - name: currentOnly
           in: query
           schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/PidFormat'
       responses:
         '200':
           description: รายการ employment (ปัจจุบันและประวัติ)
@@ -1249,6 +1253,7 @@ components:
             personnel:read:employment: วันบรรจุ, ระดับ, ประวัติการดำรงตำแหน่ง, เหตุพ้นจากราชการ
             personnel:read:photo: รูปถ่ายจาก ThaID
             personnel:read:inactive: เห็น record สถานะ INACTIVE (ลาออก/โอนย้าย)
+            personnel:read:pid_masked: เห็นเลขบัตรประชาชนแบบปิด เหลือ 4 หลักท้าย (employeeNoMasked)
             personnel:read:pid: ถอดรหัสเลขบัตรประชาชน (อนุมัติโดย DPO เป็นราย client)
             personnel:lookup:pid: ค้นหา personId จาก pid (ใช้ตอน migrate/เชื่อมครั้งแรก)
             personnel:self: ข้อมูลของตนเอง และแก้ไขข้อมูลติดต่อ/ความยินยอม (user context เท่านั้น)
@@ -1292,6 +1297,13 @@ components:
         ค่าที่ใช้ได้: basic, identity, contact, employment, emergencyContacts, verification
         ถ้าไม่ระบุ คืนทุกกลุ่มที่ scope อนุญาต
       schema: { type: string, examples: ['basic,employment'] }
+    PidFormat:
+      name: pidFormat
+      in: query
+      description: |
+        `masked` = ไม่คืนเลขบัตรประชาชนเต็ม (`employeeNo`) แม้ token จะมี `personnel:read:pid` (data minimization ฝั่ง API:
+        ผู้เรียกที่ต้องการแค่ `employeeNoMasked` ควรส่งค่านี้เสมอ) ไม่ส่ง = พฤติกรรมเดิมตาม scope
+      schema: { type: string, enum: [masked] }
     Cursor:
       name: cursor
       in: query
@@ -1450,6 +1462,14 @@ components:
               description: |
                 เลขประจำตัวข้าราชการ/พนักงาน = เลขบัตรประชาชนเสมอ (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยก
                 ต่างหาก) จึงต้องมี scope personnel:read:pid เท่านั้น (เดียวกับ pid_hash/pid_enc)
+            employeeNoMasked:
+              type: string
+              pattern: '^X-XXXX-XXXX\d-\d{2}-\d$'
+              x-required-scope: personnel:read:pid_masked
+              examples: ['X-XXXX-XXXX5-67-8']
+              description: |
+                เลขบัตรประชาชนที่ปิดด้วย API เหลือเฉพาะ 4 หลักท้าย (รูปแบบ X-XXXX-XXXX5-67-8) สำหรับให้เจ้าหน้าที่ยืนยันตัวตนบุคคล
+                ต้องมี scope personnel:read:pid_masked - ไม่มี scope = ไม่มี key นี้ในผลลัพธ์ API ไม่ส่งเลขเต็มออกไปแล้วค่อยปิดที่ฝั่งผู้เรียก
             personnelType: { $ref: '#/components/schemas/PersonnelType' }
             positionTitle: { type: string }
             positionNo: { type: string }

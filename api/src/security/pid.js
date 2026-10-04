@@ -81,6 +81,13 @@ function sha256Hex(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+// ปิดเลขบัตรประชาชนเหลือ 4 หลักท้าย รูปแบบ X-XXXX-XXXX5-67-8 (ทำที่ API เท่านั้น - ห้ามส่งเลขเต็มออกไปปิดที่ client)
+// คืน undefined ถ้าไม่ใช่เลข 13 หลัก (ข้อมูลเก่าที่รูปแบบผิด) เพื่อไม่ให้เดารูปแบบแล้วเผลอเปิดตัวเลขเกินที่ตั้งใจ
+function maskPid(value) {
+  if (typeof value !== 'string' || !/^\d{13}$/.test(value)) return undefined;
+  return `X-XXXX-XXXX${value[9]}-${value.slice(10, 12)}-${value[12]}`;
+}
+
 // --- สำหรับ test/dev เท่านั้น ห้ามใช้ในโค้ด production path ---
 // สร้างเลขบัตรปลอมที่ผ่าน checksum (ไม่ใช่เลขบัตรจริงของผู้ใด) ตามกฎข้อ 8 ของ CLAUDE.md
 function makeFakePid() {
@@ -97,6 +104,7 @@ module.exports = {
   canonicalJsonStringify,
   snapshotHash,
   sha256Hex,
+  maskPid,
   makeFakePid,
   IDENTITY_STRING_FIELDS,
   IDENTITY_PASSTHROUGH_FIELDS,

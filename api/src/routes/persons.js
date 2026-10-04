@@ -2,6 +2,9 @@ const express = require('express');
 const { requireScope } = require('../middleware/auth');
 const personService = require('../services/personService');
 const pidService = require('../services/pidService');
+const { HttpProblem } = require('../security/httpProblem');
+
+const SCOPE_READ_INACTIVE = 'personnel:read:inactive';
 
 function buildRequestMeta(req, extra = {}) {
   return {
@@ -19,6 +22,10 @@ function createPersonsRouter({ pool, vault, pepper }) {
   router.get('/persons', requireScope('personnel:read:basic'), async (req, res, next) => {
     try {
       const status = Array.isArray(req.query.status) ? req.query.status : req.query.status ? [req.query.status] : undefined;
+      // OpenAPI: การดู record ที่ INACTIVE ต้องมี personnel:read:inactive - ตรวจก่อนแตะ DB (403 ไม่ใช่ 500)
+      if (status?.includes('INACTIVE') && !(req.auth?.scope || []).includes(SCOPE_READ_INACTIVE)) {
+        throw new HttpProblem(403, 'insufficient-scope', 'สิทธิ์ไม่เพียงพอ', `ต้องมี scope "${SCOPE_READ_INACTIVE}" เพื่อค้นหาสถานะ INACTIVE`);
+      }
       const result = await personService.searchPersons(pool, {
         q: req.query.q,
         orgUnitId: req.query.orgUnitId,
@@ -84,7 +91,8 @@ function createPersonsRouter({ pool, vault, pepper }) {
           personId: req.params.personId,
           actor: req.auth,
           justification: req.query.justification,
-          requestMeta: buildRequestMeta(req),
+          // ตัด query string ออกจาก endpoint ใน access_log: justification มีคอลัมน์ของตัวเองแล้ว ไม่ต้องซ้ำใน endpoint
+          requestMeta: buildRequestMeta(req, { endpoint: req.originalUrl.split('?')[0] }),
         }
       );
       res.setHeader('Cache-Control', 'private, no-store');

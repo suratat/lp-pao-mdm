@@ -5,6 +5,11 @@ const { resolvePurposeCode } = require('./purposeCode');
 
 const PHOTO_KEY_NAME = 'mdm-photo';
 
+// ปิด wildcard ของ LIKE ที่ผู้ใช้พิมพ์มา (% _ \) ให้เป็นตัวอักษรธรรมดา - ยังส่งเป็น parameter เสมอ
+function escapeLike(value) {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
 // ค้นหาแบบง่าย: filter หลายเงื่อนไข + cursor pagination ด้วย person_id (เรียงลำดับคงที่ ไม่ใช่ offset)
 async function searchPersons(
   pool,
@@ -21,9 +26,21 @@ async function searchPersons(
     // ไม่ค้นหาด้วย e.employee_no อีกต่อไป เพราะ employeeNo = เลขบัตรประชาชน (pid) เสมอ (อบจ.ลำปางไม่มี
     // เลขประจำตัวข้าราชการแยกต่างหาก) - ถ้าให้ค้นหาได้ ผู้เรียกจะส่ง pid (หรือบางส่วน) ผ่าน query string
     // ของ URL ตรงๆ ซึ่งขัดกฎข้อ 1 ของ CLAUDE.md ("ห้าม pid ปรากฏใน ... URL/query string")
-    params.push(`${q}%`);
-    const qIdx = params.length;
-    conditions.push(`(pi.first_name_th ILIKE $${qIdx} OR pi.last_name_th ILIKE $${qIdx})`);
+    // PENDING_CLAIM ยังไม่มี person_identity (ยังไม่ผ่าน ThaID) ใช้ชื่อที่ HR คาดไว้ตอน provision/import แทน (ตรงกับที่ presenter แสดง)
+    const terms = q.trim().split(/\s+/).filter(Boolean);
+    if (terms.length <= 1) {
+      // คำเดียว: prefix ของชื่อหรือนามสกุล
+      params.push(`${escapeLike(terms[0] || '')}%`);
+      const qIdx = params.length;
+      conditions.push(`(COALESCE(pi.first_name_th, p.expected_first_name_th) ILIKE $${qIdx} OR COALESCE(pi.last_name_th, p.expected_last_name_th) ILIKE $${qIdx})`);
+    } else {
+      // "ชื่อ นามสกุล": prefix ของชื่อ และ prefix ของนามสกุล (คำที่เหลือต่อกันเป็นนามสกุล)
+      params.push(`${escapeLike(terms[0])}%`);
+      const firstIdx = params.length;
+      params.push(`${escapeLike(terms.slice(1).join(' '))}%`);
+      const lastIdx = params.length;
+      conditions.push(`(COALESCE(pi.first_name_th, p.expected_first_name_th) ILIKE $${firstIdx} AND COALESCE(pi.last_name_th, p.expected_last_name_th) ILIKE $${lastIdx})`);
+    }
   }
 
   if (orgUnitId) {

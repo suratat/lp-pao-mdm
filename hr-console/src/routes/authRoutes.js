@@ -1,4 +1,5 @@
 const express = require('express');
+const { newCsrfToken } = require('../session/csrf');
 const { randomState } = require('../security/keycloakAuthClient');
 const {
   COOKIE_NAME,
@@ -75,6 +76,7 @@ function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionStore, isP
         accessTokenExpiresAt: Date.now() + expiresIn * 1000,
         displayName: identity.displayName,
         isMasterDataAdmin: identity.isMasterDataAdmin,
+        csrfToken: newCsrfToken(),
       });
       clearLegacySessionCookie(res, { secure }); // ล้าง cookie JWE รุ่นเก่าที่อาจค้างในเบราว์เซอร์
       setSessionCookie(res, sid, { secure });

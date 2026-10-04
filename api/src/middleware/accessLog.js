@@ -39,6 +39,16 @@ function flattenFieldPaths(value, prefix = '', out = []) {
   return out;
 }
 
+// operation ที่คืนรายการบุคคล (ไม่มี personId เดียวใน path) - เขียน access_log หนึ่งแถวต่อบุคคลที่อยู่ในผลลัพธ์
+// ไม่งั้นการค้นหาแล้วเห็นข้อมูลคนทั้งหน้าจะไม่มีร่องรอยใน audit เลย
+const LIST_OPERATIONS = new Set(['searchPersons']);
+
+// ?pidFormat=masked = ผู้เรียกขอไม่รับเลขเต็มแม้มี personnel:read:pid -> ตัดฟิลด์ที่ผูกกับ scope นั้นออกเหมือนไม่มี scope
+function effectiveScopes(req) {
+  const scopes = req.auth?.scope || [];
+  return req.query?.pidFormat === 'masked' ? scopes.filter((s) => s !== 'personnel:read:pid') : scopes;
+}
+
 function extractSubjectPersonId(req, body) {
   return req.params.personId || body?.personId || req.auth?.personId || null;
 }
@@ -59,7 +69,7 @@ function personalDataResponseMiddleware(spec, pool) {
         if (operation && !BYPASS_MASK_OPERATIONS.has(operationId)) {
           const schema = getResponseSchemaForOperation(spec, operation, res.statusCode);
           if (schema) {
-            finalBody = maskBySchema(schema, finalBody, req.auth?.scope || []);
+            finalBody = maskBySchema(schema, finalBody, effectiveScopes(req));
           }
         }
         if (
@@ -68,22 +78,38 @@ function personalDataResponseMiddleware(spec, pool) {
           req.auth &&
           res.statusCode < 400
         ) {
-          const subjectPersonId = extractSubjectPersonId(req, finalBody);
-          if (subjectPersonId) {
+          const subjects = LIST_OPERATIONS.has(operationId)
+            ? (Array.isArray(finalBody?.data) ? finalBody.data : [])
+                .filter((item) => item?.personId)
+                .map((item) => ({ personId: item.personId, fields: flattenFieldPaths(item) }))
+            : [extractSubjectPersonId(req, finalBody)]
+                .filter(Boolean)
+                .map((personId) => ({ personId, fields: flattenFieldPaths(finalBody) }));
+
+          if (subjects.length > 0) {
             const purposeCode = await resolvePurposeCode(pool, req.auth.azp);
+            // แถวเดียวต่อบุคคล ใน query เดียว (ผลค้นหาหนึ่งหน้า <= 100 แถว)
+            const values = [];
+            const placeholders = subjects.map((subject, i) => {
+              const base = i * 2;
+              values.push(subject.personId, JSON.stringify(subject.fields));
+              return `($${base + 1}, $${base + 2})`;
+            });
+            const shared = values.length;
             await pool.query(
               `INSERT INTO audit.access_log
                 (subject_person_id, actor_type, actor_sub, keycloak_client_id, endpoint, http_method,
                  fields_returned, purpose_code, justification, request_id, client_ip, response_status)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+               SELECT v.subject_person_id::uuid, $${shared + 1}::text, $${shared + 2}::text, $${shared + 3}::text, $${shared + 4}::text, $${shared + 5}::text,
+                      v.fields_returned::jsonb, $${shared + 6}::text, $${shared + 7}::text, $${shared + 8}::text, $${shared + 9}::inet, $${shared + 10}::int
+               FROM (VALUES ${placeholders.join(', ')}) AS v(subject_person_id, fields_returned)`,
               [
-                subjectPersonId,
+                ...values,
                 req.auth.personId ? 'USER' : 'SERVICE',
                 req.auth.sub || null,
                 req.auth.azp || null,
                 req.originalUrl,
                 req.method,
-                JSON.stringify(flattenFieldPaths(finalBody)),
                 purposeCode,
                 req.query.justification || null,
                 req.id || null,

@@ -6,6 +6,20 @@ class MdmApiError extends Error {
   }
 }
 
+// ชั้นป้องกันที่สอง: ลบ key employeeNo (เลขบัตรประชาชนเต็ม) ออกจากทุก response ที่ไม่ใช่ revealPid ก่อนคืนให้ caller
+// ชั้นแรกคือ ?pidFormat=masked ที่ API ไม่ส่งเลขเต็มมาตั้งแต่ต้น - ถ้าหลุดมาก็ไม่ไปถึง view หรือ log (ลบแบบ recursive ทุกชั้น)
+function stripEmployeeNo(value) {
+  if (Array.isArray(value)) return value.map(stripEmployeeNo);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, v] of Object.entries(value)) {
+      if (key !== 'employeeNo') out[key] = stripEmployeeNo(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 // เรียก MDM API ด้วย access token ของผู้ใช้ hr_officer ที่ล็อกอินอยู่ตรง ๆ (ไม่ต้องมี X-Acting-Person
 // เหมือน Portal เพราะ scope personnel:provision/personnel:write:employment ไม่ใช่ user context
 // (personnel:self) - token ของ HR เองมี scope พวกนี้อยู่แล้วจาก client scope ของ hr-console ใน Keycloak)
@@ -93,7 +107,49 @@ function createMdmClient({ baseUrl }) {
     return call('PUT', `/api/v1/positions/${encodeURIComponent(positionId)}`, accessToken, body);
   }
 
+  // งานดูข้อมูลบุคคล (อ่านอย่างเดียว): ฝัง pidFormat=masked ไว้ในฟังก์ชัน caller เลือกเองไม่ได้ และผ่าน stripEmployeeNo เสมอ
+  // person_id ผ่าน encodeURIComponent; query string มีแค่ filter/q/cursor (ไม่มี pid)
+  async function searchPersons(accessToken, { q, status, orgUnitId, personnelType, cursor, limit } = {}) {
+    const qs = new URLSearchParams();
+    if (q) qs.set('q', q);
+    if (status && status.length > 0) qs.set('status', status.join(','));
+    if (orgUnitId) {
+      qs.set('orgUnitId', orgUnitId);
+      qs.set('includeChildUnits', 'true');
+    }
+    if (personnelType) qs.set('personnelType', personnelType);
+    if (cursor) qs.set('cursor', cursor);
+    qs.set('limit', String(limit || 50));
+    qs.set('pidFormat', 'masked');
+    // URLSearchParams เข้ารหัสช่องว่างเป็น '+' แต่ validator ของ MDM API ปฏิเสธ '+' ใน q (400) - ใช้ %20 ให้ค้น "ชื่อ นามสกุล" ได้
+    const query = qs.toString().replace(/\+/g, '%20');
+    return stripEmployeeNo(await call('GET', `/api/v1/persons?${query}`, accessToken));
+  }
+
+  async function getPerson(accessToken, personId) {
+    return stripEmployeeNo(await call('GET', `/api/v1/persons/${encodeURIComponent(personId)}?pidFormat=masked`, accessToken));
+  }
+
+  async function getEmployment(accessToken, personId) {
+    return stripEmployeeNo(await call('GET', `/api/v1/persons/${encodeURIComponent(personId)}/employment?pidFormat=masked`, accessToken));
+  }
+
+  // เฉพาะฟังก์ชันนี้ที่คืนเลขเต็ม (GET /persons/{id}/pid - API บันทึกเหตุผลและผู้กดลง access_log) คืนแค่สตริงเลข ไม่คืน object
+  // ที่มีเหตุผล ห้าม caller เก็บค่านี้ลง session/log - justification ส่งเป็น query ตามสัญญา API (server-to-server) ไม่ผ่านเบราว์เซอร์
+  async function revealPid(accessToken, personId, justification) {
+    const data = await call(
+      'GET',
+      `/api/v1/persons/${encodeURIComponent(personId)}/pid?justification=${encodeURIComponent(justification)}`,
+      accessToken
+    );
+    return data.pid;
+  }
+
   return {
+    searchPersons,
+    getPerson,
+    getEmployment,
+    revealPid,
     listClaimRequests,
     resolveClaimRequest,
     listStalePersons,
@@ -108,4 +164,4 @@ function createMdmClient({ baseUrl }) {
   };
 }
 
-module.exports = { createMdmClient, MdmApiError };
+module.exports = { createMdmClient, MdmApiError, stripEmployeeNo };
