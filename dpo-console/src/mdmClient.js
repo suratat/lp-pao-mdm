@@ -71,7 +71,27 @@ function createMdmClient({ baseUrl }) {
     });
   }
 
-  return { listAccessLogs, getPersonChangeLog, listChangeLogs, reviewPidAccess };
+  // GET /audit/alerts (audit:read)
+  function listAlerts(accessToken, { status, ruleCode, from, to, actorSub, cursor, limit } = {}) {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries({ status, ruleCode, from, to, actorSub, cursor })) {
+      if (value) qs.set(key, value);
+    }
+    if (limit) qs.set('limit', String(limit));
+    const query = qs.toString();
+    return call('GET', `/api/v1/audit/alerts${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  // POST /audit/alerts/{alertId}/ack | /close (scope audit:review + role dpo)
+  function ackAlert(accessToken, alertId, { note } = {}) {
+    return call('POST', `/api/v1/audit/alerts/${encodeURIComponent(alertId)}/ack`, accessToken, note ? { note } : {});
+  }
+
+  function closeAlert(accessToken, alertId, { note }) {
+    return call('POST', `/api/v1/audit/alerts/${encodeURIComponent(alertId)}/close`, accessToken, { note });
+  }
+
+  return { listAccessLogs, getPersonChangeLog, listChangeLogs, reviewPidAccess, listAlerts, ackAlert, closeAlert };
 }
 
 module.exports = { createMdmClient, MdmApiError };

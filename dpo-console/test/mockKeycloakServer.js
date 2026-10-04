@@ -14,9 +14,12 @@ const { SignJWT } = require('jose');
 //   padRoles: N     เพิ่ม realm role ปลอม N ตัวใน id_token/access_token (จำลอง token ใหญ่ผิดปกติ)
 //   rotateRefresh   เลียนแบบ realm ที่ revokeRefreshToken=true: refresh token ใช้ได้ครั้งเดียว ใช้ซ้ำ -> invalid_grant
 //   refreshDelayMs  หน่วงตอบ refresh_token grant (ขยายช่วงเวลาที่ request พร้อมกันจะชนกัน)
+const MIN_ACCESS_JWT_LIFETIME_S = 60;
+
 function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSecret, scenarios }) {
   const stats = { refreshGrants: 0, invalidGrants: 0 };
   const validRefreshTokens = new Set(); // ใช้กับ rotateRefresh
+  let refreshGate = null; // holdRefresh(): ค้างคำขอ refresh_token grant ไว้จนกว่าเทสต์จะสั่งปล่อย (ไม่พึ่งเวลา)
   let refreshSeq = 0;
 
   const rolesOf = (def) => [...def.roles, ...Array.from({ length: def.padRoles ?? 0 }, (_, i) => `padding-role-${String(i).padStart(4, '0')}`)];
@@ -52,7 +55,10 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
       azp: dpoConsoleClientId,
       // Keycloak client scope "roles" ใส่ realm_access.roles ใน access token ด้วย (ยืนยันกับ Keycloak 26 จริงแล้ว)
       realmRoles: rolesOf(def),
-      expiresIn: `${def.expiresIn ?? 300}s`,
+      // อายุของ JWT แยกจาก expires_in ที่ตอบกลับ (ซึ่งเป็นตัวที่ authGate ใช้ตัดสินว่าต้อง refresh): JWT exp มีความละเอียด 1 วินาที
+      // และ iat ถูกตัดเศษวินาที (ออก token ตอน x.97s อายุ 1s = หมดอายุอีก 30ms) scenario ที่ตั้ง expiresIn=1 เพื่อบังคับ refresh จึงทำให้
+      // MDM API ปฏิเสธ token ใหม่ด้วย 401 เป็นครั้งคราวตามจังหวะวินาที (ไม่เกี่ยวกับ logic ของ console) - ให้ JWT อายุไม่ต่ำกว่านี้เสมอ
+      expiresIn: `${Math.max(def.expiresIn ?? 300, MIN_ACCESS_JWT_LIFETIME_S)}s`,
     });
     return {
       access_token: accessToken,
@@ -90,6 +96,10 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
           scenarioName = refreshToken.startsWith('refresh-for-') ? refreshToken.slice('refresh-for-'.length).split('~')[0] : null;
           const def = scenarioName ? scenarios[scenarioName] : null;
           if (def?.refreshDelayMs) await new Promise((resolve) => setTimeout(resolve, def.refreshDelayMs));
+          if (refreshGate) {
+            refreshGate.markRequested();
+            await refreshGate.released;
+          }
           if (def?.rotateRefresh) {
             // revokeRefreshToken=true: ใช้ได้ครั้งเดียว ตัวที่ถูกใช้แล้ว/ไม่รู้จัก -> invalid_grant
             if (!validRefreshTokens.delete(refreshToken)) scenarioName = null;
@@ -111,6 +121,26 @@ function createMockKeycloakServer({ auth, dpoConsoleClientId, dpoConsoleClientSe
 
   return {
     stats,
+    // ค้าง refresh_token grant ทุกคำขอไว้ที่ mock: คืน { requested (Promise: มีคำขอ refresh มาถึง mock แล้ว), release() }
+    // ใช้ทดสอบ single-flight แบบกำหนดผลได้แน่นอน - รอให้ request พร้อมกันทุกตัวเข้ามาค้างที่ authGate ก่อนแล้วค่อยปล่อย
+    holdRefresh() {
+      let markRequested;
+      let release;
+      const requested = new Promise((resolve) => {
+        markRequested = resolve;
+      });
+      const released = new Promise((resolve) => {
+        release = resolve;
+      });
+      refreshGate = { markRequested, released };
+      return {
+        requested,
+        release() {
+          refreshGate = null;
+          release();
+        },
+      };
+    },
     async listen() {
       await new Promise((resolve) => server.listen(0, resolve));
       const { port } = server.address();

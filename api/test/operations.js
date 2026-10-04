@@ -170,7 +170,24 @@ async function seedFixtures({ adminPool, vault }) {
     [readPersonId, `/api/v1/persons/${readPersonId}/pid`]
   );
 
+  // PR-C: alert สองรายการ (ให้ ack และ close อย่างละตัว) ของ actor อื่น - สร้างตรงด้วย adminPool (worker เท่านั้นที่เขียนตารางนี้จริง)
+  const insertAlert = async (suffix) =>
+    Number(
+      (
+        await adminPool.query(
+          `INSERT INTO audit.access_alert (rule_code, dedupe_key, severity, actor_sub, actor_client, window_start, window_end, metric_count, threshold, details)
+           VALUES ('BULK_VIEW', $1, 'HIGH', 'contract-alert-subject', 'hr-console', now() - interval '10 minutes', now(), 31, 30, '{"distinctPersons": 31, "windowMinutes": 10}')
+           RETURNING alert_id`,
+          [`CONTRACT:${suffix}:${crypto.randomUUID()}`]
+        )
+      ).rows[0].alert_id
+    );
+  const alertForAckId = await insertAlert('ack');
+  const alertForCloseId = await insertAlert('close');
+
   return {
+    alertForAckId,
+    alertForCloseId,
     pidRevealAccessId: Number(revealRows[0].access_id),
     pidRevealAccessedAt: revealRows[0].accessed_at.toISOString(),
     orgUnitId,
@@ -549,6 +566,27 @@ function buildOperationDescriptors() {
       scope: 'audit:review',
       roles: ['dpo'],
       body: (ids) => ({ accessedAt: ids.pidRevealAccessedAt, status: 'REVIEWED', note: 'ตรวจแล้ว' }),
+      expectStatus: 201,
+    },
+    { name: 'listAccessAlerts', method: 'get', pathTemplate: '/audit/alerts', path: () => '/audit/alerts', scope: 'audit:read', expectStatus: 200 },
+    {
+      name: 'ackAccessAlert',
+      method: 'post',
+      pathTemplate: '/audit/alerts/:alertId/ack',
+      path: (ids) => `/audit/alerts/${ids.alertForAckId}/ack`,
+      scope: 'audit:review',
+      roles: ['dpo'],
+      body: { note: 'รับทราบ' },
+      expectStatus: 201,
+    },
+    {
+      name: 'closeAccessAlert',
+      method: 'post',
+      pathTemplate: '/audit/alerts/:alertId/close',
+      path: (ids) => `/audit/alerts/${ids.alertForCloseId}/close`,
+      scope: 'audit:review',
+      roles: ['dpo'],
+      body: { note: 'ตรวจสอบแล้ว เป็นงานปกติ' },
       expectStatus: 201,
     },
     {

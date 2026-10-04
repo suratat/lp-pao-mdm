@@ -39,6 +39,12 @@ function layout(title, bodyHtml, { displayName } = {}) {
     .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 0.75rem; font-size: 0.85em; background: #eee; }
     .badge-service { background: #e2e3ff; }
     .badge-user { background: #dff5e1; }
+    .badge-open { background: #ffd9d9; }
+    .badge-ack { background: #fff3c4; }
+    .badge-closed { background: #dff5e1; }
+    .badge-high { background: #ffd9d9; }
+    .badge-medium { background: #fff3c4; }
+    .badge-low { background: #eee; }
     .badge-pending { background: #fff3c4; }
     .badge-reviewed { background: #dff5e1; }
     .badge-needs_explanation { background: #ffd9d9; }
@@ -49,6 +55,7 @@ function layout(title, bodyHtml, { displayName } = {}) {
 <body>
   <nav>
     <a href="/dpo/access-logs">Access Log</a>
+    <a href="/dpo/alerts">แจ้งเตือนผิดปกติ</a>
     <a href="/dpo/pid-reveals">การเปิดเลขบัตร</a>
     <a href="/dpo/change-logs">ประวัติการเปลี่ยนแปลง</a>
     <a href="/auth/logout">ออกจากระบบ</a>

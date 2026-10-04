@@ -1285,6 +1285,131 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
 
+  /audit/alerts:
+    get:
+      tags: [Audit]
+      summary: Access anomaly alerts (DPO / auditor)
+      description: |
+        แจ้งเตือนพฤติกรรมการเข้าถึงข้อมูลผิดปกติที่ worker job `access-anomaly-scan` ตรวจพบ (เรียงใหม่ -> เก่า)
+        กฎ: `BULK_VIEW` (เปิดดูบุคคลหลายคนในเวลาสั้น), `OFF_HOURS` (นอกเวลาราชการ จ.-ศ. 08:30-16:30 เวลาไทย รวมเสาร์-อาทิตย์),
+        `PID_REVEAL_FREQUENT` (เปิดเลขบัตรบ่อย) - ค่าเกณฑ์ตั้งจาก env ของ worker
+        สถานะคำนวณจากการกระทำล่าสุด: ไม่มี = `OPEN`, รับทราบ = `ACK`, ปิดเรื่อง = `CLOSED`
+        `details` มีเฉพาะตัวเลข/พารามิเตอร์ของกฎ ไม่มี pid ไม่มีชื่อ และไม่มี personId ของผู้ถูกเข้าถึง (ไล่ดูได้จาก access log ด้วย actor + ช่วงเวลา)
+      operationId: listAccessAlerts
+      security:
+        - keycloak: [audit:read]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [OPEN, ACK, CLOSED] }
+        - name: ruleCode
+          in: query
+          schema: { type: string, enum: [BULK_VIEW, OFF_HOURS, PID_REVEAL_FREQUENT] }
+        - name: from
+          in: query
+          description: ตรวจพบตั้งแต่ (detectedAt)
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actorSub
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: รายการ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AccessAlert' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+
+  /audit/alerts/{alertId}/ack:
+    post:
+      tags: [Audit]
+      summary: Acknowledge an access anomaly alert (DPO only)
+      description: |
+        รับทราบ alert (เฉพาะที่ยัง `OPEN`) ต้องมี scope `audit:review` **และ** realm role `dpo`
+        ห้ามดำเนินการกับ alert ที่เกิดจากบัญชีของตนเอง (403 `self-alert-forbidden`)
+        409 `already-acknowledged` / `already-closed`; `note` ห้ามมีเลข 13 หลัก (422)
+      operationId: ackAccessAlert
+      security:
+        - keycloak: [audit:review]
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: บันทึกการรับทราบแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessAlertAction' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: alert อยู่ในสถานะที่ทำรายการนี้ไม่ได้
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: note มีเลข 13 หลัก
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /audit/alerts/{alertId}/close:
+    post:
+      tags: [Audit]
+      summary: Close an access anomaly alert with a note (DPO only)
+      description: |
+        ปิดเรื่อง (จาก `OPEN` หรือ `ACK`) **ต้องมี `note`** (ผลการตรวจสอบ) ต้องมี scope `audit:review` **และ** realm role `dpo`
+        ห้ามดำเนินการกับ alert ที่เกิดจากบัญชีของตนเอง (403 `self-alert-forbidden`); ปิดแล้วทำอะไรต่อไม่ได้ (409 `already-closed`)
+      operationId: closeAccessAlert
+      security:
+        - keycloak: [audit:review]
+      parameters:
+        - $ref: '#/components/parameters/AlertId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: ปิดเรื่องแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessAlertAction' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: alert ถูกปิดไปแล้ว
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: ไม่ได้ระบุ note หรือ note มีเลข 13 หลัก
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
   # ----------------------------------------------------------------- System
   /health:
     get:
@@ -1423,6 +1548,11 @@ components:
         `masked` = ไม่คืนเลขบัตรประชาชนเต็ม (`employeeNo`) แม้ token จะมี `personnel:read:pid` (data minimization ฝั่ง API:
         ผู้เรียกที่ต้องการแค่ `employeeNoMasked` ควรส่งค่านี้เสมอ) ไม่ส่ง = พฤติกรรมเดิมตาม scope
       schema: { type: string, enum: [masked] }
+    AlertId:
+      name: alertId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
     Cursor:
       name: cursor
       in: query
@@ -2113,6 +2243,36 @@ components:
         note: { type: [string, 'null'] }
         reviewerSub: { type: string }
         reviewedAt: { type: string, format: date-time }
+
+    AccessAlert:
+      type: object
+      properties:
+        alertId: { type: integer, format: int64 }
+        ruleCode: { type: string, enum: [BULK_VIEW, OFF_HOURS, PID_REVEAL_FREQUENT] }
+        severity: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        status: { type: string, enum: [OPEN, ACK, CLOSED] }
+        actorSub: { type: [string, 'null'] }
+        actorClient: { type: [string, 'null'] }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        metricCount: { type: integer }
+        threshold: { type: integer }
+        details: { type: object, description: ตัวเลข/พารามิเตอร์ของกฎเท่านั้น }
+        detectedAt: { type: string, format: date-time }
+        lastActionBy: { type: [string, 'null'] }
+        lastActionAt: { type: [string, 'null'], format: date-time }
+        lastActionNote: { type: [string, 'null'] }
+
+    AccessAlertAction:
+      type: object
+      properties:
+        actionId: { type: integer, format: int64 }
+        alertId: { type: integer, format: int64 }
+        action: { type: string, enum: [ACK, CLOSE] }
+        note: { type: [string, 'null'] }
+        actorSub: { type: string }
+        createdAt: { type: string, format: date-time }
+        status: { type: string, enum: [OPEN, ACK, CLOSED], description: สถานะของ alert หลังการกระทำนี้ }
 
     PageInfo:
       type: object

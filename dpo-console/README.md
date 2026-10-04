@@ -51,6 +51,17 @@ Express app แยกจาก `api/`, `worker/`, `portal/`, `hr-console/` — �
    - หมายเหตุห้ามมีเลข 13 หลัก (422) และ `NEEDS_EXPLANATION` ต้องมีหมายเหตุ รีวิวซ้ำได้ (append-only ผลล่าสุดคือสถานะปัจจุบัน)
    - แนวคิดสถานะ: `PENDING` ไม่เก็บเป็นแถว = ยังไม่มีผลรีวิว (migration 1700000000047) ขั้นตอนตั้ง scope ใน Keycloak: `infra/keycloak/README.md`
 
+5. `GET /dpo/alerts` — แจ้งเตือนพฤติกรรมการเข้าถึงข้อมูลผิดปกติ (`GET /audit/alerts`, scope `audit:read`) ที่ worker job `access-anomaly-scan`
+   (ทุก 5 นาที) ตรวจพบ: `BULK_VIEW` (เปิดดูบุคคลหลายคนในเวลาสั้น), `OFF_HOURS` (นอกเวลาราชการ จ.-ศ. 08:30-16:30 เวลาไทย รวมเสาร์-อาทิตย์),
+   `PID_REVEAL_FREQUENT` (เปิดเลขบัตรบ่อย) ค่าเกณฑ์ตั้งจาก env ของ worker (ดู `infra/.env.staging.example`) กรองสถานะ (ค่าเริ่มต้น `OPEN`) กฎ ช่วงเวลา และบัญชี
+   `POST /dpo/alerts/{id}/ack|close` รับทราบ/ปิดเรื่อง (scope `audit:review` **และ** realm role `dpo`, CSRF เหมือนหน้า `/dpo/pid-reveals`):
+   - สถานะคำนวณจากการกระทำล่าสุด: ไม่มี = `OPEN`, รับทราบ = `ACK`, ปิดเรื่อง = `CLOSED` (ตาราง append-only); **ปิดเรื่องต้องมีหมายเหตุ**
+     ห้ามมีเลข 13 หลัก; ปิดแล้วทำอะไรต่อไม่ได้ (409) ไม่มีการเปิดใหม่ - ถ้าพฤติกรรมเกิดซ้ำใน bucket ถัดไป ระบบสร้าง alert ใหม่เอง
+   - **ผู้ถูกแจ้งเตือนรับทราบ/ปิด alert ของตัวเองไม่ได้** (403 `self-alert-forbidden`)
+   - `auditor` เห็นรายการแต่ไม่เห็นฟอร์ม (เหมือน `/dpo/pid-reveals`)
+   - alert ไม่มีตัวตนของผู้ถูกเข้าถึง (เก็บแค่จำนวน/ช่วงเวลา/ผู้เข้าถึง) มีลิงก์ไปหน้า access log ตามช่วงเวลาและ client นั้นเพื่อไล่ดูรายละเอียด
+   - Telegram (opt-in ที่ฝั่ง worker: `DPO_TELEGRAM_BOT_TOKEN` + `DPO_TELEGRAM_CHAT_ID` ไม่ตั้ง = ปิด) ส่งเฉพาะ alert ใหม่ ข้อความไม่มี pid/ชื่อ
+
 ### "ประเภท action" (actorType) — จงใจไม่แก้ API contract
 
 MVP นี้ขอกรอง "ประเภท action" แต่ `AccessLogEntry` ที่มีอยู่ไม่มีฟิลด์ที่ตรงความหมายนั้นตรง ๆ — DB มี

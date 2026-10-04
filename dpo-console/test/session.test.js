@@ -91,13 +91,25 @@ describe('1) ขนาด cookie: ไม่เกิน 4096 (และ ~200) �
 
 describe('2) silent refresh + single-flight (กัน invalid_grant จาก race)', () => {
   test('request พร้อมกัน 8 ตัวตอน token ใกล้หมดอายุ (refresh token ใช้ได้ครั้งเดียว) -> เรียก Keycloak refresh ครั้งเดียว ทุกตัวได้ 200 ไม่มี invalid_grant', async () => {
-    const { agent } = await login(harness.dpoConsoleApp, 'rotating-code');
+    const { agent, sid } = await login(harness.dpoConsoleApp, 'rotating-code');
     const stats = harness.mockKeycloak.stats;
+    const path = '/dpo/access-logs';
 
     for (let wave = 1; wave <= 3; wave += 1) {
+      // บังคับให้ token หมดอายุตอนนี้ (token ที่ออกใหม่อายุ 300 วินาที ไม่ใช่ 1 วินาที) - request ที่มาถึงหลัง refresh เสร็จจึงเห็น token
+      // ใหม่ที่ยังดีและไม่ refresh ซ้ำ ผลจึงไม่ขึ้นกับว่า request มาถึงเร็วช้าแค่ไหน
+      harness.sessionStore.update(sid, { accessTokenExpiresAt: Date.now() });
       const before = { ...stats };
-      // eslint-disable-next-line no-await-in-loop
-      const results = await Promise.all(Array.from({ length: 8 }, () => agent.get('/dpo/access-logs')));
+      const gate = harness.mockKeycloak.holdRefresh();
+      harness.requestArrivals.reset();
+
+      // ค้าง refresh ไว้ที่ mock จนกว่า request ทั้ง 8 จะเข้ามาถึง authGate (ทุกตัวเห็น token หมดอายุและต้องรอ promise เดียวกัน)
+      const all = Promise.all(Array.from({ length: 8 }, () => agent.get(path)));
+      await harness.requestArrivals.waitFor(8);
+      await gate.requested;
+      gate.release();
+
+      const results = await all;
       expect(results.map((r) => r.status)).toEqual(Array(8).fill(200));
       expect(stats.refreshGrants - before.refreshGrants).toBe(1);
       expect(stats.invalidGrants - before.invalidGrants).toBe(0);
@@ -107,6 +119,7 @@ describe('2) silent refresh + single-flight (กัน invalid_grant จาก r
   test('หลัง refresh: token ใน store เปลี่ยนเป็นตัวใหม่ (refresh token หมุนเวียน) และ session เดิมยังใช้ต่อได้', async () => {
     const { agent, sid } = await login(harness.dpoConsoleApp, 'rotating-code');
     const before = harness.sessionStore.get(sid).refreshToken;
+    harness.sessionStore.update(sid, { accessTokenExpiresAt: Date.now() }); // บังคับให้ต้อง refresh (token ใหม่อายุ 300 วินาที)
     expect((await agent.get('/dpo/access-logs')).status).toBe(200);
     const after = harness.sessionStore.get(sid).refreshToken;
     expect(after).not.toBe(before);
@@ -115,6 +128,7 @@ describe('2) silent refresh + single-flight (กัน invalid_grant จาก r
 
   test('refresh ถูก Keycloak ปฏิเสธ (invalid_grant) -> ลบ session, ล้าง cookie, redirect login', async () => {
     const { agent, sid } = await login(harness.dpoConsoleApp, 'rotating-code');
+    harness.sessionStore.update(sid, { accessTokenExpiresAt: Date.now() }); // หมดอายุแล้ว -> ต้องพยายาม refresh
     harness.sessionStore.update(sid, { refreshToken: 'refresh-for-rotating-code~999999' }); // ไม่เคยออกให้ = ใช้ไม่ได้
     const res = await agent.get('/dpo/access-logs');
     expect(res.status).toBe(302);
