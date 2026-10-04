@@ -46,7 +46,18 @@ function createMdmClient({ baseUrl }) {
     return call('GET', `/api/v1/persons/${encodeURIComponent(personId)}/change-log${query ? `?${query}` : ''}`, accessToken);
   }
 
-  return { listAccessLogs, getPersonChangeLog };
+  // GET /audit/change-logs - source=PERSON|REFERENCE (ตัวกรองที่ไม่เกี่ยวกับ source นั้นต้องไม่ส่ง ไม่งั้น API ตอบ 400)
+  function listChangeLogs(accessToken, { source, from, to, actorSub, tableName, personId, changedBy, action, cursor, limit } = {}) {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries({ source, from, to, actorSub, tableName, personId, changedBy, action, cursor })) {
+      if (value) qs.set(key, value);
+    }
+    if (limit) qs.set('limit', String(limit));
+    const query = qs.toString();
+    return call('GET', `/api/v1/audit/change-logs${query ? `?${query}` : ''}`, accessToken);
+  }
+
+  return { listAccessLogs, getPersonChangeLog, listChangeLogs };
 }
 
 module.exports = { createMdmClient, MdmApiError };

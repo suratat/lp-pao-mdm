@@ -3,6 +3,7 @@ const request = require('supertest');
 const { Pool } = require('pg');
 const { buildIntegrationHarness, loginAsDpo } = require('./testHarness');
 const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
+const { makeFakePid } = require('../../api/src/security/pid');
 
 let harness;
 let adminPool;
@@ -170,7 +171,7 @@ describe('DPO Console: person change-log', () => {
     expect(res.text).toContain('identity.first_name_th');
     expect(res.text).toContain('เก่า');
     expect(res.text).toContain('person.pid_hash');
-    expect(res.text).toContain('(ปกปิด/ไม่มีค่า)');
+    expect(res.text).toContain('(ปกปิด)');
   });
 
   test('กรองด้วย since -> ตัด entry ก่อนวันที่ระบุออก', async () => {
@@ -188,6 +189,116 @@ describe('DPO Console: person change-log', () => {
   test('ไม่ได้ล็อกอิน -> redirect ไป login', async () => {
     const personId = await makePerson();
     const res = await request(harness.dpoConsoleApp).get(`/dpo/persons/${personId}/change-log`);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/auth/login');
+  });
+});
+
+describe('DPO Console: ประวัติการเปลี่ยนแปลงทั้งระบบ (/dpo/change-logs)', () => {
+  test('แสดงผู้กระทำ/ client และปกปิดค่าของฟิลด์ CONFIDENTIAL แต่แสดงชื่อฟิลด์', async () => {
+    const personId = await makePerson();
+    const actorSub = `hr-${crypto.randomUUID()}`;
+    await adminPool.query(
+      `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, actor_sub, actor_client)
+       VALUES ($1, 'person_contact', 'contact.mobile_phone', $2, $3, 'SELF', $4, 'mdm-portal')`,
+      [personId, JSON.stringify('0811111111'), JSON.stringify('0822222222'), actorSub]
+    );
+
+    const agent = await loginAsDpo(harness.dpoConsoleApp);
+    const res = await agent.get('/dpo/change-logs').query({ actorSub });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('contact.mobile_phone');
+    expect(res.text).toContain(actorSub);
+    expect(res.text).toContain('mdm-portal');
+    expect(res.text).toContain('(ปกปิด)');
+    expect(res.text).not.toContain('0811111111');
+    expect(res.text).not.toContain('0822222222');
+    expect(res.text).toContain(`/dpo/persons/${personId}/change-log`);
+  });
+
+  test('แถวที่ไม่มี actor แสดง "ไม่ทราบ" ไม่ใช่ว่างเปล่า', async () => {
+    const personId = await makePerson();
+    await insertChangeLog(personId, { fieldName: 'field.legacy-no-actor', actorSub: null });
+
+    const agent = await loginAsDpo(harness.dpoConsoleApp);
+    const res = await agent.get('/dpo/change-logs').query({ personId });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('field.legacy-no-actor');
+    expect(res.text).toContain('ไม่ทราบ');
+  });
+
+  test('เลข 13 หลักในเหตุผล/ค่าไม่ปรากฏในหน้าจอ (ทั้งที่ API ปกปิด และที่ console ปกปิดซ้ำ)', async () => {
+    const personId = await makePerson();
+    const fakePid = makeFakePid();
+    await insertChangeLog(personId, {
+      fieldName: 'status',
+      oldValue: JSON.stringify(fakePid),
+      newValue: JSON.stringify('INACTIVE'),
+      reason: `อ้างอิง ${fakePid}`,
+    });
+
+    const agent = await loginAsDpo(harness.dpoConsoleApp);
+    const res = await agent.get('/dpo/change-logs').query({ personId });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('INACTIVE');
+    expect(res.text).not.toContain(fakePid);
+    expect(res.text).toContain('ปกปิดเลข 13 หลัก');
+  });
+
+  test('source=REFERENCE: เห็นแถวของ reference_change_log พร้อม action และกรองด้วย action ได้', async () => {
+    const actorSub = `hr-master-${crypto.randomUUID()}`;
+    const recordId = crypto.randomUUID();
+    await adminPool.query(
+      `INSERT INTO audit.reference_change_log (table_name, record_id, action, field_name, old_value, new_value, actor_sub, actor_client)
+       VALUES ('org_unit', $1, 'CREATE', 'name_th', NULL, $2, $3, 'hr-console'),
+              ('org_unit', $1, 'UPDATE', 'name_th', $2, $4, $3, 'hr-console')`,
+      [recordId, JSON.stringify('กอง ก'), actorSub, JSON.stringify('กอง ข')]
+    );
+
+    const agent = await loginAsDpo(harness.dpoConsoleApp);
+    const all = await agent.get('/dpo/change-logs').query({ source: 'REFERENCE', actorSub });
+    expect(all.status).toBe(200);
+    expect(all.text).toContain(recordId);
+    expect(all.text).toContain('CREATE');
+    expect(all.text).toContain('UPDATE');
+
+    const created = await agent.get('/dpo/change-logs').query({ source: 'REFERENCE', actorSub, action: 'CREATE' });
+    expect(created.text).toContain('CREATE');
+    expect(created.text).toContain('<td>CREATE</td>');
+    expect(created.text).not.toContain('<td>UPDATE</td>');
+  });
+
+  test('สลับเป็น REFERENCE โดยที่ personId ค้างในฟอร์ม -> ไม่ส่งตัวกรอง PERSON ไป API (ไม่ได้ 400)', async () => {
+    const agent = await loginAsDpo(harness.dpoConsoleApp);
+    const res = await agent.get('/dpo/change-logs').query({ source: 'REFERENCE', personId: crypto.randomUUID(), changedBy: 'HR' });
+    expect(res.status).toBe(200);
+  });
+
+  test('หน้าถัดไป: 52 แถว (limit 50) -> หน้าแรกมีลิงก์ cursor หน้าสองได้ 2 แถวที่เหลือโดยไม่ซ้ำ', async () => {
+    const personId = await makePerson();
+    await adminPool.query(
+      `INSERT INTO audit.data_change_log (person_id, table_name, field_name, changed_by, actor_sub)
+       SELECT $1, 'person', 'field.bulk-' || lpad(g::text, 2, '0'), 'HR', 'hr-bulk' FROM generate_series(1, 52) AS g`,
+      [personId]
+    );
+    const agent = await loginAsDpo(harness.dpoConsoleApp);
+    const first = await agent.get('/dpo/change-logs').query({ personId });
+    expect(first.status).toBe(200);
+    expect(first.text).toContain('field.bulk-52'); // เรียงใหม่ -> เก่า
+    expect(first.text).not.toContain('field.bulk-02');
+    const link = first.text.match(/href="(\/dpo\/change-logs\?[^"]*cursor=[^"]+)"/);
+    expect(link).not.toBeNull();
+
+    const second = await agent.get(link[1].replace(/&amp;/g, '&'));
+    expect(second.status).toBe(200);
+    expect(second.text).toContain('field.bulk-02');
+    expect(second.text).toContain('field.bulk-01');
+    expect(second.text).not.toContain('field.bulk-52');
+    expect(second.text).not.toContain('หน้าถัดไป');
+  });
+
+  test('ไม่ได้ล็อกอิน -> redirect ไป login', async () => {
+    const res = await request(harness.dpoConsoleApp).get('/dpo/change-logs');
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/auth/login');
   });

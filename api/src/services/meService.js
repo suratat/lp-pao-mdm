@@ -1,8 +1,10 @@
 const { withTransaction } = require('../db/transaction');
 const { presentContact, presentEmergencyContacts } = require('./personPresenter');
+const { writeChangeLog, actorFromSelf } = require('./changeLogWriter');
 
-function jsonOrNull(value) {
-  return value === null || value === undefined ? null : JSON.stringify(value);
+// actor ของงานในไฟล์นี้คือเจ้าของข้อมูลเอง (ผ่าน portal): sub ใน Bearer token เป็น service account ของ portal จึงใช้ personId แทน
+function selfActor(personId, auth) {
+  return actorFromSelf({ personId, azp: auth?.azp });
 }
 
 const CONTACT_FIELD_KEYS = {
@@ -24,7 +26,8 @@ const CONTACT_FIELD_KEYS = {
 // PUT เป็นการแทนที่ทั้ง resource (ฟิลด์ที่ไม่ได้ส่งมา = null) ตรงตามความหมายของ PUT ตามหลัก REST
 // เจ้าของข้อมูลแก้ไขได้เฉพาะฟิลด์ที่ไม่ได้มาจาก ThaID และไม่ใช่ข้อมูลการปฏิบัติงาน (ตรงตาม description
 // ของ operation นี้อยู่แล้ว เพราะ ContactUpdate schema ไม่มีฟิลด์เหล่านั้นให้ส่งมาตั้งแต่แรก)
-async function updateMyContact(pool, personId, body) {
+async function updateMyContact(pool, personId, body, auth) {
+  const actor = selfActor(personId, auth);
   return withTransaction(pool, async (client) => {
     const { rows: existingRows } = await client.query(`SELECT * FROM mdm.person_contact WHERE person_id = $1`, [
       personId,
@@ -90,11 +93,15 @@ async function updateMyContact(pool, personId, body) {
       if (oldValue !== newValue) {
         changedFields.push(fieldKey);
         // eslint-disable-next-line no-await-in-loop
-        await client.query(
-          `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by)
-           VALUES ($1, 'person_contact', $2, $3, $4, 'SELF')`,
-          [personId, fieldKey, jsonOrNull(oldValue), jsonOrNull(newValue)]
-        );
+        await writeChangeLog(client, {
+          personId,
+          tableName: 'person_contact',
+          fieldName: fieldKey,
+          oldValue,
+          newValue,
+          changedBy: 'SELF',
+          actor,
+        });
       }
     }
 
@@ -147,12 +154,15 @@ async function replaceMyEmergencyContacts(pool, personId, contacts) {
 // รับแจ้งเฉยๆ ไม่มีที่เก็บถาวรในตารางเฉพาะ (เอกสารไม่ได้กำหนด schema ตารางสำหรับเรื่องนี้) - บันทึกเป็น
 // data_change_log พร้อม reason เพื่อให้ HR ตรวจสอบย้อนหลังได้ผ่าน GET .../change-log (changed_by=SELF,
 // ไม่มี old_value/new_value เพราะไม่ใช่การเปลี่ยนค่าจริง เป็นเพียงคำร้อง)
-async function reportIdentityIssue(pool, personId, { fieldKey, description }) {
-  await pool.query(
-    `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, reason)
-     VALUES ($1, 'person_identity', $2, NULL, NULL, 'SELF', $3)`,
-    [personId, fieldKey, description]
-  );
+async function reportIdentityIssue(pool, personId, { fieldKey, description }, auth) {
+  await writeChangeLog(pool, {
+    personId,
+    tableName: 'person_identity',
+    fieldName: fieldKey,
+    changedBy: 'SELF',
+    actor: selfActor(personId, auth),
+    reason: description,
+  });
 }
 
 module.exports = { updateMyContact, replaceMyEmergencyContacts, reportIdentityIssue };

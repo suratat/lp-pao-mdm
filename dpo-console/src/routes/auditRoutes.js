@@ -1,5 +1,5 @@
 const express = require('express');
-const { escapeHtml, layout } = require('../views/html');
+const { escapeHtml, redactPid, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
 
 function fmt(value) {
@@ -13,6 +13,19 @@ function toIsoDateTime(value) {
   if (!value) return undefined;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+// ค่า old/new ที่ MDM API ปกปิด (valuesHidden) แสดงเป็น "(ปกปิด)" แยกจากกรณีไม่มีค่าจริง (ฟิลด์ใหม่/ถูกล้าง)
+function renderChangeValue(entry, value) {
+  if (entry.valuesHidden) return '<em>(ปกปิด)</em>';
+  if (value === null || value === undefined) return '<em>(ไม่มีค่า)</em>';
+  return escapeHtml(redactPid(JSON.stringify(value)));
+}
+
+// แถวที่เขียนก่อน PR-A ไม่มี actor_sub (แก้ย้อนหลังไม่ได้เพราะ append-only)
+function renderActor(entry) {
+  if (!entry.actorSub) return '<em>ไม่ทราบ (ก่อนบันทึก actor)</em>';
+  return `${escapeHtml(entry.actorSub)}${entry.actorClient ? ` <span class="hint">(${escapeHtml(entry.actorClient)})</span>` : ''}`;
 }
 
 function renderApiError(err) {
@@ -88,6 +101,64 @@ function renderAccessLogTable(entries) {
   </table>`;
 }
 
+const CHANGED_BY_VALUES = ['THAID_SYNC', 'SELF', 'HR', 'HR_IMPORT', 'ADMIN'];
+const ACTION_VALUES = ['CREATE', 'UPDATE'];
+
+function renderOptions(values, selected) {
+  return [
+    `<option value="" ${!selected ? 'selected' : ''}>ทั้งหมด</option>`,
+    ...values.map((v) => `<option value="${escapeHtml(v)}" ${selected === v ? 'selected' : ''}>${escapeHtml(v)}</option>`),
+  ].join('');
+}
+
+function renderChangeLogFilters(q) {
+  return `<form method="get" action="/dpo/change-logs" class="filters">
+    <div>
+      <label>แหล่งข้อมูล (source)</label>
+      <select name="source">
+        <option value="PERSON" ${q.source === 'PERSON' ? 'selected' : ''}>PERSON - ข้อมูลบุคคล</option>
+        <option value="REFERENCE" ${q.source === 'REFERENCE' ? 'selected' : ''}>REFERENCE - หน่วยงาน/ตำแหน่ง</option>
+      </select>
+    </div>
+    <div><label>จากวันที่-เวลา</label><input type="datetime-local" name="from" value="${escapeHtml(q.from || '')}" /></div>
+    <div><label>ถึงวันที่-เวลา</label><input type="datetime-local" name="to" value="${escapeHtml(q.to || '')}" /></div>
+    <div><label>ผู้กระทำ (actor sub)</label><input name="actorSub" value="${escapeHtml(q.actorSub || '')}" /></div>
+    <div><label>ตาราง (table)</label><input name="tableName" value="${escapeHtml(q.tableName || '')}" /></div>
+    <div><label>Person ID <span class="hint">(เฉพาะ PERSON)</span></label><input name="personId" value="${escapeHtml(q.personId || '')}" pattern="[0-9a-fA-F-]{36}" /></div>
+    <div><label>เปลี่ยนโดย <span class="hint">(เฉพาะ PERSON)</span></label><select name="changedBy">${renderOptions(CHANGED_BY_VALUES, q.changedBy)}</select></div>
+    <div><label>action <span class="hint">(เฉพาะ REFERENCE)</span></label><select name="action">${renderOptions(ACTION_VALUES, q.action)}</select></div>
+    <div><button type="submit">กรอง</button></div>
+  </form>`;
+}
+
+function renderChangeLogTable(source, entries) {
+  const isPerson = source === 'PERSON';
+  const rows = entries
+    .map(
+      (e) => `<tr>
+        <td>${escapeHtml(fmt(e.changedAt))}</td>
+        <td>${escapeHtml(e.tableName)}</td>
+        <td>${
+          isPerson
+            ? `<a href="/dpo/persons/${encodeURIComponent(e.personId)}/change-log">${escapeHtml(e.personId)}</a>`
+            : escapeHtml(e.recordId)
+        }</td>
+        <td>${escapeHtml(e.fieldKey)}</td>
+        <td>${renderChangeValue(e, e.oldValue)}</td>
+        <td>${renderChangeValue(e, e.newValue)}</td>
+        <td>${escapeHtml(isPerson ? e.changedBy : e.action)}</td>
+        <td>${renderActor(e)}</td>
+        <td>${escapeHtml(redactPid(e.reason) || '-')}</td>
+      </tr>`
+    )
+    .join('\n');
+
+  return `<table>
+    <tr><th>เวลาที่เปลี่ยน</th><th>ตาราง</th><th>${isPerson ? 'บุคคล (personId)' : 'record'}</th><th>ฟิลด์</th><th>ค่าเดิม</th><th>ค่าใหม่</th><th>${isPerson ? 'เปลี่ยนโดย' : 'action'}</th><th>ผู้กระทำ</th><th>เหตุผล</th></tr>
+    ${rows || '<tr><td colspan="9">ไม่มีรายการ</td></tr>'}
+  </table>`;
+}
+
 function createAuditRoutes({ mdmClient }) {
   const router = express.Router();
 
@@ -138,6 +209,49 @@ function createAuditRoutes({ mdmClient }) {
     }
   });
 
+  router.get('/dpo/change-logs', async (req, res, next) => {
+    const source = req.query.source === 'REFERENCE' ? 'REFERENCE' : 'PERSON';
+    const { from, to, actorSub, tableName, personId, changedBy, action } = req.query;
+    const form = { source, from, to, actorSub, tableName, personId, changedBy, action };
+    try {
+      // ตัวกรองที่ใช้ได้เฉพาะอีก source หนึ่งถูกตัดทิ้ง (ผู้ใช้สลับ source แล้วค่าเดิมยังค้างในฟอร์ม)
+      const result = await mdmClient.listChangeLogs(req.dpoAuth.accessToken, {
+        source,
+        from: toIsoDateTime(from),
+        to: toIsoDateTime(to),
+        actorSub: actorSub || undefined,
+        tableName: tableName || undefined,
+        personId: source === 'PERSON' ? personId || undefined : undefined,
+        changedBy: source === 'PERSON' ? changedBy || undefined : undefined,
+        action: source === 'REFERENCE' ? action || undefined : undefined,
+        cursor: req.query.cursor,
+        limit: 50,
+      });
+
+      const nextQuery = new URLSearchParams(Object.fromEntries(Object.entries(form).filter(([, v]) => v)));
+      const nextLink = result.page?.nextCursor
+        ? `<p><a href="/dpo/change-logs?${escapeHtml(nextQuery.toString())}&amp;cursor=${encodeURIComponent(result.page.nextCursor)}">หน้าถัดไป</a></p>`
+        : '';
+
+      res.send(
+        layout(
+          'ประวัติการเปลี่ยนแปลงทั้งระบบ',
+          `<h1>ประวัติการเปลี่ยนแปลง</h1>
+           <p class="hint">เห็นเฉพาะ "ฟิลด์ใดเปลี่ยน ใครเปลี่ยน เมื่อไหร่" ค่าของข้อมูลส่วนบุคคลถูกปกปิด แถวที่เขียนก่อนระบบบันทึกผู้กระทำจะแสดงผู้กระทำว่า "ไม่ทราบ"</p>
+           ${renderChangeLogFilters(form)}
+           ${renderChangeLogTable(source, result.data)}
+           ${nextLink}`,
+          { displayName: req.dpoAuth.displayName }
+        )
+      );
+    } catch (err) {
+      if (err instanceof MdmApiError) {
+        return res.status(err.status).send(layout('ประวัติการเปลี่ยนแปลง', renderApiError(err), { displayName: req.dpoAuth.displayName }));
+      }
+      next(err);
+    }
+  });
+
   router.get('/dpo/persons/:personId/change-log', async (req, res, next) => {
     const { personId } = req.params;
     try {
@@ -152,11 +266,11 @@ function createAuditRoutes({ mdmClient }) {
           (c) => `<tr>
             <td>${escapeHtml(fmt(c.changedAt))}</td>
             <td>${escapeHtml(c.fieldKey)}</td>
-            <td>${c.oldValue === null ? '<em>(ปกปิด/ไม่มีค่า)</em>' : escapeHtml(JSON.stringify(c.oldValue))}</td>
-            <td>${c.newValue === null ? '<em>(ปกปิด/ไม่มีค่า)</em>' : escapeHtml(JSON.stringify(c.newValue))}</td>
+            <td>${renderChangeValue(c, c.oldValue)}</td>
+            <td>${renderChangeValue(c, c.newValue)}</td>
             <td>${escapeHtml(c.changedBy)}</td>
-            <td>${escapeHtml(c.actorSub || '-')}</td>
-            <td>${escapeHtml(c.reason || '-')}</td>
+            <td>${renderActor(c)}</td>
+            <td>${escapeHtml(redactPid(c.reason) || '-')}</td>
           </tr>`
         )
         .join('\n');
@@ -169,7 +283,7 @@ function createAuditRoutes({ mdmClient }) {
         layout(
           'ประวัติการเปลี่ยนแปลงรายฟิลด์',
           `<h1>ประวัติการเปลี่ยนแปลง - ${escapeHtml(personId)}</h1>
-           <p class="hint">ค่าฟิลด์ที่จัดชั้น RESTRICTED (เช่น pid_hash/pid_enc) จะแสดงเป็น "(ปกปิด/ไม่มีค่า)" เสมอ (ปกปิดโดย MDM API เอง)</p>
+           <p class="hint">ค่าของฟิลด์ที่จัดชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED จะแสดงเป็น "(ปกปิด)" เสมอ เห็นเฉพาะชื่อฟิลด์ที่เปลี่ยน (ปกปิดโดย MDM API เอง)</p>
            <form method="get" action="/dpo/persons/${encodeURIComponent(personId)}/change-log">
              <label>ตั้งแต่วันที่-เวลา</label>
              <input type="datetime-local" name="since" value="${escapeHtml(req.query.since || '')}" />

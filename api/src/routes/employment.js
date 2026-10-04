@@ -17,7 +17,7 @@ function createEmploymentRouter(pool) {
 
   router.put('/persons/:personId/employment', requireScope('personnel:write:employment'), async (req, res, next) => {
     try {
-      const result = await upsertEmployment(pool, req.params.personId, req.body);
+      const result = await upsertEmployment(pool, req.params.personId, req.body, req.auth);
       res.json(result);
     } catch (err) {
       next(err);

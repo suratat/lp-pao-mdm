@@ -7,7 +7,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
 
   router.post('/persons', requireScope('personnel:provision', SCOPE_READ_BASIC), async (req, res, next) => {
     try {
-      const person = await provisioningService.provisionPerson({ pool, vault, pepper }, req.body);
+      const person = await provisioningService.provisionPerson({ pool, vault, pepper }, req.body, req.auth);
       res.status(201).json(person);
     } catch (err) {
       next(err);
@@ -16,7 +16,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
 
   router.post('/persons/:personId/deactivate', requireScope('personnel:write:employment', SCOPE_READ_BASIC), async (req, res, next) => {
     try {
-      const person = await provisioningService.deactivatePerson(pool, req.params.personId, req.body);
+      const person = await provisioningService.deactivatePerson(pool, req.params.personId, req.body, req.auth);
       res.json(person);
     } catch (err) {
       next(err);
@@ -25,7 +25,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
 
   router.post('/persons/:personId/reactivate', requireScope('personnel:write:employment', SCOPE_READ_BASIC), async (req, res, next) => {
     try {
-      const person = await provisioningService.reactivatePerson(pool, req.params.personId, req.body);
+      const person = await provisioningService.reactivatePerson(pool, req.params.personId, req.body, req.auth);
       res.json(person);
     } catch (err) {
       next(err);

@@ -3,28 +3,19 @@ const { HttpProblem } = require('../security/httpProblem');
 const { isValidPid, pidHash } = require('../security/pid');
 const { loadAndPresentPerson } = require('./personPresenter');
 const { closeAndOpenEmployment } = require('./employmentShared');
+const { writeChangeLog, writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
 
 const PID_KEY_NAME = 'mdm-pid';
 
-function jsonOrNull(value) {
-  return value === null || value === undefined ? null : JSON.stringify(value);
-}
-
-async function logEmploymentChanges(client, personId, changes, reason) {
-  for (const change of changes) {
-    // eslint-disable-next-line no-await-in-loop
-    await client.query(
-      `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, reason)
-       VALUES ($1, 'employment', $2, $3, $4, 'HR', $5)`,
-      [personId, change.fieldKey, jsonOrNull(change.oldValue), jsonOrNull(change.newValue), reason ?? null]
-    );
-  }
+function logEmploymentChanges(client, personId, changes, reason, actor) {
+  return writeChangeLogs(client, { personId, tableName: 'employment', changes, changedBy: 'HR', actor, reason });
 }
 
 // POST /persons (HR pre-provision) - §3.4: "HR provision ผ่าน POST /persons ... PENDING_CLAIM (มี
 // pid_hash/pid_enc, employment, ชื่อที่คาดไว้)" - เข้ารหัส pid_enc ทันที (ต่างจาก T3 ที่เข้ารหัสตอน claim
 // เพราะตอนนั้นยังไม่มี endpoint นี้)
-async function provisionPerson({ pool, vault, pepper }, body) {
+async function provisionPerson({ pool, vault, pepper }, body, auth) {
+  const actor = actorFromAuth(auth);
   const { pid, expectedFirstNameTh, expectedLastNameTh, employment, externalIds } = body;
 
   if (!isValidPid(pid)) {
@@ -57,7 +48,7 @@ async function provisionPerson({ pool, vault, pepper }, body) {
     ]);
 
     const { changes } = await closeAndOpenEmployment(client, personId, employment, 'HR');
-    await logEmploymentChanges(client, personId, changes);
+    await logEmploymentChanges(client, personId, changes, undefined, actor);
 
     if (Array.isArray(externalIds)) {
       for (const ext of externalIds) {
@@ -78,7 +69,8 @@ async function provisionPerson({ pool, vault, pepper }, body) {
 }
 
 // POST /persons/{id}/deactivate (§3.4, seq-01)
-async function deactivatePerson(pool, personId, body) {
+async function deactivatePerson(pool, personId, body, auth) {
+  const actor = actorFromAuth(auth);
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(`SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`, [
       personId,
@@ -100,16 +92,16 @@ async function deactivatePerson(pool, personId, body) {
          WHERE employment_id = $1`,
         [currentEmployment[0].employment_id, body.employmentStatus, body.separationDate, body.reason ?? null]
       );
-      await client.query(
-        `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, reason)
-         VALUES ($1, 'employment', 'employment_status', $2, $3, 'HR', $4)`,
-        [
-          personId,
-          jsonOrNull(currentEmployment[0].employment_status),
-          jsonOrNull(body.employmentStatus),
-          body.reason ?? null,
-        ]
-      );
+      await writeChangeLog(client, {
+        personId,
+        tableName: 'employment',
+        fieldName: 'employment_status',
+        oldValue: currentEmployment[0].employment_status,
+        newValue: body.employmentStatus,
+        changedBy: 'HR',
+        actor,
+        reason: body.reason,
+      });
     }
 
     const newVersion = rows[0].version + 1;
@@ -117,11 +109,16 @@ async function deactivatePerson(pool, personId, body) {
       `UPDATE mdm.person SET status = 'INACTIVE', deleted_at = now(), version = $2 WHERE person_id = $1`,
       [personId, newVersion]
     );
-    await client.query(
-      `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, reason)
-       VALUES ($1, 'person', 'status', $2, $3, 'HR', $4)`,
-      [personId, jsonOrNull(rows[0].status), jsonOrNull('INACTIVE'), body.reason ?? null]
-    );
+    await writeChangeLog(client, {
+      personId,
+      tableName: 'person',
+      fieldName: 'status',
+      oldValue: rows[0].status,
+      newValue: 'INACTIVE',
+      changedBy: 'HR',
+      actor,
+      reason: body.reason,
+    });
 
     await client.query(
       `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
@@ -139,7 +136,8 @@ async function deactivatePerson(pool, personId, body) {
 }
 
 // POST /persons/{id}/reactivate (§3.4: "ตั้ง verification_status = STALE เพื่อบังคับผ่าน ThaID ใหม่")
-async function reactivatePerson(pool, personId, body) {
+async function reactivatePerson(pool, personId, body, auth) {
+  const actor = actorFromAuth(auth);
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(`SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`, [
       personId,
@@ -151,7 +149,7 @@ async function reactivatePerson(pool, personId, body) {
     }
 
     const { changes } = await closeAndOpenEmployment(client, personId, body, 'HR');
-    await logEmploymentChanges(client, personId, changes, body.referenceDocument);
+    await logEmploymentChanges(client, personId, changes, body.referenceDocument, actor);
 
     const newVersion = rows[0].version + 1;
     await client.query(
@@ -160,11 +158,15 @@ async function reactivatePerson(pool, personId, body) {
        WHERE person_id = $1`,
       [personId, newVersion]
     );
-    await client.query(
-      `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by)
-       VALUES ($1, 'person', 'status', $2, $3, 'HR')`,
-      [personId, jsonOrNull(rows[0].status), jsonOrNull('ACTIVE')]
-    );
+    await writeChangeLog(client, {
+      personId,
+      tableName: 'person',
+      fieldName: 'status',
+      oldValue: rows[0].status,
+      newValue: 'ACTIVE',
+      changedBy: 'HR',
+      actor,
+    });
 
     await client.query(
       `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
@@ -230,7 +232,8 @@ async function listClaimRequests(pool, { status = 'PENDING_HR', cursor, limit })
 }
 
 // POST /claim-requests/{id}/resolve
-async function resolveClaimRequest({ pool, vault, pepper }, claimRequestId, body, actor) {
+async function resolveClaimRequest({ pool, vault, pepper }, claimRequestId, body, auth) {
+  const actor = auth;
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(`SELECT * FROM mdm.claim_request WHERE claim_request_id = $1 FOR UPDATE`, [
       claimRequestId,
@@ -279,7 +282,7 @@ async function resolveClaimRequest({ pool, vault, pepper }, claimRequestId, body
       const personId = inserted[0].person_id;
 
       const { changes } = await closeAndOpenEmployment(client, personId, body.employment, 'HR');
-      await logEmploymentChanges(client, personId, changes, body.note);
+      await logEmploymentChanges(client, personId, changes, body.note, actorFromAuth(auth));
 
       await client.query(
         `UPDATE mdm.claim_request SET status = 'LINKED', resolved_person_id = $2, resolved_by = $3, resolved_at = now()
@@ -301,11 +304,14 @@ async function resolveClaimRequest({ pool, vault, pepper }, claimRequestId, body
 
       // field_policy: person.pid_hash log_values_in_audit=false - บันทึกเฉพาะชื่อฟิลด์ที่เปลี่ยน ไม่บันทึกค่า
       await client.query(`UPDATE mdm.person SET pid_hash = $2 WHERE person_id = $1`, [body.personId, claim.pid_hash]);
-      await client.query(
-        `INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by, reason)
-         VALUES ($1, 'person', 'pid_hash', NULL, NULL, 'HR', $2)`,
-        [body.personId, body.note ?? null]
-      );
+      await writeChangeLog(client, {
+        personId: body.personId,
+        tableName: 'person',
+        fieldName: 'pid_hash',
+        changedBy: 'HR',
+        actor: actorFromAuth(auth),
+        reason: body.note,
+      });
 
       await client.query(
         `UPDATE mdm.claim_request SET status = 'LINKED', resolved_person_id = $2, resolved_by = $3, resolved_at = now()

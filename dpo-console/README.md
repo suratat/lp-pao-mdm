@@ -32,6 +32,15 @@ Express app แยกจาก `api/`, `worker/`, `portal/`, `hr-console/` — �
    personId ในตาราง access log) filter ด้วย `since` ค่าฟิลด์ที่จัดชั้น `RESTRICTED` (เช่น `person.pid_hash`)
    แสดงเป็น "(ปกปิด/ไม่มีค่า)" เสมอ — ปกปิดโดย MDM API เอง (`auditService.js`) ไม่ใช่ฝั่ง DPO Console
 
+3. `GET /dpo/change-logs` — ประวัติการเปลี่ยนแปลงทั้งระบบ (`GET /audit/change-logs`, scope `audit:read`) เรียงใหม่ -> เก่า
+   เลือก `source`: `PERSON` (`audit.data_change_log`: กรอง `personId`, `changedBy`) หรือ `REFERENCE`
+   (`audit.reference_change_log` หน่วยงาน/ตำแหน่ง: กรอง `action`) และกรองด้วยช่วงเวลา, `actorSub`, `tableName` ได้ทั้งสอง source
+   - **ค่าถูกปกปิด:** ฟิลด์ชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED แสดงเป็น "(ปกปิด)" เห็นแค่ชื่อฟิลด์ที่เปลี่ยน (ปกปิดโดย MDM API
+     และใช้กับหน้า change-log รายบุคคลด้วย) เลข 13 หลักในค่า/เหตุผลถูกแทนที่ด้วย "[ปกปิดเลข 13 หลัก]" ทั้งที่ API และที่ console
+   - **ผู้กระทำ:** `actor_sub` = sub ของ token (HR/DPO ที่ล็อกอิน), personId (เจ้าของข้อมูลแก้ของตัวเองผ่าน portal),
+     `system:thaid-sync` (sync ตอน login ThaID), `system:hr-import` (นำเข้าจาก HR) + `actor_client` (azp) แถวที่เขียนก่อน PR-A
+     (migration 1700000000045) แสดง "ไม่ทราบ" เพราะแก้ย้อนหลังไม่ได้ (append-only)
+
 ### "ประเภท action" (actorType) — จงใจไม่แก้ API contract
 
 MVP นี้ขอกรอง "ประเภท action" แต่ `AccessLogEntry` ที่มีอยู่ไม่มีฟิลด์ที่ตรงความหมายนั้นตรง ๆ — DB มี

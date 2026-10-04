@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { isValidPid, pidHash, canonicalizeIdentityClaims, snapshotHash, sha256Hex } = require('../security/pid');
 const { withTransaction } = require('../db/transaction');
 const { HttpProblem } = require('../security/httpProblem');
+const { writeChangeLogs, SYSTEM_ACTORS, systemActor } = require('./changeLogWriter');
 
 const PID_KEY_NAME = 'mdm-pid';
 const PHOTO_KEY_NAME = 'mdm-photo';
@@ -119,20 +120,15 @@ async function insertOutboxEvent(client, { personId, eventType, changedFields, v
   );
 }
 
-async function insertChangeLogRows(client, personId, syncEventId, changes) {
-  for (const change of changes) {
-    await client.query(
-      `INSERT INTO audit.data_change_log (person_id, sync_event_id, table_name, field_name, old_value, new_value, changed_by)
-       VALUES ($1, $2, 'person_identity', $3, $4, $5, 'THAID_SYNC')`,
-      [
-        personId,
-        syncEventId,
-        change.fieldKey,
-        change.oldValue === null ? null : JSON.stringify(change.oldValue),
-        change.newValue === null ? null : JSON.stringify(change.newValue),
-      ]
-    );
-  }
+function insertChangeLogRows(client, personId, syncEventId, changes, actor) {
+  return writeChangeLogs(client, {
+    personId,
+    tableName: 'person_identity',
+    changes,
+    changedBy: 'THAID_SYNC',
+    actor,
+    syncEventId,
+  });
 }
 
 // เส้นทางเดียวในการถอดรหัส/แปลง sub ให้ token claims ของ check.lp-pao.go.th (§2.2 ภาคผนวก ก)
@@ -193,7 +189,7 @@ async function handleUnmatched(client, { hash, claims, context, trigger }) {
   return { httpStatus: 202, body: { result: 'UNMATCHED', personId: null } };
 }
 
-async function handleClaim(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo }) {
+async function handleClaim(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor }) {
   const nameMismatchWithHr =
     person.expected_first_name_th != null &&
     person.expected_last_name_th != null &&
@@ -242,7 +238,7 @@ async function handleClaim(client, vault, { person, claims, context, trigger, ca
     );
   }
 
-  await insertChangeLogRows(client, person.person_id, syncEventId, changes);
+  await insertChangeLogRows(client, person.person_id, syncEventId, changes, actor);
 
   await client.query(
     `UPDATE mdm.person
@@ -287,7 +283,7 @@ async function handleClaim(client, vault, { person, claims, context, trigger, ca
   };
 }
 
-async function handleActiveSync(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo }) {
+async function handleActiveSync(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor }) {
   const effectiveTrigger = ['STALE', 'EXPIRED'].includes(person.verification_status) ? 'REVERIFY' : trigger;
 
   const identityResult = await client.query(`SELECT * FROM mdm.person_identity WHERE person_id = $1`, [
@@ -374,7 +370,7 @@ async function handleActiveSync(client, vault, { person, claims, context, trigge
        WHERE person_id = $1`,
       [person.person_id, newSnapshotHash, syncEventId, ...changes.map((c) => c.newValue)]
     );
-    await insertChangeLogRows(client, person.person_id, syncEventId, changes);
+    await insertChangeLogRows(client, person.person_id, syncEventId, changes, actor);
   } else {
     // snapshot ต่าง (เช่น scope เปลี่ยนทำให้ชุดฟิลด์ต่าง) แต่ diff รายฟิลด์ไม่พบความต่างจริง
     await client.query(
@@ -451,7 +447,9 @@ async function handleRejectedInactive(client, { person, context, trigger }) {
   return { httpStatus: 403, body: { result: 'REJECTED_INACTIVE', personId: person.person_id, status: 'INACTIVE' } };
 }
 
-async function syncFromThaid({ pool, vault, pepper }, requestBody) {
+// actorClient = azp ของ token ที่เรียก (check-broker) - ผู้กระทำจริงของการเปลี่ยนข้อมูลคือระบบ sync ไม่ใช่ผู้ใช้คนใด
+async function syncFromThaid({ pool, vault, pepper }, requestBody, { actorClient = null } = {}) {
+  const actor = systemActor(SYSTEM_ACTORS.THAID_SYNC, actorClient);
   const { claims, context } = requestBody;
   const trigger = requestBody.trigger || 'LOGIN';
 
@@ -479,11 +477,11 @@ async function syncFromThaid({ pool, vault, pepper }, requestBody) {
     const person = personResult.rows[0];
 
     if (person.status === 'PENDING_CLAIM') {
-      return handleClaim(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo });
+      return handleClaim(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor });
     }
 
     if (person.status === 'ACTIVE') {
-      return handleActiveSync(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo });
+      return handleActiveSync(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor });
     }
 
     return handleRejectedInactive(client, { person, context, trigger });
