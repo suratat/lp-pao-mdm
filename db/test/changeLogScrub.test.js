@@ -5,7 +5,7 @@ const { migrate } = require('./helpers');
 const { makeFakePid } = require('../../api/src/security/pid');
 
 // migration 1700000000045 (actor_client + index) และ 1700000000046 (ข้อยกเว้น append-only ครั้งเดียว: ล้าง pid plaintext
-// ออกจาก data_change_log) - 046 เป็น migration ล่าสุดของ PR นี้ จึง down 1 ขั้นเพื่อจำลองสถานะ "ก่อน scrub" แล้วใส่แถวที่
+// ออกจาก data_change_log) - down ย้อนกลับถึง 046 (รวม migration ที่เพิ่มทีหลัง) เพื่อจำลองสถานะ "ก่อน scrub" แล้วใส่แถวที่
 // มี pid plaintext (ข้อมูลสมมติจาก makeFakePid) จากนั้น up อีกครั้งให้ migration ทำงานกับข้อมูลนั้น
 
 let pool;
@@ -17,6 +17,12 @@ beforeAll(() => {
 afterAll(async () => {
   await pool.end();
 });
+
+// จำนวน migration ที่ต้อง down เพื่อให้ 046 ถูกย้อนด้วย (046 + ทุกตัวที่ใหม่กว่า) - ไม่ผูกกับว่า 046 เป็นตัวล่าสุดหรือไม่
+async function stepsBackToScrub() {
+  const { rows } = await pool.query(`SELECT count(*)::int AS n FROM pgmigrations WHERE name >= '1700000000046'`);
+  return rows[0].n;
+}
 
 async function insertPerson() {
   const { rows } = await pool.query(
@@ -37,7 +43,7 @@ async function insertLog(personId, fieldName, oldValue, newValue) {
 
 describe('migration 046: scrub employment.employee_no plaintext', () => {
   test('ล้าง old/new ของ employment.employee_no เท่านั้น และ trigger append-only กลับมาทำงาน', async () => {
-    await migrate(DATABASE_URL, 'down', { count: 1 });
+    await migrate(DATABASE_URL, 'down', { count: await stepsBackToScrub() });
 
     const personId = await insertPerson();
     const pidA = makeFakePid();
@@ -76,7 +82,7 @@ describe('migration 046: scrub employment.employee_no plaintext', () => {
   });
 
   test('รันบนตารางที่ไม่มีแถวตรงเงื่อนไขได้ (ไม่ fail) และเปิด trigger คืน', async () => {
-    await migrate(DATABASE_URL, 'down', { count: 1 });
+    await migrate(DATABASE_URL, 'down', { count: await stepsBackToScrub() });
     await migrate(DATABASE_URL, 'up');
     const { rows } = await pool.query(
       `SELECT tgenabled FROM pg_trigger WHERE tgrelid = 'audit.data_change_log'::regclass AND tgname = 'data_change_log_append_only'`

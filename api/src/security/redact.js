@@ -2,6 +2,12 @@
 const PID_LIKE = /\d(?:[ -]?\d){12}/g;
 const REDACTED = '[ปกปิดเลข 13 หลัก]';
 
+// ข้อความอิสระที่ผู้เรียกพิมพ์เอง (justification, note รีวิว) ถูกเก็บลง audit ถาวร - มีเลข 13 หลักปนมา = ปฏิเสธ (422) ไม่ใช่ปกปิดแล้วเก็บ
+// เพราะผู้ใช้ควรรู้ว่าต้องแก้ข้อความ; detail ของ error ห้ามมีค่าที่ส่งมา (กฎข้อ 1)
+function containsPidLike(text) {
+  return typeof text === 'string' && new RegExp(PID_LIKE.source).test(text);
+}
+
 function redactPidText(text) {
   return typeof text === 'string' ? text.replace(PID_LIKE, REDACTED) : text;
 }
@@ -17,4 +23,4 @@ function redactPidDeep(value) {
   return value;
 }
 
-module.exports = { redactPidText, redactPidDeep, REDACTED };
+module.exports = { redactPidText, redactPidDeep, containsPidLike, REDACTED };

@@ -1,5 +1,6 @@
 const { HttpProblem } = require('../security/httpProblem');
 const { isValidPid, pidHash } = require('../security/pid');
+const { containsPidLike } = require('../security/redact');
 const { loadAndPresentPerson } = require('./personPresenter');
 const { resolvePurposeCode } = require('./purposeCode');
 
@@ -115,6 +116,9 @@ async function getPerson(pool, personId) {
 // POST /persons/lookup - คืนเฉพาะ personId/status บันทึก access_log พร้อม justification เสมอ
 // (การ rate-limit ที่เข้มงวดกว่า endpoint อื่นตามที่ระบุยังไม่ implement ในสเกลตันนี้)
 async function lookupPersonByPid(pool, pid, justification, { actor, requestMeta }) {
+  if (containsPidLike(justification)) {
+    throw new HttpProblem(422, 'justification-contains-pid', 'เหตุผลมีเลขบัตรประชาชน', 'justification ห้ามมีเลข 13 หลัก ให้ระบุเหตุผลโดยไม่ใส่เลขบัตร');
+  }
   if (!isValidPid(pid)) {
     throw new HttpProblem(400, 'invalid-pid', 'เลขบัตรประชาชนไม่ถูกต้อง', 'pid ไม่ผ่านการตรวจ checksum (mod 11)');
   }

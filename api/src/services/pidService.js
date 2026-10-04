@@ -1,10 +1,15 @@
 const { HttpProblem } = require('../security/httpProblem');
+const { containsPidLike } = require('../security/redact');
 const { resolvePurposeCode } = require('./purposeCode');
 
 const PID_KEY_NAME = 'mdm-pid';
 
 // ภาคผนวก ข: "การถอดรหัสทำในservice เดียว (PidService.reveal) ที่เขียน access_log ก่อนคืนค่า ไม่มี path อื่น"
 async function reveal({ pool, vault }, { personId, actor, justification, requestMeta }) {
+  // justification ถูกเก็บถาวรใน access_log (ผู้รีวิวอ่านได้) - ห้ามมีเลขบัตรปน ตรวจก่อนถอดรหัสและก่อนเขียน access_log
+  if (containsPidLike(justification)) {
+    throw new HttpProblem(422, 'justification-contains-pid', 'เหตุผลมีเลขบัตรประชาชน', 'justification ห้ามมีเลข 13 หลัก ให้ระบุเหตุผลโดยไม่ใส่เลขบัตร');
+  }
   const { rows } = await pool.query(`SELECT pid_enc FROM mdm.person WHERE person_id = $1`, [personId]);
   if (rows.length === 0 || !rows[0].pid_enc) {
     throw new HttpProblem(404, 'not-found', 'ไม่พบข้อมูล', 'ไม่พบบุคคลนี้ หรือยังไม่เคยเข้ารหัส pid');

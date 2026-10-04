@@ -41,6 +41,16 @@ Express app แยกจาก `api/`, `worker/`, `portal/`, `hr-console/` — �
      `system:thaid-sync` (sync ตอน login ThaID), `system:hr-import` (นำเข้าจาก HR) + `actor_client` (azp) แถวที่เขียนก่อน PR-A
      (migration 1700000000045) แสดง "ไม่ทราบ" เพราะแก้ย้อนหลังไม่ได้ (append-only)
 
+4. `GET /dpo/pid-reveals` — รายการ "การเปิดเลขบัตรเต็ม" (`GET /persons/{id}/pid`) ที่รอรีวิว/รีวิวแล้ว/ขอคำชี้แจง (ตัวกรอง `reviewStatus`
+   ของ `GET /audit/access-logs`, เรียงเก่า → ใหม่) แสดง Access ID, ผู้เปิด/client, personId, justification, สถานะรีวิว **ไม่แสดงเลขบัตร**
+   และ `POST /dpo/pid-reveals/{accessId}/review` บันทึกผลรีวิว (`REVIEWED` / `NEEDS_EXPLANATION` + หมายเหตุ) ผ่าน
+   `POST /audit/access-logs/{accessId}/review` (scope `audit:review` **และ** realm role `dpo` - ตรวจที่ MDM API ทุกครั้ง)
+   - **เฉพาะ role `dpo`:** `auditor` เห็นรายการแต่ไม่เห็นฟอร์ม (ซ่อนจาก role ใน id_token + scope ใน access token เพื่อ UX เท่านั้น) และถ้าส่งเอง API ตอบ 403
+   - **ห้ามรีวิวรายการที่ตนเองเป็นผู้เปิด** (เทียบ `sub`) → 403 `self-review-forbidden`
+   - **CSRF:** ฟอร์ม POST ใช้ token ต่อ session (`src/session/csrf.js` เหมือน hr-console) ส่งกลับเป็นฟิลด์ `_csrf`; หน้าในกลุ่มนี้ `Cache-Control: no-store`
+   - หมายเหตุห้ามมีเลข 13 หลัก (422) และ `NEEDS_EXPLANATION` ต้องมีหมายเหตุ รีวิวซ้ำได้ (append-only ผลล่าสุดคือสถานะปัจจุบัน)
+   - แนวคิดสถานะ: `PENDING` ไม่เก็บเป็นแถว = ยังไม่มีผลรีวิว (migration 1700000000047) ขั้นตอนตั้ง scope ใน Keycloak: `infra/keycloak/README.md`
+
 ### "ประเภท action" (actorType) — จงใจไม่แก้ API contract
 
 MVP นี้ขอกรอง "ประเภท action" แต่ `AccessLogEntry` ที่มีอยู่ไม่มีฟิลด์ที่ตรงความหมายนั้นตรง ๆ — DB มี

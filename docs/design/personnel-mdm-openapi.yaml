@@ -190,7 +190,7 @@ paths:
                   type: string
                   minLength: 10
                   maxLength: 500
-                  description: เหตุผลการค้นหา บันทึกลง access log
+                  description: เหตุผลการค้นหา บันทึกลง access log (ห้ามมีเลข 13 หลัก - ตอบ 422)
       responses:
         '200':
           description: พบ record
@@ -203,6 +203,11 @@ paths:
                   personId: { type: string, format: uuid }
                   status: { $ref: '#/components/schemas/PersonStatus' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: justification มีเลข 13 หลัก (ห้ามใส่เลขบัตรในเหตุผล)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /persons/{personId}:
@@ -293,6 +298,11 @@ paths:
                   pid: { $ref: '#/components/schemas/Pid' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: justification มีเลข 13 หลัก (ห้ามใส่เลขบัตรในเหตุผล)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
 
   /persons/{personId}/employment:
     parameters:
@@ -1210,6 +1220,12 @@ paths:
           in: query
           description: เฉพาะการเข้าถึง pid / lookup
           schema: { type: boolean, default: false }
+        - name: reviewStatus
+          in: query
+          description: |
+            เฉพาะรายการ "เปิดเลขบัตร" (`GET /persons/{id}/pid` ที่สำเร็จ) ที่สถานะรีวิวล่าสุดตรงค่านี้
+            `PENDING` = ยังไม่มีผลรีวิว (ไม่เก็บเป็นแถว คำนวณตอนอ่าน) เรียงเก่า -> ใหม่
+          schema: { type: string, enum: [PENDING, REVIEWED, NEEDS_EXPLANATION] }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -1224,6 +1240,50 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/AccessLogEntry' }
                   page: { $ref: '#/components/schemas/PageInfo' }
+
+  /audit/access-logs/{accessId}/review:
+    post:
+      tags: [Audit]
+      summary: Record a review of a national ID reveal (DPO only)
+      description: |
+        บันทึกผลรีวิวรายการเปิดเลขบัตร (append-only: รีวิวซ้ำได้ ผลล่าสุดคือสถานะปัจจุบัน)
+        - ต้องมี scope `audit:review` **และ** realm role `dpo` (auditor อ่านอย่างเดียว)
+        - รีวิวรายการที่ตนเองเป็นผู้เปิดไม่ได้ (403 `self-review-forbidden`)
+        - รายการต้องเป็นการเปิดเลขบัตรที่สำเร็จ (ไม่ใช่รายการ access log อื่น) มิฉะนั้น 404
+        - `accessedAt` ใช้คู่กับ `accessId` ระบุแถว (PK ของ access_log เป็น composite เพราะ partition) ความละเอียดระดับ ms
+        - `NEEDS_EXPLANATION` ต้องมี `note`; `note` ห้ามมีเลข 13 หลัก (422)
+      operationId: reviewPidAccess
+      security:
+        - keycloak: [audit:review]
+      parameters:
+        - name: accessId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accessedAt, status]
+              properties:
+                accessedAt: { type: string, format: date-time }
+                status: { type: string, enum: [REVIEWED, NEEDS_EXPLANATION] }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: บันทึกผลรีวิวแล้ว
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PidAccessReview' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: ไม่ได้ระบุ note ที่จำเป็น หรือ note มีเลข 13 หลัก
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
 
   # ----------------------------------------------------------------- System
   /health:
@@ -1325,6 +1385,7 @@ components:
             events:read: อ่านฟีดเหตุการณ์
             webhook:manage: จัดการ webhook subscription ของ client ตนเอง
             audit:read: อ่าน access log และ change log (DPO / ผู้ตรวจสอบ)
+            audit:review: บันทึกผลรีวิวการเปิดเลขบัตร (เฉพาะ realm role dpo - MDM API ตรวจ role เพิ่มเสมอ ไม่ใช้ scope เป็นตัวกั้นเพียงอย่างเดียว)
         authorizationCode:
           authorizationUrl: https://iam.lp-pao.go.th/realms/lp-pao/protocol/openid-connect/auth
           tokenUrl: https://iam.lp-pao.go.th/realms/lp-pao/protocol/openid-connect/token
@@ -2020,6 +2081,7 @@ components:
     AccessLogEntry:
       type: object
       properties:
+        accessId: { type: integer, format: int64, description: "ใช้คู่กับ accessedAt อ้างแถว (เช่น POST /audit/access-logs/{accessId}/review)" }
         accessedAt: { type: string, format: date-time }
         subjectPersonId: { type: string, format: uuid }
         actorType: { type: string, enum: [USER, SERVICE] }
@@ -2033,6 +2095,24 @@ components:
         justification: { type: [string, 'null'] }
         requestId: { type: string }
         responseStatus: { type: integer }
+        reviewStatus:
+          type: [string, 'null']
+          enum: [PENDING, REVIEWED, NEEDS_EXPLANATION, null]
+          description: เฉพาะรายการเปิดเลขบัตร (รายการอื่น null) PENDING = ยังไม่มีผลรีวิว
+        reviewedAt: { type: [string, 'null'], format: date-time }
+        reviewerSub: { type: [string, 'null'] }
+        reviewNote: { type: [string, 'null'] }
+
+    PidAccessReview:
+      type: object
+      properties:
+        reviewId: { type: integer, format: int64 }
+        accessId: { type: integer, format: int64 }
+        accessedAt: { type: string, format: date-time }
+        status: { type: string, enum: [REVIEWED, NEEDS_EXPLANATION] }
+        note: { type: [string, 'null'] }
+        reviewerSub: { type: string }
+        reviewedAt: { type: string, format: date-time }
 
     PageInfo:
       type: object

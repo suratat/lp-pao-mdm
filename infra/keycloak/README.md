@@ -46,3 +46,15 @@ claims ใน access token ที่วัดจริงกับ Keycloak 26.0
 - **การกำหนด role ให้ผู้ใช้ (ทำมือใน Admin Console — realm export ไม่มี user จริง):** Users → เลือกผู้ใช้ → Role mapping → Assign role → เลือก `hr_master_data_admin` (และต้องมี `hr_officer` อยู่แล้ว) ผู้ใช้ต้อง login ใหม่ (หรือรอ refresh token) จึงจะได้ role ใน token
 - **การตรวจสอบหลัง import (ทำแล้วใน T10 กับ Keycloak 26.0):** สร้างผู้ใช้ทดสอบ 2 คน (มี `hr_officer` อย่างเดียว / มีทั้งสอง role) แล้วเรียก `GET /admin/realms/lp-pao/clients/{hr-console uuid}/evaluate-scopes/generate-example-access-token?userId=...&scope=openid` — ทั้งสองคนต้องเห็น `personnel:manage:reference` ใน `scope` แต่มีเฉพาะคนที่สองที่ `realm_access.roles` มี `hr_master_data_admin`
 - **description ของ role/client scope ต้องไม่เกิน 255 ตัวอักษรเช่นเดียวกับ client** (พบครั้งแรกตอนเขียน role นี้: ร่างแรกยาว 261 ตัวอักษร)
+
+## PR-B (DPO): scope `audit:review` (รีวิวการเปิดเลขบัตร) — เฉพาะ role `dpo`
+
+- **client scope `audit:review`** — เป็น default client scope ของ `dpo-console` เท่านั้น เหมือน `personnel:manage:reference` ข้างบน: **Keycloak ไม่มีกลไกใส่ scope ตาม role ของผู้ใช้** scope นี้จึงอยู่ใน access token ของผู้ใช้ dpo-console **ทุกคน** (รวม `auditor`) สิทธิ์จริงถูกกั้นที่ MDM API ซึ่งตรวจ **ทั้ง scope `audit:review` และ realm role `dpo`** (`realm_access.roles` ของ access token) ทุก request: `auditor` ที่มีแค่ scope → `403 insufficient-role` (อ่าน access log / ดูรายการรอรีวิวได้ แต่รีวิวไม่ได้) หน้า dpo-console ก็ซ่อนฟอร์มรีวิวจากผู้ที่ไม่มี role `dpo` ด้วย (เพื่อ UX เท่านั้น ไม่ใช่การตัดสินสิทธิ์)
+- **ไม่ต้องสร้าง role ใหม่** — ใช้ `dpo` ที่มีอยู่
+- **realm ที่รันอยู่แล้ว (VPN-MDM) ต้องตั้งมือ** เพราะ `--import-realm` ไม่ทับ realm เดิม ขั้นตอนใน Admin Console (realm `lp-pao`):
+  1. Client scopes → **Create client scope** → Name `audit:review`, Type `None`, Protocol `OpenID Connect`, **Include in token scope = On**, Display on consent screen = Off, Description ตาม `realm-export.json` (ไม่เกิน 255 ตัวอักษร) → Save
+  2. Clients → `dpo-console` → Client scopes → **Add client scope** → เลือก `audit:review` → **Add → Default**
+  3. Users → ผู้ใช้ที่เป็น DPO ที่จะรีวิว → Role mapping → ตรวจว่ามี role `dpo` (ผู้ที่มีแค่ `auditor` จะรีวิวไม่ได้ ตามที่ตั้งใจ)
+  4. ผู้ใช้ต้อง login ใหม่ (หรือรอ refresh token) จึงจะได้ scope ใหม่ใน token
+- **การตรวจสอบหลังตั้งค่า:** เรียก `GET /admin/realms/lp-pao/clients/{dpo-console uuid}/evaluate-scopes/generate-example-access-token?userId=...&scope=openid` ด้วยผู้ใช้ `dpo` และผู้ใช้ `auditor` — ทั้งสองต้องเห็น `audit:review` ใน `scope` แต่มีเฉพาะ `dpo` ที่ `realm_access.roles` มี `dpo` จากนั้นทดสอบจริงที่ `/dpo/pid-reveals`: `dpo` กดรีวิวรายการของคนอื่นได้ (201), `auditor` ไม่เห็นฟอร์ม
+- **ข้อควรระวังก่อนขึ้นระบบจริง:** ผู้รีวิวห้ามเป็นคนเดียวกับผู้เปิดเลขบัตร API ปฏิเสธการรีวิวรายการของตนเอง (`403 self-review-forbidden`, เทียบ `sub`) ขณะนี้บัญชีผู้พัฒนาถือหลาย role ชั่วคราว (ดู "เงื่อนไขก่อนขึ้นระบบจริง" ข้อ 1 ใน CLAUDE.md) ต้องมีผู้รีวิวอีกบัญชีหนึ่งที่เป็นอิสระ

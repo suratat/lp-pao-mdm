@@ -10,7 +10,8 @@ const { createSessionStore } = require('../src/session/sessionStore');
 const DPO_CONSOLE_CLIENT_ID = 'dpo-console-test';
 const DPO_CONSOLE_CLIENT_SECRET = 'dpo-console-test-secret';
 const REDIRECT_URI = 'http://dpo-console.test/auth/callback';
-const DPO_SCOPE = 'openid audit:read events:read';
+// audit:review อยู่ใน token ของทุกคนที่ล็อกอิน dpo-console (Keycloak ผูก scope ตาม role ไม่ได้) - API ตรวจ role dpo เพิ่มเสมอ
+const DPO_SCOPE = 'openid audit:read audit:review events:read';
 
 // role/scope ทั้งหมดที่มีใน realm จริง (อ่านจาก infra/keycloak/realm-export.json) - ใช้จำลองผู้ใช้ที่มีครบทุกอย่าง
 const REALM_EXPORT = require('../../infra/keycloak/realm-export.json');
@@ -20,6 +21,7 @@ const ALL_CLIENT_SCOPES = REALM_EXPORT.clientScopes.map((c) => c.name);
 function defaultScenarios() {
   return {
     'good-dpo-code': { roles: ['dpo'], displayName: 'DPO หนึ่ง', username: 'dpo.one', scope: DPO_SCOPE },
+    'good-dpo-two-code': { roles: ['dpo'], displayName: 'DPO สอง', username: 'dpo.two', scope: DPO_SCOPE },
     'good-auditor-code': { roles: ['auditor'], displayName: 'ผู้ตรวจสอบหนึ่ง', username: 'auditor.one', scope: DPO_SCOPE },
     // T10-fix: token ใหญ่ผิดปกติ (ผู้ใช้มีทุก realm role และทุก scope ของระบบ + role ปลอม 300 ตัว) - ดู test/session.test.js
     'huge-token-code': {

@@ -14,7 +14,7 @@
       { "name": "staff", "description": "บุคลากรทั่วไป (self-service)" },
       { "name": "hr_officer", "description": "เจ้าหน้าที่ฝ่ายบุคคล - personnel:provision, personnel:write:employment, personnel:import" },
       { "name": "hr_master_data_admin", "description": "จัดการ master data หน่วยงาน/ตำแหน่ง (T10, personnel:manage:reference) - เฉพาะ PS ที่ได้รับมอบหมาย + เจ้าของระบบ ไม่ใช่ composite ของ hr_officer ต้องมีควบคู่กัน" },
-      { "name": "dpo", "description": "เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล - audit:read" },
+      { "name": "dpo", "description": "เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล - audit:read + audit:review (รีวิวการเปิดเลขบัตร) เฉพาะ role นี้" },
       { "name": "auditor", "description": "ผู้ตรวจสอบ - audit:read" },
       { "name": "mdm_admin", "description": "break-glass account ตามภาคผนวก ก ข้อ 7" }
     ]
@@ -98,7 +98,8 @@
     { "name": "sync:thaid", "description": "POST /sync/thaid - client check-broker เท่านั้น", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "events:read", "description": "GET /events feed", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "webhook:manage", "description": "จัดการ webhook subscription/delivery ของตนเอง", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
-    { "name": "audit:read", "description": "change log, access log - เฉพาะ dpo/auditor", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } }
+    { "name": "audit:read", "description": "change log, access log - เฉพาะ dpo/auditor", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "audit:review", "description": "บันทึกผลรีวิวการเปิดเลขบัตร (POST /audit/access-logs/{id}/review) - ผูกกับ client dpo-console แต่ MDM API ตรวจ realm role dpo เพิ่มเสมอ (auditor ได้ scope นี้ใน token เหมือนกันแต่ API ตอบ 403 - scope ไม่ใช่ตัวกั้นสิทธิ์)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } }
   ],
 
   "users": [
@@ -202,7 +203,7 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "audit:read", "events:read"],
+      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "audit:read", "audit:review", "events:read"],
       "optionalClientScopes": []
     },
     {

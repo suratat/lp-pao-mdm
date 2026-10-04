@@ -1,6 +1,12 @@
 const crypto = require('node:crypto');
 const { HttpProblem } = require('../security/httpProblem');
 
+// instance ต้องไม่มี query string: ผู้เรียกอาจส่งข้อมูลอ่อนไหวมาทาง query (เช่น justification ที่พิมพ์เลขบัตรลงไป) แล้ว error 4xx
+// จะสะท้อนกลับในบอดี้ - กฎข้อ 1 ของ CLAUDE.md ห้าม pid ปรากฏใน URL/query string และ error response
+function pathOnly(req) {
+  return req.originalUrl.split('?')[0];
+}
+
 const PROBLEM_BASE_URI = 'https://mdm.lp-pao.go.th/problems';
 
 // ติด requestId ให้ทุก request (ใช้จับคู่กับ access_log.request_id ตาม §2.4)
@@ -33,7 +39,7 @@ function problemJsonErrorHandler(err, req, res, _next) {
     title,
     status,
     detail: err instanceof HttpProblem ? err.detail : undefined,
-    instance: req.originalUrl,
+    instance: pathOnly(req),
     requestId: req.id,
   };
 
@@ -63,7 +69,7 @@ function notFoundHandler(req, res) {
     type: `${PROBLEM_BASE_URI}/not-found`,
     title: 'ไม่พบ endpoint นี้',
     status: 404,
-    instance: req.originalUrl,
+    instance: pathOnly(req),
     requestId: req.id,
   });
 }

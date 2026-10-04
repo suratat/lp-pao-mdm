@@ -11,6 +11,7 @@ const {
   clearOauthStateCookie,
 } = require('../session/sessionCookie');
 const { layout, escapeHtml } = require('../views/html');
+const { newCsrfToken } = require('../session/csrf');
 
 function errorPage(message) {
   return layout('เข้าสู่ระบบไม่สำเร็จ', `<p class="error">${message}</p><p><a href="/auth/login">เข้าสู่ระบบใหม่อีกครั้ง</a></p>`);
@@ -75,6 +76,8 @@ function createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionStore, isP
         refreshToken,
         accessTokenExpiresAt: Date.now() + expiresIn * 1000,
         displayName: identity.displayName,
+        isDpo: identity.roles.includes('dpo'), // เฉพาะ role dpo รีวิวได้ (auditor อ่านอย่างเดียว) - ใช้ซ่อน/แสดงฟอร์มเท่านั้น
+        csrfToken: newCsrfToken(),
       });
       clearLegacySessionCookie(res, { secure }); // ล้าง cookie JWE รุ่นเก่าที่อาจค้างในเบราว์เซอร์
       setSessionCookie(res, sid, { secure });
