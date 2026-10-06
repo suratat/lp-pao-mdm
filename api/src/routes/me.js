@@ -38,7 +38,7 @@ function createMeRouter(pool) {
   router.put('/me/emergency-contacts', requireScope('personnel:self'), async (req, res, next) => {
     try {
       const personId = requireOwnPersonId(req);
-      const contacts = await replaceMyEmergencyContacts(pool, personId, req.body);
+      const contacts = await replaceMyEmergencyContacts(pool, personId, req.body, req.auth);
       res.json(contacts);
     } catch (err) {
       next(err);

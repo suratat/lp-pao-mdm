@@ -4,6 +4,7 @@ const { isValidPid, pidHash } = require('../security/pid');
 const { loadAndPresentPerson } = require('./personPresenter');
 const { closeAndOpenEmployment } = require('./employmentShared');
 const { writeChangeLog, writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
+const { composeReason } = require('./reason');
 
 const PID_KEY_NAME = 'mdm-pid';
 
@@ -21,6 +22,8 @@ async function provisionPerson({ pool, vault, pepper }, body, auth) {
   if (!isValidPid(pid)) {
     throw new HttpProblem(400, 'invalid-pid', 'เลขบัตรประชาชนไม่ถูกต้อง', 'pid ไม่ผ่านการตรวจ checksum (mod 11)');
   }
+  // เหตุผลบังคับ (422 ถ้าว่าง/มีเลข 13 หลัก) - ตรวจก่อนแตะ DB ทุกอย่าง
+  const reason = composeReason(body.reason, employment?.referenceDocument);
 
   const hash = pidHash(pid, pepper);
 
@@ -48,7 +51,7 @@ async function provisionPerson({ pool, vault, pepper }, body, auth) {
     ]);
 
     const { changes } = await closeAndOpenEmployment(client, personId, employment, 'HR');
-    await logEmploymentChanges(client, personId, changes, undefined, actor);
+    await logEmploymentChanges(client, personId, changes, reason, actor);
 
     if (Array.isArray(externalIds)) {
       for (const ext of externalIds) {
@@ -71,6 +74,8 @@ async function provisionPerson({ pool, vault, pepper }, body, auth) {
 // POST /persons/{id}/deactivate (§3.4, seq-01)
 async function deactivatePerson(pool, personId, body, auth) {
   const actor = actorFromAuth(auth);
+  const reason = composeReason(body.reason, body.referenceDocument);
+  const separationReason = composeReason(body.reason);
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(`SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`, [
       personId,
@@ -78,6 +83,10 @@ async function deactivatePerson(pool, personId, body, auth) {
     if (rows.length === 0) throw new HttpProblem(404, 'not-found', 'ไม่พบบุคคลนี้');
     if (rows[0].status === 'INACTIVE') {
       throw new HttpProblem(409, 'already-inactive', 'บุคคลนี้ถูกระงับสถานะไปแล้ว');
+    }
+    // optimistic lock (เหมือน reactivate/PUT employment): หน้าจอที่เปิดค้างไว้ก่อนมีคนอื่นแก้ต้องไม่เขียนทับ
+    if (body.expectedVersion !== undefined && body.expectedVersion !== rows[0].version) {
+      throw new HttpProblem(409, 'version-conflict', 'version ไม่ตรงกับปัจจุบัน', `expectedVersion=${body.expectedVersion} แต่ปัจจุบันคือ ${rows[0].version}`);
     }
 
     const { rows: currentEmployment } = await client.query(
@@ -90,7 +99,7 @@ async function deactivatePerson(pool, personId, body, auth) {
         `UPDATE mdm.employment
          SET is_current = false, employment_status = $2, separation_date = $3, separation_reason = $4, effective_to = $3
          WHERE employment_id = $1`,
-        [currentEmployment[0].employment_id, body.employmentStatus, body.separationDate, body.reason ?? null]
+        [currentEmployment[0].employment_id, body.employmentStatus, body.separationDate, separationReason]
       );
       await writeChangeLog(client, {
         personId,
@@ -100,7 +109,7 @@ async function deactivatePerson(pool, personId, body, auth) {
         newValue: body.employmentStatus,
         changedBy: 'HR',
         actor,
-        reason: body.reason,
+        reason,
       });
     }
 
@@ -117,7 +126,7 @@ async function deactivatePerson(pool, personId, body, auth) {
       newValue: 'INACTIVE',
       changedBy: 'HR',
       actor,
-      reason: body.reason,
+      reason,
     });
 
     await client.query(
@@ -138,6 +147,7 @@ async function deactivatePerson(pool, personId, body, auth) {
 // POST /persons/{id}/reactivate (§3.4: "ตั้ง verification_status = STALE เพื่อบังคับผ่าน ThaID ใหม่")
 async function reactivatePerson(pool, personId, body, auth) {
   const actor = actorFromAuth(auth);
+  const reason = composeReason(body.reason, body.referenceDocument);
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(`SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`, [
       personId,
@@ -149,7 +159,7 @@ async function reactivatePerson(pool, personId, body, auth) {
     }
 
     const { changes } = await closeAndOpenEmployment(client, personId, body, 'HR');
-    await logEmploymentChanges(client, personId, changes, body.referenceDocument, actor);
+    await logEmploymentChanges(client, personId, changes, reason, actor);
 
     const newVersion = rows[0].version + 1;
     await client.query(
@@ -166,6 +176,7 @@ async function reactivatePerson(pool, personId, body, auth) {
       newValue: 'ACTIVE',
       changedBy: 'HR',
       actor,
+      reason,
     });
 
     await client.query(

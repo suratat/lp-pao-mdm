@@ -130,6 +130,22 @@ const batchStatus = async (batchId) =>
   (await adminPool.query(`SELECT status FROM stg_hr.import_batch WHERE batch_id = $1`, [batchId])).rows[0].status;
 
 describe('runImport: แบ่ง chunk ตามไบต์ และรวมผล', () => {
+  test('PR-D1: ทุก request ส่ง reason ระดับ batch "HR_IMPORT batch <batchId>" อัตโนมัติ (API บังคับ) และ body ยังไม่เกินงบไบต์ (envelope นับ reason แล้ว)', async () => {
+    const { batchId } = await seedBatch(400);
+    const stub = makeStubFetch();
+    await run(batchId, stub);
+    expect(stub.calls.length).toBeGreaterThan(1);
+    for (const call of stub.calls) {
+      expect(call.body.reason).toBe(`HR_IMPORT batch ${batchId}`);
+      expect(call.body.reason).not.toMatch(/\d{13}/); // batchId เป็น UUID ไม่ใช่เลขบัตร
+      expect(call.bytes).toBeLessThanOrEqual(MAX_BODY_BYTES);
+    }
+    // DRY_RUN ก็ต้องส่ง (API บังคับทุก mode)
+    const dryStub = makeStubFetch();
+    await run(batchId, dryStub, { mode: 'DRY_RUN' });
+    expect(dryStub.calls.every((c) => c.body.reason === `HR_IMPORT batch ${batchId}`)).toBe(true);
+  });
+
   test('800 แถวสังเคราะห์ -> หลาย request, ไม่มี request ใดเกิน limit, รวมผลถูกต้อง, บันทึกเวลาต่อ chunk', async () => {
     const { batchId } = await seedBatch(800);
     const stub = makeStubFetch();
@@ -304,6 +320,19 @@ describe('runImport: retry และการล้มกลางทาง', ()
 });
 
 describe('กับ API จริง', () => {
+  test('PR-D1: API จริงรับ batch ที่ runImport ส่ง (มี reason) และเก็บ reason เป็น "HR_IMPORT batch <id>" ในทุกแถว data_change_log (changed_by HR_IMPORT)', async () => {
+    const { batchId } = await seedBatch(5);
+    const summary = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'APPLY', createIfMissing: true, retryDelayMs: 0 });
+    expect(summary).toMatchObject({ total: 5, created: 5, errors: [] });
+    const { rows } = await adminPool.query(
+      `SELECT changed_by, actor_sub, count(*)::int AS n FROM audit.data_change_log WHERE reason = $1 GROUP BY 1, 2`,
+      [`HR_IMPORT batch ${batchId}`]
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ changed_by: 'HR_IMPORT', actor_sub: 'system:hr-import' });
+    expect(rows[0].n).toBeGreaterThanOrEqual(5);
+  });
+
   test('API จริงตอบ 413 เมื่อ body เกิน 100 KB (ยืนยันสมมติฐาน limit ที่ไม่ขยาย)', async () => {
     const row = { rowRef: '1', pid: makeFakePid(), expectedFirstNameTh: th(255), expectedLastNameTh: th(255) };
     const body = JSON.stringify({ mode: 'DRY_RUN', rows: Array.from({ length: 120 }, () => row) });

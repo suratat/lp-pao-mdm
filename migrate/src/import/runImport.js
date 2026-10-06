@@ -119,7 +119,9 @@ async function runImport(
   const startedAt = Date.now();
   const rows = await fetchOkRows(pool, batchId);
   const importRows = rows.map(toImportRow);
-  const envelopeBytes = envelopeBytesFor({ mode, createIfMissing, sourceSystem });
+  // เหตุผลระดับ batch บังคับที่ API (เก็บเป็น reason ของทุกแถว data_change_log) - ส่งอัตโนมัติ ไม่ต้องให้ผู้รันกรอก (batchId เป็น UUID ไม่ใช่ pid)
+  const reason = `HR_IMPORT batch ${batchId}`;
+  const envelopeBytes = envelopeBytesFor({ mode, createIfMissing, sourceSystem, reason });
   const { chunks, oversized } = chunkByBytes(importRows, {
     envelopeBytes,
     maxBytes: MAX_BODY_BYTES,
@@ -165,7 +167,7 @@ async function runImport(
   for (let i = 0; i < chunks.length; i += 1) {
     const index = i + 1;
     const chunk = chunks[i];
-    const body = JSON.stringify({ mode, createIfMissing, sourceSystem, rows: chunk.items });
+    const body = JSON.stringify({ mode, createIfMissing, sourceSystem, reason, rows: chunk.items });
 
     const sent = await sendChunk({ fetchImpl, url: `${apiBaseUrl}/sync/hr/employment-batch`, token, body, retryDelayMs });
 

@@ -2,6 +2,7 @@ const express = require('express');
 const { requireScope } = require('../middleware/auth');
 const { syncFromThaid } = require('../services/syncService');
 const { importEmploymentBatch } = require('../services/employmentImportService');
+const { assertReason } = require('../services/reason');
 
 // ต้องเป็น factory รับ pool/vault/pepper เข้ามา (ไม่ใช้ global) เพราะ pepper ต้องอ่านจาก Vault ครั้งเดียว
 // ตอน boot (ภาคผนวก ข) และ test ต้อง inject fake vault client แทนของจริงได้
@@ -22,7 +23,9 @@ function createSyncRouter({ pool, vault, pepper }) {
   router.post('/sync/hr/employment-batch', requireScope('personnel:import'), async (req, res, next) => {
     try {
       const { mode = 'DRY_RUN', createIfMissing = false, rows } = req.body;
-      const result = await importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing, rows, actorClient: req.auth.azp });
+      // เหตุผลระดับ batch บังคับ (เช่น "HR_IMPORT batch <id>") - เก็บเป็น reason ของทุกแถว data_change_log ที่เกิดจากการนำเข้านี้
+      const reason = assertReason(req.body.reason);
+      const result = await importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing, rows, actorClient: req.auth.azp, reason });
       res.json(result);
     } catch (err) {
       next(err);

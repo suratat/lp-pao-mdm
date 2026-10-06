@@ -227,7 +227,9 @@ function buildOperationDescriptors() {
       pathTemplate: '/persons',
       path: () => '/persons',
       scope: 'personnel:read:basic personnel:provision',
+      roles: ['hr_master_data_admin'], // PR-D1: เขียนบุคคลด้วยมือต้องมี realm role
       body: (ids) => ({
+        reason: 'ทดสอบ contract (เหตุผลสมมติ)',
         pid: makeFakePid(),
         expectedFirstNameTh: 'ทดสอบ',
         expectedLastNameTh: 'ระบบ',
@@ -290,7 +292,9 @@ function buildOperationDescriptors() {
       pathTemplate: '/persons/:personId/employment',
       path: (ids) => `/persons/${ids.upsertPersonId}/employment`,
       scope: 'personnel:write:employment',
+      roles: ['hr_master_data_admin'], // PR-D1: เขียนบุคคลด้วยมือต้องมี realm role
       body: (ids) => ({
+        reason: 'ทดสอบ contract (เหตุผลสมมติ)',
         employeeNo: `EMP-UPSERT-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: ids.upsertNewPositionId,
@@ -305,7 +309,8 @@ function buildOperationDescriptors() {
       pathTemplate: '/persons/:personId/deactivate',
       path: (ids) => `/persons/${ids.deactivatePersonId}/deactivate`,
       scope: 'personnel:read:basic personnel:write:employment',
-      body: { employmentStatus: 'RESIGNED', separationDate: '2024-01-01' },
+      roles: ['hr_master_data_admin'], // PR-D1: เขียนบุคคลด้วยมือต้องมี realm role
+      body: { employmentStatus: 'RESIGNED', separationDate: '2024-01-01', reason: 'ทดสอบ contract (เหตุผลสมมติ)' },
       expectStatus: 200,
     },
     {
@@ -314,7 +319,9 @@ function buildOperationDescriptors() {
       pathTemplate: '/persons/:personId/reactivate',
       path: (ids) => `/persons/${ids.reactivatePersonId}/reactivate`,
       scope: 'personnel:read:basic personnel:write:employment',
+      roles: ['hr_master_data_admin'], // PR-D1: เขียนบุคคลด้วยมือต้องมี realm role
       body: (ids) => ({
+        reason: 'ทดสอบ contract (เหตุผลสมมติ)',
         employeeNo: `EMP-REACT-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: ids.reactivatePositionId,
@@ -417,7 +424,7 @@ function buildOperationDescriptors() {
       pathTemplate: '/sync/hr/employment-batch',
       path: () => '/sync/hr/employment-batch',
       scope: 'personnel:import',
-      body: { mode: 'DRY_RUN', rows: [] },
+      body: { mode: 'DRY_RUN', rows: [], reason: 'ทดสอบ contract (เหตุผลสมมติ)' },
       expectStatus: 200,
     },
     {

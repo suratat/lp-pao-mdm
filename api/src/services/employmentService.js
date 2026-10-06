@@ -3,6 +3,7 @@ const { HttpProblem } = require('../security/httpProblem');
 const { presentEmployment } = require('./personPresenter');
 const { closeAndOpenEmployment } = require('./employmentShared');
 const { writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
+const { composeReason } = require('./reason');
 
 const EMPLOYMENT_SELECT = `
   SELECT e.*, pos.position_no, pos.title_th AS position_title_th, pos.position_type,
@@ -29,9 +30,11 @@ async function getEmploymentHistory(pool, personId, currentOnly) {
 // PUT /persons/{id}/employment (§2.1, §1.6 optimistic lock ผ่าน expectedVersion)
 async function upsertEmployment(pool, personId, body, auth) {
   const actor = actorFromAuth(auth);
+  // เหตุผลบังคับ (422 ถ้าว่าง/มีเลข 13 หลัก) ตรวจก่อนแตะ DB; เลขที่คำสั่ง (referenceDocument) ต่อท้ายเหตุผลที่เก็บลง log
+  const reason = composeReason(body.reason, body.referenceDocument);
   return withTransaction(pool, async (client) => {
     const { rows: personRows } = await client.query(
-      `SELECT version FROM mdm.person WHERE person_id = $1 FOR UPDATE`,
+      `SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`,
       [personId]
     );
     if (personRows.length === 0) throw new HttpProblem(404, 'not-found', 'ไม่พบบุคคลนี้');
@@ -64,21 +67,25 @@ async function upsertEmployment(pool, personId, body, auth) {
         changes,
         changedBy: 'HR',
         actor,
-        reason: body.referenceDocument,
+        reason,
       });
 
       const newVersion = currentVersion + 1;
       await client.query(`UPDATE mdm.person SET version = $2 WHERE person_id = $1`, [personId, newVersion]);
-      await client.query(
-        `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
-         VALUES ($1, 'EMPLOYMENT_UPDATED', $2, $3, $4)`,
-        [
-          personId,
-          JSON.stringify(changes.map((c) => c.fieldKey)),
-          JSON.stringify({ personId, version: newVersion, status: 'ACTIVE' }),
-          newVersion,
-        ]
-      );
+      // บุคคลที่ยังไม่ claim (PENDING_CLAIM) ยังไม่มีตัวตนที่ระบบปลายทางควรรับรู้ (เหมือน provision ที่ไม่ส่ง outbox) - ไม่ส่ง event
+      // และ payload ต้องใช้สถานะจริงของบุคคล (เดิมฝัง 'ACTIVE' เสมอ ทำให้ INACTIVE ถูกประกาศเป็น ACTIVE)
+      if (personRows[0].status !== 'PENDING_CLAIM') {
+        await client.query(
+          `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
+           VALUES ($1, 'EMPLOYMENT_UPDATED', $2, $3, $4)`,
+          [
+            personId,
+            JSON.stringify(changes.map((c) => c.fieldKey)),
+            JSON.stringify({ personId, version: newVersion, status: personRows[0].status }),
+            newVersion,
+          ]
+        );
+      }
     }
 
     const { rows: freshRows } = await client.query(`${EMPLOYMENT_SELECT} WHERE e.employment_id = $1`, [

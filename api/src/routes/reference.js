@@ -3,8 +3,8 @@ const { requireScope, requireRole } = require('../middleware/auth');
 const { listOrgUnits, listPositions, listPositionTypes } = require('../services/referenceService');
 const referenceWriteService = require('../services/referenceWriteService');
 
-// realm role ที่ใช้คู่กับ scope personnel:manage:reference (T10) - ดู infra/keycloak/README.md
-const MASTER_DATA_ADMIN_ROLE = 'hr_master_data_admin';
+const { MASTER_DATA_ADMIN_ROLE } = require('../constants');
+
 const MASTER_DATA_SCOPE = 'personnel:manage:reference';
 
 function parseBoolQuery(value, defaultValue) {

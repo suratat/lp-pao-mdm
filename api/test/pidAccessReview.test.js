@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const request = require('supertest');
+const { rolesFor, withDefaultReason } = require('./hrWrite');
 const { buildTestApp } = require('./testApp');
 const { makeFakePid } = require('../src/security/pid');
 const { insertFixtureOrgUnit } = require('./fixtures');
@@ -23,12 +24,12 @@ const uniqueSub = (prefix) => `${prefix}-${crypto.randomUUID()}`;
 
 // คืน object ที่ไม่ใช่ thenable เพื่อให้ `(await api(...)).send()/.query()` ทำงาน (การ await supertest Test ตรงๆ จะยิง request ทันที)
 async function api(method, urlPath, auth = {}) {
-  const token = await ctx.auth.signToken(auth);
+  const token = await ctx.auth.signToken({ roles: rolesFor(method, urlPath), ...auth });
   const pending = (body, query) => ({
     then: (resolve, reject) => {
       let req = request(ctx.app)[method](`/api/v1${urlPath}`).set('Authorization', `Bearer ${token}`);
       if (query) req = req.query(query);
-      if (body !== undefined) req = req.send(body);
+      if (body !== undefined) req = req.send(withDefaultReason(method, urlPath, body));
       return req.then(resolve, reject);
     },
   });

@@ -63,12 +63,12 @@ describe('PUT /persons/{id}/employment - optimistic locking (§1.6)', () => {
     const positionId = await makePosition();
     const personId = await makeActivePerson(positionId);
     const newPositionId = await makePosition();
-    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment' });
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment', roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .put(`/api/v1/persons/${personId}/employment`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         employeeNo: `EMP-CONFLICT-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: newPositionId,
@@ -85,12 +85,12 @@ describe('PUT /persons/{id}/employment - optimistic locking (§1.6)', () => {
     const positionId = await makePosition();
     const personId = await makeActivePerson(positionId);
     const newPositionId = await makePosition();
-    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic' });
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic', roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .put(`/api/v1/persons/${personId}/employment`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         employeeNo: `EMP-OK-${crypto.randomUUID()}`,
         personnelType: 'CIVIL_SERVANT',
         positionId: newPositionId,
@@ -110,12 +110,12 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
   test('200 เมื่อไม่ส่ง positionId มา - DB บันทึก position_id เป็น NULL และ response ไม่มี employment.position', async () => {
     const positionId = await makePosition();
     const personId = await makeActivePerson(positionId);
-    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic' });
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic', roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .put(`/api/v1/persons/${personId}/employment`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         employeeNo: `EMP-NOPOS-${crypto.randomUUID()}`,
         personnelType: 'OUTSOURCE_INDIVIDUAL',
         orgUnitId: fixtureOrgUnitId,
@@ -136,12 +136,12 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
   test('200 เมื่อ personnelType เป็น OTHER (อื่นๆ) และไม่ส่ง positionId มา - ผ่าน OpenAPI enum validation และบันทึกได้เหมือนกลุ่ม optional-position อื่น', async () => {
     const positionId = await makePosition();
     const personId = await makeActivePerson(positionId);
-    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic' });
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment personnel:read:basic', roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .put(`/api/v1/persons/${personId}/employment`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         employeeNo: `EMP-OTHER-${crypto.randomUUID()}`,
         personnelType: 'OTHER',
         orgUnitId: fixtureOrgUnitId,
@@ -163,7 +163,7 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
     const positionId = await makePosition();
     const personA = await makeActivePerson(positionId);
     const personB = await makeActivePerson(await makePosition());
-    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment' });
+    const token = await ctx.auth.signToken({ scope: 'personnel:write:employment', roles: ['hr_master_data_admin'] });
 
     const bodyFor = (employeeNo) => ({
       employeeNo,
@@ -176,13 +176,13 @@ describe('PUT /persons/{id}/employment - positionId เป็น optional (พ�
     const resA = await request(ctx.app)
       .put(`/api/v1/persons/${personA}/employment`)
       .set('Authorization', `Bearer ${token}`)
-      .send(bodyFor(`EMP-NOPOS-A-${crypto.randomUUID()}`));
+      .send({ ...bodyFor(`EMP-NOPOS-A-${crypto.randomUUID()}`), reason: 'ทดสอบระบบ (เหตุผลสมมติ)' });
     expect(resA.status).toBe(200);
 
     const resB = await request(ctx.app)
       .put(`/api/v1/persons/${personB}/employment`)
       .set('Authorization', `Bearer ${token}`)
-      .send(bodyFor(`EMP-NOPOS-B-${crypto.randomUUID()}`));
+      .send({ ...bodyFor(`EMP-NOPOS-B-${crypto.randomUUID()}`), reason: 'ทดสอบระบบ (เหตุผลสมมติ)' });
     expect(resB.status).toBe(200);
   });
 });
@@ -191,7 +191,7 @@ describe('POST /persons - duplicate pid (§3.4)', () => {
   test('409 พร้อม existingPersonId เมื่อ pid ซ้ำกับ record เดิม', async () => {
     const positionId = await makePosition();
     const pid = makeFakePid();
-    const token = await ctx.auth.signToken({ scope: 'personnel:provision personnel:read:basic' });
+    const token = await ctx.auth.signToken({ scope: 'personnel:provision personnel:read:basic', roles: ['hr_master_data_admin'] });
 
     const employment = () => ({
       employeeNo: `EMP-DUP-${crypto.randomUUID()}`,
@@ -204,14 +204,14 @@ describe('POST /persons - duplicate pid (§3.4)', () => {
     const first = await request(ctx.app)
       .post('/api/v1/persons')
       .set('Authorization', `Bearer ${token}`)
-      .send({ pid, expectedFirstNameTh: 'ก', expectedLastNameTh: 'ข', employment: employment() });
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)', pid, expectedFirstNameTh: 'ก', expectedLastNameTh: 'ข', employment: employment() });
     expect(first.status).toBe(201);
 
     const secondPositionId = await makePosition();
     const second = await request(ctx.app)
       .post('/api/v1/persons')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         pid,
         expectedFirstNameTh: 'ค',
         expectedLastNameTh: 'ง',

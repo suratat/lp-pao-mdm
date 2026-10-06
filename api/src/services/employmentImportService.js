@@ -61,7 +61,7 @@ async function resolvePerson(client, vault, pepper, row, createIfMissing) {
 // ประมวลผลแถวเดียวในธุรกรรมของตัวเอง (แถวอื่นบันทึกได้ตามปกติแม้แถวนี้ผิดพลาด ตามคำอธิบาย operation นี้)
 // DRY_RUN รันจริงผ่าน SQL เดียวกันทั้งหมดแล้ว ROLLBACK แทน COMMIT - ตรวจ FK/EXCLUDE/UNIQUE ได้แม่นยำ
 // เหมือนของจริงโดยไม่มีผลข้างเคียง
-async function processRow({ pool, vault, pepper, mode, createIfMissing, actorClient }, row) {
+async function processRow({ pool, vault, pepper, mode, createIfMissing, actorClient, reason }, row) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -77,6 +77,7 @@ async function processRow({ pool, vault, pepper, mode, createIfMissing, actorCli
         changes,
         changedBy: 'HR_IMPORT',
         actor: systemActor(SYSTEM_ACTORS.HR_IMPORT, actorClient),
+        reason,
       });
     }
 
@@ -92,12 +93,12 @@ async function processRow({ pool, vault, pepper, mode, createIfMissing, actorCli
   }
 }
 
-async function importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing = false, rows, actorClient = null }) {
+async function importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing = false, rows, actorClient = null, reason }) {
   const result = { mode, total: rows.length, created: 0, updated: 0, unchanged: 0, errors: [] };
 
   for (const row of rows) {
     try {
-      const outcome = await processRow({ pool, vault, pepper, mode, createIfMissing, actorClient }, row);
+      const outcome = await processRow({ pool, vault, pepper, mode, createIfMissing, actorClient, reason }, row);
       result[outcome] += 1;
     } catch (err) {
       result.errors.push({
