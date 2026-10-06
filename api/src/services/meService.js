@@ -1,4 +1,5 @@
 const { withTransaction } = require('../db/transaction');
+const { HttpProblem } = require('../security/httpProblem');
 const { presentContact, presentEmergencyContacts } = require('./personPresenter');
 const { writeChangeLog, actorFromSelf } = require('./changeLogWriter');
 
@@ -128,18 +129,78 @@ async function updateMyContact(pool, personId, body, auth) {
   });
 }
 
-// แทนที่ทั้งรายการ (สูงสุด 3) - emergency_contact ไม่ใช่ข้อมูลหลักที่ต้องคง audit trail ตลอดไป จึงลบ
-// แถวเดิมได้จริง (ดูเหตุผลใน migration 1700000000025_emergency_contact_delete_grant.js)
-async function replaceMyEmergencyContacts(pool, personId, contacts) {
-  return withTransaction(pool, async (client) => {
-    await client.query(`DELETE FROM mdm.emergency_contact WHERE person_id = $1`, [personId]);
+// แทนที่ทั้งรายการ (สูงสุด 3) - emergency_contact ไม่ใช่ข้อมูลหลักที่ต้องคงค่าไว้ตลอดไป จึงลบแถวเดิมได้จริง
+// (ดูเหตุผลใน migration 1700000000025_emergency_contact_delete_grant.js) แต่การ "เปลี่ยน" ต้องมีร่องรอยตามกฎข้อ 3 ของ CLAUDE.md:
+// data_change_log + outbox_event + version ใน transaction เดียวกัน (เดิมไม่มีทั้งสามอย่าง) โดย "ไม่เก็บค่า" ชื่อ/เบอร์ของบุคคลที่สามลง
+// audit แบบ append-only ถาวร (ขัดกับเหตุผลที่อนุญาตให้ลบได้): บันทึกเฉพาะ ผู้กระทำ + ฟิลด์ที่เปลี่ยน + ลำดับช่อง (ใน reason)
+const EMERGENCY_FIELDS = [
+  ['full_name', 'emergency_contact.full_name'],
+  ['relationship', 'emergency_contact.relationship'],
+  ['phone', 'emergency_contact.phone'],
+];
 
+// เทียบรายการเดิม/ใหม่รายช่อง (priority 1-3) คืนรายการ { slot, fieldKey } ที่เปลี่ยนจริง (เพิ่ม/ลบ/แก้ ช่อง = เปลี่ยนทุกฟิลด์ที่มีค่าฝั่งใดฝั่งหนึ่ง)
+function diffEmergencyContacts(oldRows, newRows) {
+  const bySlot = (rows) => new Map(rows.map((r) => [r.priority, r]));
+  const oldMap = bySlot(oldRows);
+  const newMap = bySlot(newRows);
+  const changes = [];
+  for (const slot of [...new Set([...oldMap.keys(), ...newMap.keys()])].sort((x, y) => x - y)) {
+    for (const [column, fieldKey] of EMERGENCY_FIELDS) {
+      const before = oldMap.get(slot)?.[column] ?? null;
+      const after = newMap.get(slot)?.[column] ?? null;
+      if (before !== after) changes.push({ slot, fieldKey });
+    }
+  }
+  return changes;
+}
+
+async function replaceMyEmergencyContacts(pool, personId, contacts, auth) {
+  const actor = selfActor(personId, auth);
+  return withTransaction(pool, async (client) => {
+    // ล็อกแถว person: เพิ่ม version และกันสอง request แก้พร้อมกัน
+    const { rows: personRows } = await client.query(`SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`, [personId]);
+    if (personRows.length === 0) throw new HttpProblem(404, 'not-found', 'ไม่พบบุคคลนี้');
+
+    const { rows: before } = await client.query(
+      `SELECT full_name, relationship, phone, priority FROM mdm.emergency_contact WHERE person_id = $1`,
+      [personId]
+    );
+
+    await client.query(`DELETE FROM mdm.emergency_contact WHERE person_id = $1`, [personId]);
+    const incoming = [];
     for (const [index, contact] of contacts.entries()) {
+      const priority = contact.priority ?? index + 1;
+      incoming.push({ full_name: contact.fullName, relationship: contact.relationship ?? null, phone: contact.phone ?? null, priority });
       // eslint-disable-next-line no-await-in-loop
       await client.query(
         `INSERT INTO mdm.emergency_contact (person_id, full_name, relationship, phone, priority)
          VALUES ($1, $2, $3, $4, $5)`,
-        [personId, contact.fullName, contact.relationship, contact.phone, contact.priority ?? index + 1]
+        [personId, contact.fullName, contact.relationship, contact.phone, priority]
+      );
+    }
+
+    const changes = diffEmergencyContacts(before, incoming);
+    if (changes.length > 0) {
+      for (const { slot, fieldKey } of changes) {
+        // oldValue/newValue เป็น null เสมอ (ไม่เก็บค่า) - field_policy ตั้ง log_values_in_audit=false ซ้ำอีกชั้น (migration 1700000000049)
+        // eslint-disable-next-line no-await-in-loop
+        await writeChangeLog(client, {
+          personId,
+          tableName: 'emergency_contact',
+          fieldName: fieldKey,
+          changedBy: 'SELF',
+          actor,
+          reason: `ผู้ติดต่อฉุกเฉินลำดับที่ ${slot}`,
+        });
+      }
+      const changedFields = [...new Set(changes.map((c) => c.fieldKey))];
+      const newVersion = personRows[0].version + 1;
+      await client.query(`UPDATE mdm.person SET version = $2 WHERE person_id = $1`, [personId, newVersion]);
+      await client.query(
+        `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
+         VALUES ($1, 'CONTACT_UPDATED', $2, $3, $4)`,
+        [personId, JSON.stringify(changedFields), JSON.stringify({ personId, version: newVersion, status: personRows[0].status }), newVersion]
       );
     }
 

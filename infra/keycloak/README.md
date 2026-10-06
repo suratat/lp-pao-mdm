@@ -58,3 +58,18 @@ claims ใน access token ที่วัดจริงกับ Keycloak 26.0
   4. ผู้ใช้ต้อง login ใหม่ (หรือรอ refresh token) จึงจะได้ scope ใหม่ใน token
 - **การตรวจสอบหลังตั้งค่า:** เรียก `GET /admin/realms/lp-pao/clients/{dpo-console uuid}/evaluate-scopes/generate-example-access-token?userId=...&scope=openid` ด้วยผู้ใช้ `dpo` และผู้ใช้ `auditor` — ทั้งสองต้องเห็น `audit:review` ใน `scope` แต่มีเฉพาะ `dpo` ที่ `realm_access.roles` มี `dpo` จากนั้นทดสอบจริงที่ `/dpo/pid-reveals`: `dpo` กดรีวิวรายการของคนอื่นได้ (201), `auditor` ไม่เห็นฟอร์ม
 - **ข้อควรระวังก่อนขึ้นระบบจริง:** ผู้รีวิวห้ามเป็นคนเดียวกับผู้เปิดเลขบัตร API ปฏิเสธการรีวิวรายการของตนเอง (`403 self-review-forbidden`, เทียบ `sub`) ขณะนี้บัญชีผู้พัฒนาถือหลาย role ชั่วคราว (ดู "เงื่อนไขก่อนขึ้นระบบจริง" ข้อ 1 ใน CLAUDE.md) ต้องมีผู้รีวิวอีกบัญชีหนึ่งที่เป็นอิสระ
+
+## PR-D1 (HR จัดการข้อมูลบุคคล): role `hr_master_data_admin` เขียนข้อมูลบุคคลด้วยมือ
+
+ไม่ต้องสร้าง role/scope ใหม่ใน PR นี้ (scope ใหม่ `personnel:manage:person` มากับ PR-D2) สิ่งที่เปลี่ยนคือ MDM API ตรวจ realm role `hr_master_data_admin`
+(จาก `realm_access.roles` ใน access token - ต้องมี client scope `roles` เหมือนที่ hr-console ใช้ตรวจ master data อยู่แล้ว) เพิ่มจาก scope ที่ endpoint 4 ตัวนี้:
+`POST /persons`, `PUT /persons/{id}/employment`, `POST /persons/{id}/deactivate`, `POST /persons/{id}/reactivate` ไม่มี role -> `403 insufficient-role`
+
+- **ไม่กระทบ:** การอนุมัติคำขอ claim ใน hr-console (`POST /claim-requests/{id}/resolve` ใช้ scope `personnel:provision` เท่านั้น) และ HR import
+  (`migrate-cli` เรียก `POST /sync/hr/employment-batch` ด้วย client `migrate-tool` scope `personnel:import` ไม่เคยเรียก endpoint 4 ตัวข้างบน ไม่ต้องมี role)
+- **ถ้ามี client อื่นที่เรียก 4 endpoint นั้นอยู่** (ในรีโปนี้ไม่พบผู้เรียกที่ไม่ใช่เทสต์; ถ้ามี client ที่สร้างมือบน realm จริง เช่นชื่อ `mdm-hr-tool` ซึ่งไม่อยู่ใน
+  `realm-export.json` และไม่ปรากฏในโค้ด) จะได้ 403 หลัง deploy: แก้โดยให้ **service account ของ client นั้น** มี realm role นี้ -
+  Clients -> (client นั้น) -> Service accounts roles -> Assign role -> เลือก `hr_master_data_admin` (และต้องมี client scope `roles` ใน client นั้นเพื่อให้ token มี `realm_access.roles`)
+  แล้วตรวจด้วย `evaluate-scopes/generate-example-access-token` ของ service account user
+- **ผู้ใช้ที่จะใช้ 4 endpoint นี้ผ่านหน้าจอ HR (PR-D3):** ต้องมีทั้ง `hr_officer` และ `hr_master_data_admin` (ขั้นตอนกำหนด role เหมือนหัวข้อ T10 ข้างบน)
+- `POST /sync/hr/employment-batch` ต้องส่ง `reason` ระดับ batch ทุกครั้ง (migrate-cli ส่งให้อัตโนมัติเป็น `HR_IMPORT batch <id>`) ผู้เรียกอื่นที่ไม่ส่ง -> 400

@@ -135,6 +135,11 @@ paths:
 
         - ถ้า `pid` ตรงกับ record ที่มีอยู่แล้ว จะคืน `409` พร้อม `personId` เดิม (ป้องกันข้อมูลซ้ำ)
         - `pid` ต้องผ่านการตรวจ checksum (mod 11) ก่อน
+
+        **สิทธิ์ (เปลี่ยนใน PR-D1):** ต้องมี scope ของ operation นี้ **และ** realm role `hr_master_data_admin` (ตรวจที่ MDM API ทุก request
+        เพราะ scope ใน token ไม่ใช่ตัวกั้นสิทธิ์) ไม่มี role -> 403 `insufficient-role` และต้องมี `reason` (บังคับ ห้ามมีเลข 13 หลัก:
+        ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422 `reason-contains-pid`, เกิน 500 ตัวอักษร -> 422 `reason-too-long`) ซึ่งถูกเก็บใน
+        `data_change_log.reason`
       operationId: provisionPerson
       security:
         - keycloak: [personnel:provision]
@@ -332,7 +337,13 @@ paths:
       summary: Upsert current employment (HR)
       description: |
         HR บันทึกหรือแก้ไขข้อมูลการปฏิบัติงานปัจจุบัน หากมีการเปลี่ยนตำแหน่ง/สังกัด ระบบจะปิด record เดิม (`effectiveTo`)
-        และเปิด record ใหม่โดยอัตโนมัติ (เก็บประวัติ) และส่งเหตุการณ์ `EMPLOYMENT_UPDATED`
+        และเปิด record ใหม่โดยอัตโนมัติ (เก็บประวัติ) และส่งเหตุการณ์ `EMPLOYMENT_UPDATED` (ไม่ส่งสำหรับบุคคลที่ยัง `PENDING_CLAIM`;
+        payload ใช้สถานะจริงของบุคคล)
+
+        **สิทธิ์ (เปลี่ยนใน PR-D1):** ต้องมี scope ของ operation นี้ **และ** realm role `hr_master_data_admin` (ตรวจที่ MDM API ทุก request
+        เพราะ scope ใน token ไม่ใช่ตัวกั้นสิทธิ์) ไม่มี role -> 403 `insufficient-role` และต้องมี `reason` (บังคับ ห้ามมีเลข 13 หลัก:
+        ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422 `reason-contains-pid`, เกิน 500 ตัวอักษร -> 422 `reason-too-long`) ซึ่งถูกเก็บใน
+        `data_change_log.reason`
       operationId: upsertEmployment
       security:
         - keycloak: [personnel:write:employment]
@@ -342,7 +353,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/EmploymentUpsert' }
+            schema: { $ref: '#/components/schemas/EmploymentChangeRequest' }
       responses:
         '200':
           description: บันทึกแล้ว
@@ -366,6 +377,12 @@ paths:
         2. `person.status = INACTIVE`, `deletedAt = now()` (soft delete, ข้อมูลยังเก็บตามระยะเวลาที่กฎหมายกำหนด)
         3. สร้างเหตุการณ์ `PERSON_DEACTIVATED`
         4. worker ปิดบัญชี Keycloak ทันที (disable + logout ทุก session + revoke offline token) และส่ง webhook ให้ทุกระบบที่สมัครไว้
+
+        **สิทธิ์ (เปลี่ยนใน PR-D1):** ต้องมี scope ของ operation นี้ **และ** realm role `hr_master_data_admin` (ตรวจที่ MDM API ทุก request
+        เพราะ scope ใน token ไม่ใช่ตัวกั้นสิทธิ์) ไม่มี role -> 403 `insufficient-role` และต้องมี `reason` (บังคับ ห้ามมีเลข 13 หลัก:
+        ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422 `reason-contains-pid`, เกิน 500 ตัวอักษร -> 422 `reason-too-long`) ซึ่งถูกเก็บใน
+        `data_change_log.reason`
+        `expectedVersion` (ไม่บังคับ) ไม่ตรงกับ version ปัจจุบัน -> 409 `version-conflict`
       operationId: deactivatePerson
       security:
         - keycloak: [personnel:write:employment]
@@ -377,13 +394,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [employmentStatus, separationDate]
+              required: [employmentStatus, separationDate, reason]
               properties:
                 employmentStatus:
                   type: string
                   enum: [TRANSFERRED_OUT, RESIGNED, RETIRED, TERMINATED, DECEASED]
                 separationDate: { type: string, format: date }
-                reason: { type: string, maxLength: 500 }
+                reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลที่พ้นสภาพ (บังคับ ห้ามมีเลข 13 หลัก) }
+                expectedVersion:
+                  type: integer
+                  description: version ของ person ที่ผู้เรียกเห็นล่าสุด (optimistic locking) ถ้าไม่ตรงคืน 409
                 referenceDocument:
                   type: string
                   description: เลขที่คำสั่ง/หนังสือ
@@ -393,8 +413,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Person' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /persons/{personId}/reactivate:
     parameters:
@@ -402,6 +424,11 @@ paths:
     post:
       tags: [Provisioning]
       summary: Reactivate a person (e.g. transferred back)
+      description: |
+        **สิทธิ์ (เปลี่ยนใน PR-D1):** ต้องมี scope ของ operation นี้ **และ** realm role `hr_master_data_admin` (ตรวจที่ MDM API ทุก request
+        เพราะ scope ใน token ไม่ใช่ตัวกั้นสิทธิ์) ไม่มี role -> 403 `insufficient-role` และต้องมี `reason` (บังคับ ห้ามมีเลข 13 หลัก:
+        ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422 `reason-contains-pid`, เกิน 500 ตัวอักษร -> 422 `reason-too-long`) ซึ่งถูกเก็บใน
+        `data_change_log.reason`
       operationId: reactivatePerson
       security:
         - keycloak: [personnel:write:employment]
@@ -409,14 +436,16 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/EmploymentUpsert' }
+            schema: { $ref: '#/components/schemas/EmploymentChangeRequest' }
       responses:
         '200':
           description: คืนสถานะ ACTIVE และสร้างเหตุการณ์ `PERSON_REACTIVATED` (ระบบจะบังคับ re-verify ผ่าน ThaID ในการเข้าสู่ระบบครั้งถัดไป)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Person' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
   /persons/{personId}/reverify:
@@ -669,8 +698,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: [mode, rows]
+              required: [mode, rows, reason]
               properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: |
+                    เหตุผลระดับ batch (บังคับ เปลี่ยนใน PR-D1) เช่น `HR_IMPORT batch <batch id>` เก็บเป็น `reason` ของทุกแถว data_change_log ที่เกิดจากการนำเข้า
+                    ห้ามมีเลข 13 หลัก (422 `reason-contains-pid`) migrate-cli ส่งให้อัตโนมัติ
                 mode: { type: string, enum: [DRY_RUN, APPLY], default: DRY_RUN }
                 createIfMissing: { type: boolean, default: false }
                 sourceSystem: { type: string, examples: [LHR, LEGACY_HR_XLSX] }
@@ -1965,6 +2001,17 @@ components:
           type: integer
           description: version ของ person ที่ผู้เรียกเห็นล่าสุด (optimistic locking) ถ้าไม่ตรงคืน 409
 
+    EmploymentChangeRequest:
+      description: |
+        EmploymentUpsert + `reason` (บังคับ) ใช้กับ PUT /persons/{id}/employment และ POST /persons/{id}/reactivate (HR ทำด้วยมือ)
+        ส่วน POST /persons (employment ซ้อนใน PersonProvisionRequest), resolve claim และ batch import ใช้ EmploymentUpsert เดิมที่ไม่มี reason ในตัว
+      allOf:
+        - $ref: '#/components/schemas/EmploymentUpsert'
+        - type: object
+          required: [reason]
+          properties:
+            reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลการเปลี่ยนแปลง (บังคับ ห้ามมีเลข 13 หลัก) }
+
     EmploymentImportRow:
       type: object
       description: หนึ่งแถวจากระบบ HR เดิม ต้องมี `pid` หรือ `personId` หรือ `externalId` อย่างใดอย่างหนึ่ง
@@ -2000,9 +2047,10 @@ components:
 
     PersonProvisionRequest:
       type: object
-      required: [pid, expectedFirstNameTh, expectedLastNameTh, employment]
+      required: [pid, expectedFirstNameTh, expectedLastNameTh, employment, reason]
       properties:
         pid: { $ref: '#/components/schemas/Pid' }
+        reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลที่สร้าง (บังคับ ห้ามมีเลข 13 หลัก) }
         expectedFirstNameTh: { type: string }
         expectedLastNameTh: { type: string }
         employment: { $ref: '#/components/schemas/EmploymentUpsert' }

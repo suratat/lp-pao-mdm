@@ -1,11 +1,16 @@
 const express = require('express');
 const { requireScope, SCOPE_READ_BASIC } = require('../middleware/auth');
 const provisioningService = require('../services/provisioningService');
+const { MASTER_DATA_ADMIN_ROLE } = require('../constants');
+const { requireRole } = require('../middleware/auth');
+
+// เขียนข้อมูลบุคคลด้วยมือ (สร้าง/พ้นสภาพ/คืนสภาพ): ต้องมี realm role hr_master_data_admin เพิ่มจาก scope เสมอ
+const manualWriteRole = requireRole(MASTER_DATA_ADMIN_ROLE);
 
 function createProvisioningRouter({ pool, vault, pepper }) {
   const router = express.Router();
 
-  router.post('/persons', requireScope('personnel:provision', SCOPE_READ_BASIC), async (req, res, next) => {
+  router.post('/persons', requireScope('personnel:provision', SCOPE_READ_BASIC), manualWriteRole, async (req, res, next) => {
     try {
       const person = await provisioningService.provisionPerson({ pool, vault, pepper }, req.body, req.auth);
       res.status(201).json(person);
@@ -14,7 +19,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
     }
   });
 
-  router.post('/persons/:personId/deactivate', requireScope('personnel:write:employment', SCOPE_READ_BASIC), async (req, res, next) => {
+  router.post('/persons/:personId/deactivate', requireScope('personnel:write:employment', SCOPE_READ_BASIC), manualWriteRole, async (req, res, next) => {
     try {
       const person = await provisioningService.deactivatePerson(pool, req.params.personId, req.body, req.auth);
       res.json(person);
@@ -23,7 +28,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
     }
   });
 
-  router.post('/persons/:personId/reactivate', requireScope('personnel:write:employment', SCOPE_READ_BASIC), async (req, res, next) => {
+  router.post('/persons/:personId/reactivate', requireScope('personnel:write:employment', SCOPE_READ_BASIC), manualWriteRole, async (req, res, next) => {
     try {
       const person = await provisioningService.reactivatePerson(pool, req.params.personId, req.body, req.auth);
       res.json(person);

@@ -87,12 +87,12 @@ describe('POST /persons - ไม่มี personnel:read:basic', () => {
     const positionId = await makePosition();
     const pid = makeFakePid();
     const employeeNo = `EMP-SCOPE-NEW-${crypto.randomUUID()}`;
-    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.provision });
+    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.provision, roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .post('/api/v1/persons')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         pid,
         expectedFirstNameTh: 'ก',
         expectedLastNameTh: 'ข',
@@ -121,12 +121,12 @@ describe('POST /persons - ไม่มี personnel:read:basic', () => {
 
   test('มี provision + read:basic -> 201 ตามเดิม', async () => {
     const positionId = await makePosition();
-    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.provision} personnel:read:basic` });
+    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.provision} personnel:read:basic`, roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .post('/api/v1/persons')
       .set('Authorization', `Bearer ${token}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         pid: makeFakePid(),
         expectedFirstNameTh: 'ก',
         expectedLastNameTh: 'ข',
@@ -151,12 +151,12 @@ describe('POST /persons/{id}/deactivate - ไม่มี personnel:read:basic',
   test('403 และสถานะ/employment/outbox/change_log ไม่เปลี่ยน', async () => {
     const personId = await makeActivePerson();
     const before = await snapshotPerson(personId);
-    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.writeEmployment });
+    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.writeEmployment, roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .post(`/api/v1/persons/${personId}/deactivate`)
       .set('Authorization', `Bearer ${token}`)
-      .send(body());
+      .send({ ...body(), reason: 'ทดสอบระบบ (เหตุผลสมมติ)' });
 
     expectInsufficientScope(res, 'personnel:read:basic');
     expect(await snapshotPerson(personId)).toEqual(before);
@@ -164,12 +164,12 @@ describe('POST /persons/{id}/deactivate - ไม่มี personnel:read:basic',
 
   test('มี write:employment + read:basic -> 200 ตามเดิม', async () => {
     const personId = await makeActivePerson();
-    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.writeEmployment} personnel:read:basic` });
+    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.writeEmployment} personnel:read:basic`, roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .post(`/api/v1/persons/${personId}/deactivate`)
       .set('Authorization', `Bearer ${token}`)
-      .send(body());
+      .send({ ...body(), reason: 'ทดสอบระบบ (เหตุผลสมมติ)' });
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('INACTIVE');
@@ -199,12 +199,12 @@ describe('POST /persons/{id}/reactivate - ไม่มี personnel:read:basic',
   test('403 และสถานะ/employment/outbox/change_log ไม่เปลี่ยน', async () => {
     const personId = await makeInactivePerson();
     const before = await snapshotPerson(personId);
-    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.writeEmployment });
+    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.writeEmployment, roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .post(`/api/v1/persons/${personId}/reactivate`)
       .set('Authorization', `Bearer ${token}`)
-      .send(await body());
+      .send({ ...await body(), reason: 'ทดสอบระบบ (เหตุผลสมมติ)' });
 
     expectInsufficientScope(res, 'personnel:read:basic');
     expect(await snapshotPerson(personId)).toEqual(before);
@@ -212,12 +212,12 @@ describe('POST /persons/{id}/reactivate - ไม่มี personnel:read:basic',
 
   test('มี write:employment + read:basic -> 200 ตามเดิม', async () => {
     const personId = await makeInactivePerson();
-    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.writeEmployment} personnel:read:basic` });
+    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.writeEmployment} personnel:read:basic`, roles: ['hr_master_data_admin'] });
 
     const res = await request(ctx.app)
       .post(`/api/v1/persons/${personId}/reactivate`)
       .set('Authorization', `Bearer ${token}`)
-      .send(await body());
+      .send({ ...await body(), reason: 'ทดสอบระบบ (เหตุผลสมมติ)' });
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ACTIVE');
@@ -226,13 +226,13 @@ describe('POST /persons/{id}/reactivate - ไม่มี personnel:read:basic',
 
 describe('GET /reverify/stale - ไม่มี personnel:read:basic', () => {
   test('403 (อ่านอย่างเดียว ไม่ใช่ 500)', async () => {
-    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.provision });
+    const token = await ctx.auth.signToken({ scope: WRITE_ONLY.provision, roles: ['hr_master_data_admin'] });
     const res = await request(ctx.app).get('/api/v1/reverify/stale').set('Authorization', `Bearer ${token}`);
     expectInsufficientScope(res, 'personnel:read:basic');
   });
 
   test('มี provision + read:basic -> 200 ตามเดิม', async () => {
-    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.provision} personnel:read:basic` });
+    const token = await ctx.auth.signToken({ scope: `${WRITE_ONLY.provision} personnel:read:basic`, roles: ['hr_master_data_admin'] });
     const res = await request(ctx.app).get('/api/v1/reverify/stale').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
   });

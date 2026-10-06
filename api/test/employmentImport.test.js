@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const request = require('supertest');
 const { Pool } = require('pg');
+const { withDefaultReason } = require('./hrWrite');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid, pidHash } = require('../src/security/pid');
@@ -34,7 +35,7 @@ async function makePosition() {
 
 function importBatch(body, scope = 'personnel:import') {
   return ctx.auth.signToken({ scope }).then((token) =>
-    request(ctx.app).post('/api/v1/sync/hr/employment-batch').set('Authorization', `Bearer ${token}`).send(body)
+    request(ctx.app).post('/api/v1/sync/hr/employment-batch').set('Authorization', `Bearer ${token}`).send(withDefaultReason('post', '/sync/hr/employment-batch', body))
   );
 }
 

@@ -62,6 +62,7 @@ async function importPerson(pid, employment) {
     .set('Authorization', `Bearer ${importToken}`)
     .send({
       mode: 'APPLY',
+      reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
       createIfMissing: true,
       rows: [
         {
@@ -144,12 +145,12 @@ describe('tokenClaims ของบุคลากรที่ไม่มีเ�
   test('person ที่สร้างผ่าน POST /persons (GENERAL_EMPLOYEE, scope personnel:provision + personnel:read:basic) ล็อกอิน ThaID แล้ว ACTIVE/VERIFIED, pid_enc ถอดรหัสได้, employment ไม่ถูกแตะ', async () => {
     const pid = makeFakePid();
     // ต้องมี personnel:read:basic ด้วย: response ของ POST /persons ผ่านตัวกรองฟิลด์ตาม scope และสเปกบังคับให้มี `basic`
-    const provisionToken = await ctx.auth.signToken({ scope: 'personnel:provision personnel:read:basic' });
+    const provisionToken = await ctx.auth.signToken({ scope: 'personnel:provision personnel:read:basic', roles: ['hr_master_data_admin'] });
 
     const provisioned = await request(ctx.app)
       .post('/api/v1/persons')
       .set('Authorization', `Bearer ${provisionToken}`)
-      .send({
+      .send({ reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         pid,
         expectedFirstNameTh: 'ทดสอบ',
         expectedLastNameTh: 'ระบบ',

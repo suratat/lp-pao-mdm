@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const request = require('supertest');
+const { rolesFor, withDefaultReason } = require('./hrWrite');
 const { buildTestApp } = require('./testApp');
 const { makeFakePid, pidHash } = require('../src/security/pid');
 const { insertFixtureOrgUnit } = require('./fixtures');
@@ -48,12 +49,12 @@ async function employmentBody(employeeNo, extra = {}) {
 
 // คืน object ที่มีแต่ .send()/.query() (ไม่ใช่ thenable) เพื่อให้ `(await api(...)).send(body)` ทำงานได้: การ await supertest Test ตรงๆ จะยิง request ทันที
 async function api(method, urlPath, auth = {}) {
-  const token = await ctx.auth.signToken(auth);
+  const token = await ctx.auth.signToken({ roles: rolesFor(method, urlPath), ...auth });
   const pending = (body, query) => ({
     then: (resolve, reject) => {
       let req = request(ctx.app)[method](`/api/v1${urlPath}`).set('Authorization', `Bearer ${token}`);
       if (query) req = req.query(query);
-      if (body !== undefined) req = req.send(body);
+      if (body !== undefined) req = req.send(withDefaultReason(method, urlPath, body));
       return req.then(resolve, reject);
     },
   });
@@ -106,18 +107,18 @@ describe('actor_sub / actor_client ของทุก write path', () => {
     expect(rows.find((r) => r.field_name === 'employment.personnel_type').new_value).toBe('CIVIL_SERVANT');
   });
 
-  test('PUT employment / deactivate / reactivate: actor ตรงกับ token และ reason ถูกปกปิดเลข 13 หลัก', async () => {
+  test('PUT employment / deactivate / reactivate: actor ตรงกับ token, reason บังคับถูกเก็บ (เลขที่คำสั่งต่อท้าย) และไม่มีเลข 13 หลัก', async () => {
     const { personId, pid } = await provisionAs(hr);
     const before = (await logsFor(personId)).length;
 
     const put = await (await api('put', `/persons/${personId}/employment`, { scope: 'personnel:write:employment', ...hr })).send(
-      await employmentBody(pid, { effectiveFrom: '2024-06-01', levelCode: 'ชำนาญการ', referenceDocument: `คำสั่ง ${pid}` })
+      await employmentBody(pid, { effectiveFrom: '2024-06-01', levelCode: 'ชำนาญการ', reason: 'ย้ายตามคำสั่ง', referenceDocument: 'คำสั่งที่ 12/2569' })
     );
     expect(put.status).toBe(200);
 
     const deactivate = await (
       await api('post', `/persons/${personId}/deactivate`, { scope: 'personnel:write:employment personnel:read:basic', ...hr })
-    ).send({ employmentStatus: 'RESIGNED', separationDate: '2025-01-01', reason: `ลาออก ${pid}` });
+    ).send({ employmentStatus: 'RESIGNED', separationDate: '2025-01-01', reason: 'ลาออก' });
     expect(deactivate.status).toBe(200);
 
     const reactivate = await (
@@ -131,6 +132,9 @@ describe('actor_sub / actor_client ของทุก write path', () => {
     expect(added.some((r) => r.field_name === 'status' && r.new_value === 'INACTIVE')).toBe(true);
     expect(added.some((r) => r.field_name === 'status' && r.new_value === 'ACTIVE')).toBe(true);
 
+    const reasons = new Set(added.map((r) => r.reason));
+    expect(reasons.has('ย้ายตามคำสั่ง (อ้างอิง: คำสั่งที่ 12/2569)')).toBe(true); // PUT employment
+    expect(reasons.has('ลาออก')).toBe(true); // deactivate
     const everything = JSON.stringify(await logsFor(personId));
     expect(everything).not.toContain(pid);
   });

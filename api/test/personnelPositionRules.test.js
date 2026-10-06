@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const request = require('supertest');
 const { Pool } = require('pg');
+const { rolesFor, withDefaultReason } = require('./hrWrite');
 const { buildTestApp } = require('./testApp');
 const { MIGRATOR_DATABASE_URL } = require('./config');
 const { makeFakePid, pidHash } = require('../src/security/pid');
@@ -36,8 +37,10 @@ afterAll(async () => {
 // คืน object ธรรมดา (ไม่ใช่ supertest Request ตรงๆ): Request เป็น thenable - ถ้า async function คืนมันออกมา จะถูก await
 // ส่ง request ทันทีทั้งที่ยังไม่มี body
 const api = async (method, url, scope) => {
-  const token = await ctx.auth.signToken({ scope });
-  return { send: (body) => request(ctx.app)[method](`/api/v1${url}`).set('Authorization', `Bearer ${token}`).send(body) };
+  const token = await ctx.auth.signToken({ scope, roles: rolesFor(method, url) });
+  return {
+    send: (body) => request(ctx.app)[method](`/api/v1${url}`).set('Authorization', `Bearer ${token}`).send(withDefaultReason(method, url, body)),
+  };
 };
 
 async function makePosition() {

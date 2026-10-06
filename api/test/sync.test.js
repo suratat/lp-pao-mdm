@@ -323,6 +323,7 @@ describe('POST /sync/thaid - CLAIMED หลังสร้างผ่าน imp
       .set('Authorization', `Bearer ${importToken}`)
       .send({
         mode: 'APPLY',
+        reason: 'ทดสอบระบบ (เหตุผลสมมติ)',
         createIfMissing: true,
         rows: [
           {

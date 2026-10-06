@@ -1,5 +1,6 @@
 const express = require('express');
-const { requireScope } = require('../middleware/auth');
+const { requireScope, requireRole } = require('../middleware/auth');
+const { MASTER_DATA_ADMIN_ROLE } = require('../constants');
 const { getEmploymentHistory, upsertEmployment } = require('../services/employmentService');
 
 function createEmploymentRouter(pool) {
@@ -15,7 +16,7 @@ function createEmploymentRouter(pool) {
     }
   });
 
-  router.put('/persons/:personId/employment', requireScope('personnel:write:employment'), async (req, res, next) => {
+  router.put('/persons/:personId/employment', requireScope('personnel:write:employment'), requireRole(MASTER_DATA_ADMIN_ROLE), async (req, res, next) => {
     try {
       const result = await upsertEmployment(pool, req.params.personId, req.body, req.auth);
       res.json(result);
