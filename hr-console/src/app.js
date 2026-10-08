@@ -5,6 +5,7 @@ const { createAuthRoutes } = require('./routes/authRoutes');
 const { createClaimRequestRoutes } = require('./routes/claimRequestRoutes');
 const { createReverifyRoutes } = require('./routes/reverifyRoutes');
 const { createMasterDataRoutes } = require('./routes/masterDataRoutes');
+const { createPersonProfileRoutes } = require('./routes/personProfileRoutes');
 const { createPersonRoutes } = require('./routes/personRoutes');
 const { createPersonEditRoutes } = require('./routes/personEditRoutes');
 const { layout } = require('./views/html');
@@ -24,6 +25,7 @@ function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore 
   app.use(createReverifyRoutes({ mdmClient }));
   app.use(createMasterDataRoutes({ mdmClient }));
   app.use(createPersonEditRoutes({ mdmClient })); // ต้องมาก่อน createPersonRoutes: /hr/persons/new ต้องไม่ถูกตีเป็น :personId
+  app.use(createPersonProfileRoutes({ mdmClient }));
   app.use(createPersonRoutes({ mdmClient }));
 
   app.get('/', (req, res) => res.redirect(302, '/hr/claim-requests'));
