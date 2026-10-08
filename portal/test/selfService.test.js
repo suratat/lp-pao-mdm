@@ -57,7 +57,7 @@ describe('MDM Portal self-service (T9 รอบแรก)', () => {
       relationship_0: 'พี่น้อง',
       phone_0: '0811112222',
     });
-    expect(update.status).toBe(302);
+    expect(update.status).toBe(303); // redirect ไปหน้าฟอร์มพร้อม ?saved=<จำนวนที่ API ยืนยัน>
 
     const page = await agent.get('/portal/me/emergency-contacts');
     expect(page.text).toContain('นายทดสอบ พอร์ทัล');

@@ -374,3 +374,25 @@ describe('PUT /me/emergency-contacts: ลง data_change_log (ไม่เก็
     expect(rows.every((r) => r.log_values_in_audit === false)).toBe(true);
   });
 });
+
+describe('PUT /me/emergency-contacts: payload รูปแบบเดียวกับที่ portal ส่งจริง (JSON array, priority ตามช่อง ข้ามช่องได้)', () => {
+  const portal = (personId) => ({ scope: 'personnel:self', sub: 'service-account-mdm-portal', azp: 'mdm-portal', personId });
+
+  test('ช่อง 1 และ 3 (ช่อง 2 ว่าง): บันทึกตามช่อง คืน priority 1,3 และ log ระบุช่อง 3 ไม่ใช่ช่อง 2; ส่ง [] = ลบทั้งหมดและ log การลบ', async () => {
+    const { personId } = await provision();
+    const payload = [
+      { fullName: 'นายสมมติ หนึ่ง', relationship: 'บิดา', phone: '0811110001', priority: 1 },
+      { fullName: 'นางสมมติ สาม', relationship: 'มารดา', phone: '0811110003', priority: 3 },
+    ];
+    const res = await call('put', '/me/emergency-contacts', portal(personId), payload);
+    expect(res.status).toBe(200);
+    expect(res.body.map((c) => c.priority)).toEqual([1, 3]);
+    const slots = (await logsFor(personId)).filter((l) => l.table_name === 'emergency_contact').map((l) => l.reason);
+    expect(new Set(slots)).toEqual(new Set(['ผู้ติดต่อฉุกเฉินลำดับที่ 1', 'ผู้ติดต่อฉุกเฉินลำดับที่ 3']));
+
+    const cleared = await call('put', '/me/emergency-contacts', portal(personId), []);
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toEqual([]);
+    expect((await logsFor(personId)).filter((l) => l.table_name === 'emergency_contact')).toHaveLength(6 + 6);
+  });
+});
