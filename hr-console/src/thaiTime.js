@@ -66,4 +66,36 @@ function thaiInputToIso(value) {
   return date.toISOString();
 }
 
-module.exports = { todayBangkok, formatThaiDateTime, formatThaiDate, toThaiInputValue, thaiInputToIso, THAI_MONTHS, TIME_ZONE };
+
+// ---- เฉพาะ hr-console: ข้อความ พ.ศ. ใต้ช่อง <input type="date"> (ค่าที่ส่งยังเป็น YYYY-MM-DD ค.ศ. เหมือนเดิม) ----
+// renderDateInput วาด input + <span class="be-date"> ที่มีข้อความตั้งต้นจากฝั่งเซิร์ฟเวอร์ (ปิด JS ก็เห็นค่าเดิม ฟอร์มใช้ได้ตามปกติ)
+// BE_DATE_SCRIPT (ฝังใน layout ทุกหน้า) อัปเดตข้อความทันทีเมื่อเลือกวัน และสร้าง span ให้ input[type=date] ที่ไม่มี
+function escapeAttr(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderDateInput({ name, value = '', required = false, min, max }) {
+  const hint = value ? formatThaiDate(value) : '';
+  return `<input name="${escapeAttr(name)}" type="date"${required ? ' required' : ''}${min ? ` min="${escapeAttr(min)}"` : ''}${max ? ` max="${escapeAttr(max)}"` : ''} value="${escapeAttr(value)}" /><span class="be-date" data-for="${escapeAttr(name)}">${escapeAttr(hint)}</span>`;
+}
+
+const BE_DATE_SCRIPT = `<script>
+(function () {
+  var M = ${JSON.stringify(THAI_MONTHS)};
+  function f(v) { var m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(v); return m ? Number(m[3]) + ' ' + M[Number(m[2]) - 1] + ' ' + (Number(m[1]) + 543) : ''; }
+  document.querySelectorAll('input[type=date]').forEach(function (input) {
+    var span = input.nextElementSibling;
+    if (!span || !span.classList.contains('be-date')) {
+      span = document.createElement('span');
+      span.className = 'be-date';
+      input.parentNode.insertBefore(span, input.nextSibling);
+    }
+    function update() { span.textContent = f(input.value); }
+    input.addEventListener('input', update);
+    input.addEventListener('change', update);
+    update();
+  });
+})();
+</script>`;
+
+module.exports = { todayBangkok, renderDateInput, BE_DATE_SCRIPT, formatThaiDateTime, formatThaiDate, toThaiInputValue, thaiInputToIso, THAI_MONTHS, TIME_ZONE };

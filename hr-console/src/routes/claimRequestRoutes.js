@@ -1,15 +1,14 @@
 const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
+const { formatThaiDateTime, renderDateInput } = require('../thaiTime');
 const { positionRuleFor } = require('../personnelTypes');
 const { personnelTypeOptions, positionRules, orgUnitOptions, positionOptions, POSITION_LOCK_SCRIPT } = require('../employmentForm');
 const { MAX_LENGTH: JOB_TITLE_MAX_LENGTH, checkJobTitleText } = require('../jobTitleText');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function fmt(value) {
-  return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
-}
+const fmt = formatThaiDateTime;
 
 function renderApiError(err) {
   if (err instanceof MdmApiError) {
@@ -125,9 +124,9 @@ function createClaimRequestRoutes({ mdmClient }) {
              <input name="jobTitleText" id="jobTitleText" maxlength="${JOB_TITLE_MAX_LENGTH}" autocomplete="off" placeholder="เช่น พนักงานขับรถยนต์ หรือ ผู้ช่วยช่างไฟฟ้า" />
            </div>
            <label>วันเริ่มมีผล (effectiveFrom)</label>
-           <input name="effectiveFrom" type="date" required />
+           ${renderDateInput({ name: 'effectiveFrom', required: true })}
            <label>วันบรรจุ (appointedDate)</label>
-           <input name="appointedDate" type="date" />
+           ${renderDateInput({ name: 'appointedDate' })}
            <label>ระดับ/ชั้น (levelCode)</label>
            <input name="levelCode" />
            <label>อีเมลที่ทำงาน</label>

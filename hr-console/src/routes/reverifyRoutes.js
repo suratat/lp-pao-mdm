@@ -1,10 +1,9 @@
 const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
+const { formatThaiDateTime, formatThaiDate } = require('../thaiTime');
 
-function fmt(value) {
-  return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
-}
+const fmt = formatThaiDateTime;
 
 function renderStaleTable(persons) {
   const rows = persons

@@ -524,3 +524,57 @@ describe('แก้ชื่อ-นามสกุลไทยและวัน
     expectNotIn([PHONE, EMAIL], (res.headers['set-cookie'] || []).join(';'), JSON.stringify(harness.sessionStore.get(sid)));
   });
 });
+
+describe('แสดงวันที่/วันเวลาเป็นเวลาไทย (PR hr-portal-thai-time)', () => {
+  const TS = /\d{1,2} (?:ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.) 25\d{2} \d{2}:\d{2}:\d{2}/;
+
+  test('รายละเอียดบุคคล: ช่วงการจ้างเป็นวันที่ พ.ศ. (ไม่ใช่ YYYY-MM-DD), เวลา ThaID/แก้ไขล่าสุด/ประวัติเป็นเวลาไทย', async () => {
+    const admin = await adminAgent();
+    const { personId } = await createPerson(admin);
+    await adminPool.query(`UPDATE mdm.person SET thaid_verified_at = '2026-10-08T18:30:00Z', claimed_at = '2026-10-08T14:18:42Z' WHERE person_id = $1`, [personId]);
+    const res = await admin.get(`/hr/persons/${personId}`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('1 ม.ค. 2567'); // effectiveFrom 2024-01-01
+    expect(res.text).not.toContain('2024-01-01');
+    expect(res.text).toContain('<dt>ยืนยัน ThaID ล่าสุด</dt><dd>9 ต.ค. 2569 01:30:00</dd>');
+    expect(res.text).toContain('<dt>เชื่อมตัวตนเมื่อ</dt><dd>8 ต.ค. 2569 21:18:42</dd>');
+    expect(res.text).toMatch(new RegExp(`<dt>แก้ไขล่าสุด</dt><dd>${TS.source}</dd>`));
+    expect(res.text).toMatch(new RegExp(`<table class="history">[\\s\\S]*<td>${TS.source}</td>`));
+    expect(res.text).not.toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+  });
+
+  test('หน้าแก้ชื่อ-วันเกิด: ช่องยังเป็น type=date ค่า YYYY-MM-DD แต่มีข้อความ พ.ศ. ใต้ช่อง + สคริปต์; ฟอร์มส่งค่า YYYY-MM-DD ถูกต้อง', async () => {
+    const admin = await adminAgent();
+    const { personId } = await createPerson(admin);
+    const form = await admin.get(`/hr/persons/${personId}/expected-identity/edit`);
+    expect(form.text).toMatch(/<input name="birthDate" type="date"[^>]*value="1990-05-17" \/><span class="be-date" data-for="birthDate">17 พ\.ค\. 2533<\/span>/);
+    expect(form.text).toContain("input[type=date]");
+    const res = await admin
+      .post(`/hr/persons/${personId}/expected-identity/edit`)
+      .type('form')
+      .send({ _csrf: csrfFrom(form.text), expectedVersion: versionFrom(form.text), reason: 'แก้วันเกิดตามเอกสาร', firstNameTh: `สมชาย${tag}`, lastNameTh: `ทดสอบ${tag}`, birthDate: '1991-02-03' });
+    expect(res.status).toBe(303);
+    expect((await personRow(personId)).birth).toBe('1991-02-03');
+    const locked = await (async () => {
+      await markVerified(personId);
+      return admin.get(`/hr/persons/${personId}/expected-identity/edit`);
+    })();
+    expect(locked.text).toContain('3 ก.พ. 2534');
+    expect(locked.text).not.toContain('1991-02-03');
+  });
+
+  test('ฟอร์มเพิ่มบุคคล/ย้าย/พ้นสภาพ: ค่าเริ่มต้น "วันนี้" ตามเวลาไทย พร้อมข้อความ พ.ศ.; ฟอร์มอนุมัติ claim มีช่องวันที่ type=date', async () => {
+    const admin = await adminAgent();
+    const { personId } = await createPerson(admin);
+    const { todayBangkok, formatThaiDate } = require('../src/thaiTime');
+    const today = todayBangkok();
+    const add = await admin.get('/hr/persons/new');
+    expect(add.text).toContain(`name="effectiveFrom" type="date" required value="${today}" /><span class="be-date" data-for="effectiveFrom">${formatThaiDate(today)}</span>`);
+    expect(add.text).toContain('name="birthDate" type="date"');
+    const move = await admin.get(`/hr/persons/${personId}/employment/edit`);
+    expect(move.text).toContain('min="2024-01-01"');
+    expect(move.text).toContain('1 ม.ค. 2567'); // ข้อความ "มีผลตั้งแต่"
+    const off = await admin.get(`/hr/persons/${personId}/deactivate`);
+    expect(off.text).toContain(`data-for="separationDate">${formatThaiDate(today)}</span>`);
+  });
+});

@@ -1,6 +1,7 @@
 const { escapeHtml } = require('./views/html');
 const { PERSONNEL_TYPES } = require('./personnelTypes');
 const { looksLikePid } = require('./pid');
+const { formatThaiDateTime, formatThaiDate } = require('./thaiTime');
 
 // แสดงประวัติการเปลี่ยนแปลงของบุคคล (GET /persons/{id}/history) ให้ HR อ่านรู้เรื่อง: ชื่อฟิลด์เป็นภาษาไทย, id หน่วยงาน/ตำแหน่งแปลงเป็นชื่อ
 // ค่าของฟิลด์ชั้น CONFIDENTIAL ขึ้นไปถูก MDM API ปกปิดมาแล้ว (valuesHidden) แสดงเป็น "(ปกปิด)" - ที่นี่ไม่มีทางเห็นเลขบัตรและกรองซ้ำอีกชั้น
@@ -49,14 +50,14 @@ function renderValue(entry, value, lookups) {
     if (key === 'employment.personnel_type') return escapeHtml(PERSONNEL_TYPE_LABEL[value] || value);
     if (key === 'status') return escapeHtml(STATUS_LABEL[value] || value);
   }
+  // ค่าที่เป็นวันที่ล้วน (วันบรรจุ วันเกิดที่ HR กรอก ฯลฯ) แสดงเป็น พ.ศ. ไม่ผ่าน Date
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return escapeHtml(formatThaiDate(value));
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   // ชั้นที่สอง: ค่าที่ดูเหมือนเลขบัตรไม่แสดง (API ปกปิดมาแล้ว ที่นี่กันไว้อีกชั้น)
   return looksLikePid(text) ? '<em>(ปกปิด)</em>' : escapeHtml(text);
 }
 
-function fmt(value) {
-  return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
-}
+const fmt = formatThaiDateTime;
 
 function renderHistory({ entries, nextCursor, personId, lookups }) {
   const rows = entries

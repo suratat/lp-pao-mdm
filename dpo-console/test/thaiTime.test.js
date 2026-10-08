@@ -3,7 +3,7 @@ const request = require('supertest');
 const { Pool } = require('pg');
 const { buildIntegrationHarness, loginAsDpo } = require('./testHarness');
 const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
-const { formatThaiDateTime, toThaiInputValue, thaiInputToIso } = require('../src/thaiTime');
+const { formatThaiDateTime, formatThaiDate, todayBangkok, toThaiInputValue, thaiInputToIso } = require('../src/thaiTime');
 
 let harness;
 let adminPool;
@@ -101,6 +101,12 @@ describe('thaiTime helper', () => {
 
   test.each([[null], [undefined], [''], ['not-a-date']])('ค่า %p แสดงเป็น "-"', (input) => {
     expect(formatThaiDateTime(input)).toBe('-');
+  });
+
+  test('วันที่ล้วน (YYYY-MM-DD) ไม่เลื่อนวันไม่ว่า TZ; null = "-"; todayBangkok ข้ามวันตามเวลาไทย', () => {
+    expect(formatThaiDate('2026-10-08')).toBe('8 ต.ค. 2569');
+    expect(formatThaiDate(null)).toBe('-');
+    expect(todayBangkok(new Date('2026-10-08T18:30:00Z'))).toBe('2026-10-09');
   });
 
   test('ช่องกรอก: ไม่มี timezone = เวลาไทย -> UTC (8 ต.ค. = 2026-10-07T17:00:00Z ถึง 2026-10-08T17:00:00Z)', () => {

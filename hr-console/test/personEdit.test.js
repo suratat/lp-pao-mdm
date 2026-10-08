@@ -215,7 +215,9 @@ describe('เพิ่มบุคคลใหม่', () => {
     expect(detail.text).toContain('(ปกปิด)'); // วันเกิด/เลขประจำตัวถูกปกปิดในประวัติ
     expectNoPid(pid, detail.text);
     // ข้อความ flash มาจากรหัสที่รู้จักเท่านั้น
-    expect((await admin.get(`/hr/persons/${personId}?saved=<script>`)).text).not.toContain('<script>');
+    // (layout มี <script> ของตัวเองอยู่แล้ว: เทียบจำนวนกับหน้าที่ไม่มี ?saved เพื่อยืนยันว่าค่าจาก query ไม่ถูกสะท้อนลงหน้า)
+    const injected = (await admin.get(`/hr/persons/${personId}?saved=<script>`)).text;
+    expect(injected.split('<script>').length).toBe(detail.text.split('<script>').length);
   });
 
   test('เลขบัตรพิมพ์คั่นด้วยขีด/ช่องว่างได้; วันเกิดไม่บังคับ; ประเภทไม่มีตำแหน่ง + ชื่อตำแหน่ง/ลักษณะงานสำเร็จ', async () => {
@@ -424,7 +426,7 @@ describe('ย้ายหน่วยงาน / ตำแหน่ง / ปร�
     ['เหตุผลมีเลขบัตร', { reason: `ตาม ${makeFakePid()}` }, 'ห้ามใส่เลขบัตร'],
     ['ประเภทต้องมีตำแหน่งแต่ไม่เลือก', { positionId: '' }, 'ต้องระบุเลขที่ตำแหน่ง'],
     ['ตำแหน่งไม่อยู่ในหน่วยงาน', () => ({ orgUnitId: orgB.id }), 'ไม่อยู่ในหน่วยงานที่เลือก'],
-    ['วันที่มีผลก่อนวันที่มีผลปัจจุบัน', { effectiveFrom: '2023-12-31' }, 'ต้องไม่ก่อน 2024-01-01'],
+    ['วันที่มีผลก่อนวันที่มีผลปัจจุบัน', { effectiveFrom: '2023-12-31' }, 'ต้องไม่ก่อน 1 ม.ค. 2567'],
     ['ระดับยาวเกิน 50', { levelCode: 'ก'.repeat(51) }, 'ยาวเกิน 50'],
   ])('422 %s: ฟอร์มเดิมพร้อมข้อความไทย คงค่าที่กรอก ไม่เขียนอะไร', async (_n, override, text) => {
     const { admin, personId, positionId } = await prepared();
@@ -582,7 +584,7 @@ describe('พ้นสภาพ และ คืนสภาพ', () => {
     expect(form.status).toBe(200);
     expect(form.text).toContain('value="CIVIL_SERVANT" selected');
     expect(form.text).toContain(`value="${positionId}" selected`);
-    expect(form.text).toContain('พ้นสภาพเมื่อ 2024-12-31');
+    expect(form.text).toContain('พ้นสภาพเมื่อ 31 ธ.ค. 2567');
     expect(form.text).not.toContain('name="employeeNo"');
     expect(versionFrom(form.text)).toBe('2');
 
