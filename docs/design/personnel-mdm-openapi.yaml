@@ -860,7 +860,7 @@ paths:
                   minLength: 1
                   maxLength: 500
                   description: |
-                    เหตุผลระดับ batch (บังคับ เปลี่ยนใน PR-D1) เช่น `HR_IMPORT batch <batch id>` เก็บเป็น `reason` ของทุกแถว data_change_log ที่เกิดจากการนำเข้า
+                    เหตุผลระดับ batch (บังคับ เปลี่ยนใน PR-D1) เช่น `HR_IMPORT batch 0a1b2c3d` (migrate-cli ใส่ 8 ตัวแรกของ batch id เท่านั้น - UUID เต็มอาจอ่านเป็นเลข 13 หลักแล้วถูกปฏิเสธ) เก็บเป็น `reason` ของทุกแถว data_change_log ที่เกิดจากการนำเข้า
                     ห้ามมีเลข 13 หลัก (422 `reason-contains-pid`) migrate-cli ส่งให้อัตโนมัติ
                 mode: { type: string, enum: [DRY_RUN, APPLY], default: DRY_RUN }
                 createIfMissing: { type: boolean, default: false }

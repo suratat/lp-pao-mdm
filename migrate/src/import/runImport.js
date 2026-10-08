@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { toImportRow } = require('../mapping/toImportRow');
 const { chunkByBytes, envelopeBytesFor } = require('./chunkByBytes');
 const { redact } = require('../util/redact');
+const { importReason } = require('./importReason');
 
 const MAX_ROWS_PER_REQUEST = 2000; // maxItems ของ EmploymentImportRow[] ใน personnel-mdm-openapi.yaml
 
@@ -119,8 +120,9 @@ async function runImport(
   const startedAt = Date.now();
   const rows = await fetchOkRows(pool, batchId);
   const importRows = rows.map(toImportRow);
-  // เหตุผลระดับ batch บังคับที่ API (เก็บเป็น reason ของทุกแถว data_change_log) - ส่งอัตโนมัติ ไม่ต้องให้ผู้รันกรอก (batchId เป็น UUID ไม่ใช่ pid)
-  const reason = `HR_IMPORT batch ${batchId}`;
+  // เหตุผลระดับ batch บังคับที่ API (เก็บเป็น reason ของทุกแถว data_change_log) - ส่งอัตโนมัติ ไม่ต้องให้ผู้รันกรอก
+  // ไม่ใส่ batchId ดิบ: UUID อ่านเป็นเลข 13 หลักได้แล้ว API ตอบ 422 (ดู importReason.js)
+  const reason = importReason(batchId);
   const envelopeBytes = envelopeBytesFor({ mode, createIfMissing, sourceSystem, reason });
   const { chunks, oversized } = chunkByBytes(importRows, {
     envelopeBytes,

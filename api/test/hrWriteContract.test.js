@@ -275,7 +275,7 @@ describe('เส้นทางที่ "ไม่" ถูกเปลี่ย
     const importer = { scope: 'personnel:import', sub: uniqueSub('svc-migrate'), azp: 'migrate-tool' };
     const pid = makeFakePid();
     const row = async () => ({ rowRef: 'r1', pid, expectedFirstNameTh: 'ก', expectedLastNameTh: 'ข', employment: await employmentOf(pid) });
-    const batchReason = `HR_IMPORT batch ${crypto.randomUUID()}`;
+    const batchReason = 'HR_IMPORT batch 0a1b2c3d'; // คงที่ (เดิมใส่ UUID สุ่ม: มีโอกาสเข้าข่ายเลข 13 หลักแล้วเทสต์ล้มแบบสุ่ม)
 
     expect((await call('post', '/sync/hr/employment-batch', importer, { mode: 'DRY_RUN', createIfMissing: true, rows: [await row()] })).status).toBe(400);
     const blank = await call('post', '/sync/hr/employment-batch', importer, { mode: 'DRY_RUN', reason: '  ', rows: [] });

@@ -23,7 +23,7 @@ function createSyncRouter({ pool, vault, pepper }) {
   router.post('/sync/hr/employment-batch', requireScope('personnel:import'), async (req, res, next) => {
     try {
       const { mode = 'DRY_RUN', createIfMissing = false, rows } = req.body;
-      // เหตุผลระดับ batch บังคับ (เช่น "HR_IMPORT batch <id>") - เก็บเป็น reason ของทุกแถว data_change_log ที่เกิดจากการนำเข้านี้
+      // เหตุผลระดับ batch บังคับ (เช่น "HR_IMPORT batch 0a1b2c3d" - อย่าใส่ UUID เต็ม อ่านเป็นเลข 13 หลักได้) - เก็บเป็น reason ของทุกแถว data_change_log ที่เกิดจากการนำเข้านี้
       const reason = assertReason(req.body.reason);
       const result = await importEmploymentBatch({ pool, vault, pepper }, { mode, createIfMissing, rows, actorClient: req.auth.azp, reason });
       res.json(result);

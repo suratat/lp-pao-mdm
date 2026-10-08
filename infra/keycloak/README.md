@@ -72,7 +72,7 @@ claims ใน access token ที่วัดจริงกับ Keycloak 26.0
   Clients -> (client นั้น) -> Service accounts roles -> Assign role -> เลือก `hr_master_data_admin` (และต้องมี client scope `roles` ใน client นั้นเพื่อให้ token มี `realm_access.roles`)
   แล้วตรวจด้วย `evaluate-scopes/generate-example-access-token` ของ service account user
 - **ผู้ใช้ที่จะใช้ 4 endpoint นี้ผ่านหน้าจอ HR (PR-D3):** ต้องมีทั้ง `hr_officer` และ `hr_master_data_admin` (ขั้นตอนกำหนด role เหมือนหัวข้อ T10 ข้างบน)
-- `POST /sync/hr/employment-batch` ต้องส่ง `reason` ระดับ batch ทุกครั้ง (migrate-cli ส่งให้อัตโนมัติเป็น `HR_IMPORT batch <id>`) ผู้เรียกอื่นที่ไม่ส่ง -> 400
+- `POST /sync/hr/employment-batch` ต้องส่ง `reason` ระดับ batch ทุกครั้ง (migrate-cli ส่งให้อัตโนมัติเป็น `HR_IMPORT batch <8 ตัวแรกของ batch id>`) ผู้เรียกอื่นที่ไม่ส่ง -> 400
 
 ## PR-D2 (HR จัดการข้อมูลบุคคล): scope `personnel:manage:person` — ใช้คู่กับ role `hr_master_data_admin`
 
