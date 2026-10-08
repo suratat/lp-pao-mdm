@@ -99,6 +99,7 @@
     { "name": "events:read", "description": "GET /events feed", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "webhook:manage", "description": "จัดการ webhook subscription/delivery ของตนเอง", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "audit:read", "description": "change log, access log - เฉพาะ dpo/auditor", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:manage:person", "description": "HR จัดการข้อมูลบุคคลที่ไม่ใช่ของ ThaID (manage-profile, expected-identity, contact, emergency-contacts, history) - MDM API ตรวจ realm role hr_master_data_admin เพิ่มเสมอ (scope ไม่ใช่ตัวกั้นสิทธิ์)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "audit:review", "description": "บันทึกผลรีวิวการเปิดเลขบัตร (POST /audit/access-logs/{id}/review) - ผูกกับ client dpo-console แต่ MDM API ตรวจ realm role dpo เพิ่มเสมอ (auditor ได้ scope นี้ใน token เหมือนกันแต่ API ตอบ 403 - scope ไม่ใช่ตัวกั้นสิทธิ์)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } }
   ],
 
@@ -184,7 +185,7 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference", "personnel:read:employment", "personnel:read:inactive"],
+      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "personnel:provision", "personnel:write:employment", "personnel:import", "personnel:read:basic", "personnel:manage:reference", "personnel:read:employment", "personnel:read:inactive", "personnel:manage:person"],
       "optionalClientScopes": ["personnel:read:pid_masked", "personnel:read:pid"]
     },
     {

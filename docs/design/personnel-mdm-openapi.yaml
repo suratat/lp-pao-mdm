@@ -498,6 +498,161 @@ paths:
                     items: { $ref: '#/components/schemas/ChangeLogEntry' }
                   page: { $ref: '#/components/schemas/PageInfo' }
 
+  # ------------------------------------------------------- Manage (HR, PR-D2)
+  /persons/{personId}/manage-profile:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Provisioning]
+      summary: Profile for the HR edit forms (expected identity, contact, emergency contacts)
+      description: |
+        ข้อมูลสำหรับหน้าแก้ไขของ HR: ข้อมูลระบุตัวตนที่ HR กรอกไว้ (รอยืนยันด้วย ThaID) พร้อมสถานะแก้ได้/ไม่ได้, ข้อมูลติดต่อ (ค่าเต็ม) และผู้ติดต่อฉุกเฉิน
+        ข้อมูลติดต่อส่วนตัวเห็นได้เฉพาะ endpoint นี้ภายใต้ role `hr_master_data_admin` - `hr_officer` ทั่วไปไม่เห็นทั้งที่นี่และใน `GET /persons/{personId}`
+        (ตัดกลุ่ม contact/emergencyContacts แม้ token จะมี `personnel:read:contact`)
+        **สิทธิ์:** scope `personnel:manage:person` **และ** realm role `hr_master_data_admin` (ตรวจที่ API ทุก request; ไม่มี role -> 403 `insufficient-role`)
+        ทุกครั้งที่เปิดดูถูกบันทึกใน access log
+      operationId: getManageProfile
+      security:
+        - keycloak: [personnel:manage:person]
+      responses:
+        '200':
+          description: โปรไฟล์สำหรับฟอร์มแก้ไข
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManageProfile' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /persons/{personId}/expected-identity:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    patch:
+      tags: [Provisioning]
+      summary: Edit the identity data HR expects (names, birth date) of a person who never verified with ThaID
+      description: |
+        แก้ชื่อ-นามสกุลไทยและวันเกิดที่ HR กรอกไว้ (คอลัมน์ `expected_*` บน `mdm.person` ไม่แตะ `person_identity`) ส่งเฉพาะฟิลด์ที่แก้ `birthDate: null` ล้างค่า
+        ThaID เป็นหลักเสมอ: ตอน claim ค่าจาก ThaID เขียนลง `person_identity` โดยไม่ดูค่าเหล่านี้ (ไม่ตรงกันก็เก็บเฉยๆ ไม่แจ้งเตือน)
+        **คนที่เคยยืนยันแล้ว** (`thaid_verified_at` หรือ `claimed_at` ไม่เป็น NULL หรือสถานะไม่ใช่ `PENDING_CLAIM`) -> 409 `identity-locked` ที่ API และ trigger ใน DB
+        กันซ้ำอีกชั้น (การแข่งกับ `/sync/thaid` ถูกกันด้วยการล็อกแถว person `FOR UPDATE` ทั้งสองฝั่ง)
+        **สิทธิ์:** scope `personnel:manage:person` **และ** realm role `hr_master_data_admin` (ไม่มี role -> 403 `insufficient-role`)
+        **ทุกการเขียน:** `expectedVersion` บังคับ (ไม่ตรง -> 409 `version-conflict`), `reason` บังคับ (ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422
+        `reason-contains-pid`), บันทึก `data_change_log` พร้อมผู้กระทำ, บุคคลที่ยัง `PENDING_CLAIM` ไม่ส่ง outbox; คืน `ManageProfile` ล่าสุด
+      operationId: updateExpectedIdentity
+      security:
+        - keycloak: [personnel:manage:person]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedIdentityPatch' }
+      responses:
+        '200':
+          description: แก้แล้ว (หรือไม่มีอะไรเปลี่ยน)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManageProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /persons/{personId}/contact:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    patch:
+      tags: [Provisioning]
+      summary: Edit contact data (partial update)
+      description: |
+        แก้ข้อมูลติดต่อแบบ PATCH: ฟิลด์ที่ไม่ส่ง = ไม่แตะ, ส่ง `null` หรือสตริงว่าง = ล้างค่า (เจ้าของยังแก้เองผ่าน `PUT /me/contact` ได้เหมือนเดิม)
+        ค่าเต็มของฟิลด์ที่เปลี่ยนถูกเก็บใน `data_change_log` (หน้า DPO/ประวัติปกปิดค่า)
+        **สิทธิ์:** scope `personnel:manage:person` **และ** realm role `hr_master_data_admin` (ไม่มี role -> 403 `insufficient-role`)
+        **ทุกการเขียน:** `expectedVersion` บังคับ (ไม่ตรง -> 409 `version-conflict`), `reason` บังคับ (ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422
+        `reason-contains-pid`), บันทึก `data_change_log` พร้อมผู้กระทำ, บุคคลที่ยัง `PENDING_CLAIM` ไม่ส่ง outbox; คืน `ManageProfile` ล่าสุด
+      operationId: updateContactByHr
+      security:
+        - keycloak: [personnel:manage:person]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactPatch' }
+      responses:
+        '200':
+          description: แก้แล้ว (หรือไม่มีอะไรเปลี่ยน)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManageProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /persons/{personId}/emergency-contacts:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    put:
+      tags: [Provisioning]
+      summary: Replace the emergency contacts (max 3)
+      description: |
+        แทนที่รายการผู้ติดต่อฉุกเฉินทั้งหมด (สูงสุด 3 คน, `priority` 1-3 ไม่ซ้ำ; รายการว่าง = ลบทั้งหมด)
+        `data_change_log` บันทึกเฉพาะ "ฟิลด์/ช่องที่เปลี่ยน" ไม่เก็บค่า (ข้อมูลของบุคคลที่สาม) เหมือน `PUT /me/emergency-contacts`
+        **สิทธิ์:** scope `personnel:manage:person` **และ** realm role `hr_master_data_admin` (ไม่มี role -> 403 `insufficient-role`)
+        **ทุกการเขียน:** `expectedVersion` บังคับ (ไม่ตรง -> 409 `version-conflict`), `reason` บังคับ (ว่าง -> 422 `reason-required`, มีเลข 13 หลัก -> 422
+        `reason-contains-pid`), บันทึก `data_change_log` พร้อมผู้กระทำ, บุคคลที่ยัง `PENDING_CLAIM` ไม่ส่ง outbox; คืน `ManageProfile` ล่าสุด
+      operationId: replaceEmergencyContactsByHr
+      security:
+        - keycloak: [personnel:manage:person]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmergencyContactsReplace' }
+      responses:
+        '200':
+          description: แทนที่แล้ว (หรือไม่มีอะไรเปลี่ยน)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManageProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /persons/{personId}/history:
+    parameters:
+      - $ref: '#/components/parameters/PersonId'
+    get:
+      tags: [Provisioning]
+      summary: Change history of this person for HR (newest first)
+      description: |
+        ประวัติการเปลี่ยนแปลงของบุคคลนี้ (ฟิลด์ใดเปลี่ยน ใคร เมื่อไหร่ เหตุผล) เรียงใหม่ -> เก่า ค่าของฟิลด์ชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED ถูกปกปิด
+        (`valuesHidden = true`) `actorSub` เป็นรหัสบัญชี (ยังไม่มีชื่อผู้กระทำ)
+        **สิทธิ์:** scope `personnel:manage:person` **และ** realm role `hr_master_data_admin` (ตรวจที่ API ทุก request; ไม่มี role -> 403 `insufficient-role`)
+        ทุกครั้งที่เปิดดูถูกบันทึกใน access log
+      operationId: getPersonHistory
+      security:
+        - keycloak: [personnel:manage:person]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: ประวัติ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChangeLogEntry' }
+                  page: { $ref: '#/components/schemas/PageInfo' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # --------------------------------------------------------------------- Me
   /me:
     get:
@@ -705,7 +860,7 @@ paths:
                   minLength: 1
                   maxLength: 500
                   description: |
-                    เหตุผลระดับ batch (บังคับ เปลี่ยนใน PR-D1) เช่น `HR_IMPORT batch <batch id>` เก็บเป็น `reason` ของทุกแถว data_change_log ที่เกิดจากการนำเข้า
+                    เหตุผลระดับ batch (บังคับ เปลี่ยนใน PR-D1) เช่น `HR_IMPORT batch 0a1b2c3d` (migrate-cli ใส่ 8 ตัวแรกของ batch id เท่านั้น - UUID เต็มอาจอ่านเป็นเลข 13 หลักแล้วถูกปฏิเสธ) เก็บเป็น `reason` ของทุกแถว data_change_log ที่เกิดจากการนำเข้า
                     ห้ามมีเลข 13 หลัก (422 `reason-contains-pid`) migrate-cli ส่งให้อัตโนมัติ
                 mode: { type: string, enum: [DRY_RUN, APPLY], default: DRY_RUN }
                 createIfMissing: { type: boolean, default: false }
@@ -1542,6 +1697,9 @@ components:
             personnel:manage:reference: >-
               เพิ่ม/แก้ master data หน่วยงานและตำแหน่ง (T10) - ต้องมี realm role `hr_master_data_admin` ควบคู่เสมอ
               (API ตรวจทั้ง scope และ role เพราะ hr-console ผูก scope นี้ให้ทุกผู้ใช้ของ client)
+            personnel:manage:person: >-
+              HR จัดการข้อมูลบุคคลที่ไม่ใช่ของ ThaID (PR-D2: manage-profile, expected-identity, contact, emergency-contacts, history) - ต้องมี realm role
+              `hr_master_data_admin` ควบคู่เสมอ (API ตรวจทั้ง scope และ role) ไม่ผูกกับฟิลด์ใดใน response ของ Person
             sync:thaid: check.lp-pao.go.th เท่านั้น (client `check-broker`)
             events:read: อ่านฟีดเหตุการณ์
             webhook:manage: จัดการ webhook subscription ของ client ตนเอง
@@ -1826,13 +1984,107 @@ components:
         sameAsRegistered: { type: boolean }
         currentAddress: { $ref: '#/components/schemas/Address' }
 
+    ManageProfile:
+      type: object
+      description: |
+        โปรไฟล์สำหรับฟอร์มแก้ไขของ HR (ไม่มี `x-required-scope` รายฟิลด์ - ควบคุมด้วย scope `personnel:manage:person` + role `hr_master_data_admin` ทั้ง endpoint)
+        `expectedIdentity` คือข้อมูลที่ **HR กรอก รอยืนยันด้วย ThaID** ไม่ใช่ค่าจาก ThaID
+      required: [personId, status, version, updatedAt, expectedIdentity, emergencyContacts]
+      properties:
+        personId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/PersonStatus' }
+        version: { type: integer, description: ใช้เป็น `expectedVersion` ของการเขียนถัดไป }
+        updatedAt: { type: string, format: date-time }
+        expectedIdentity:
+          type: object
+          required: [editable, lockedReason]
+          properties:
+            firstNameTh: { type: string }
+            lastNameTh: { type: string }
+            birthDate: { type: string, format: date }
+            editable: { type: boolean, description: แก้ได้เฉพาะคนที่ยังไม่เคยยืนยัน ThaID }
+            lockedReason:
+              type: [string, 'null']
+              enum: [THAID_VERIFIED, NOT_PENDING_CLAIM, null]
+        contact:
+          type: object
+          properties:
+            mobilePhone: { type: [string, 'null'] }
+            phoneAlt: { type: [string, 'null'] }
+            emailPersonal: { type: [string, 'null'], format: email }
+            lineId: { type: [string, 'null'] }
+            sameAsRegistered: { type: boolean }
+            currentAddress: { $ref: '#/components/schemas/Address' }
+            updatedAt: { type: string, format: date-time }
+            updatedBy: { type: string, enum: [SELF, HR] }
+        emergencyContacts:
+          type: array
+          items: { $ref: '#/components/schemas/EmergencyContact' }
+
+    ManageWriteBase:
+      type: object
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: version ที่ผู้เรียกเห็นล่าสุด (บังคับ) ไม่ตรง -> 409 `version-conflict` }
+        reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผล (บังคับ ห้ามมีเลข 13 หลัก) }
+
+    ExpectedIdentityPatch:
+      allOf:
+        - $ref: '#/components/schemas/ManageWriteBase'
+        - type: object
+          description: ส่งอย่างน้อยหนึ่งฟิลด์
+          properties:
+            firstNameTh: { type: string, minLength: 1, maxLength: 200 }
+            lastNameTh: { type: string, minLength: 1, maxLength: 200 }
+            birthDate: { type: [string, 'null'], format: date, description: ช่วง 1900-01-01 ถึงวันนี้ (นอกช่วง -> 422); null = ล้างค่า }
+
+    ContactPatch:
+      allOf:
+        - $ref: '#/components/schemas/ManageWriteBase'
+        - type: object
+          description: ส่งอย่างน้อยหนึ่งฟิลด์; ฟิลด์ที่ไม่ส่ง = ไม่แตะ, null/สตริงว่าง = ล้างค่า
+          properties:
+            mobilePhone: { type: [string, 'null'], maxLength: 20, pattern: '^(0[0-9]{8,9})?$' }
+            phoneAlt: { type: [string, 'null'], maxLength: 20 }
+            emailPersonal: { type: [string, 'null'], format: email, maxLength: 255 }
+            lineId: { type: [string, 'null'], maxLength: 100 }
+            sameAsRegistered: { type: boolean }
+            currentAddress:
+              type: object
+              properties:
+                houseNo: { type: [string, 'null'], maxLength: 50 }
+                moo: { type: [string, 'null'], maxLength: 20 }
+                soi: { type: [string, 'null'], maxLength: 100 }
+                road: { type: [string, 'null'], maxLength: 100 }
+                postcode: { type: [string, 'null'], maxLength: 10 }
+                fullText: { type: [string, 'null'], maxLength: 2000 }
+                subdistrict: { $ref: '#/components/schemas/AreaCodePatch' }
+                district: { $ref: '#/components/schemas/AreaCodePatch' }
+                province: { $ref: '#/components/schemas/AreaCodePatch' }
+
+    AreaCodePatch:
+      type: [object, 'null']
+      properties:
+        code: { type: string, maxLength: 10 }
+
+    EmergencyContactsReplace:
+      allOf:
+        - $ref: '#/components/schemas/ManageWriteBase'
+        - type: object
+          required: [contacts]
+          properties:
+            contacts:
+              type: array
+              maxItems: 3
+              items: { $ref: '#/components/schemas/EmergencyContact' }
+
     EmergencyContact:
       type: object
       required: [fullName, relationship, phone]
       properties:
-        fullName: { type: string }
-        relationship: { type: string, examples: [คู่สมรส] }
-        phone: { type: string }
+        fullName: { type: string, minLength: 1, maxLength: 200 }
+        relationship: { type: string, minLength: 1, maxLength: 50, examples: [คู่สมรส] }
+        phone: { type: string, minLength: 1, maxLength: 20 }
         priority: { type: integer, minimum: 1, maximum: 3 }
 
     OrgUnitRef:
@@ -2050,9 +2302,13 @@ components:
       required: [pid, expectedFirstNameTh, expectedLastNameTh, employment, reason]
       properties:
         pid: { $ref: '#/components/schemas/Pid' }
+        expectedBirthDate:
+          type: string
+          format: date
+          description: วันเกิดที่ HR กรอก (รอยืนยันด้วย ThaID, ThaID เป็นหลักเสมอ) ช่วง 1900-01-01 ถึงวันนี้ (นอกช่วง -> 422)
         reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลที่สร้าง (บังคับ ห้ามมีเลข 13 หลัก) }
-        expectedFirstNameTh: { type: string }
-        expectedLastNameTh: { type: string }
+        expectedFirstNameTh: { type: string, minLength: 1, maxLength: 200 }
+        expectedLastNameTh: { type: string, minLength: 1, maxLength: 200 }
         employment: { $ref: '#/components/schemas/EmploymentUpsert' }
         externalIds:
           type: array

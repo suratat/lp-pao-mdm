@@ -7,6 +7,7 @@ const { buildTestApp } = require('../../api/test/testApp');
 const { makeFakePid } = require('../../api/src/security/pid');
 const { DATABASE_URL, MIGRATOR_DATABASE_URL } = require('./config');
 const { runImport, ImportError, MAX_BODY_BYTES } = require('../src/import/runImport');
+const { importReason } = require('../src/import/importReason');
 const { cmdImport } = require('../src/cli');
 const { reconcileBatch } = require('../src/reconcile/reconcile');
 const { makeOrgUnit } = require('./fixtures');
@@ -56,12 +57,14 @@ afterAll(async () => {
 });
 
 // สร้าง batch ที่ผ่านตรวจคุณภาพแล้ว (quality_status = OK) ด้วยข้อมูลสังเคราะห์ ประเภท "พนักงานจ้าง" (ไม่ต้องมีเลขที่ตำแหน่ง)
-async function seedBatch(count, { jobTitleLength = 40, oversizedRowRef = null } = {}) {
+async function seedBatch(count, { jobTitleLength = 40, oversizedRowRef = null, forcedBatchId = null } = {}) {
+  // forcedBatchId: ระบุ batch_id เอง (ปกติ DB สุ่ม) ใช้ทดสอบ batch id ที่ UUID เต็มอ่านเป็นเลข 13 หลักได้
   const {
     rows: [{ batch_id: batchId }],
   } = await adminPool.query(
-    `INSERT INTO stg_hr.import_batch (source_filename, imported_by, status)
-     VALUES ('synthetic.csv', 'tester', 'QUALITY_CHECKED') RETURNING batch_id`
+    `INSERT INTO stg_hr.import_batch (batch_id, source_filename, imported_by, status)
+     VALUES (COALESCE($1::uuid, gen_random_uuid()), 'synthetic.csv', 'tester', 'QUALITY_CHECKED') RETURNING batch_id`,
+    [forcedBatchId]
   );
   const rowRefs = Array.from({ length: count }, (_, i) => String(i + 1).padStart(4, '0'));
   const pids = rowRefs.map(() => makeFakePid());
@@ -136,14 +139,15 @@ describe('runImport: แบ่ง chunk ตามไบต์ และรวม
     await run(batchId, stub);
     expect(stub.calls.length).toBeGreaterThan(1);
     for (const call of stub.calls) {
-      expect(call.body.reason).toBe(`HR_IMPORT batch ${batchId}`);
+      expect(call.body.reason).toBe(importReason(batchId));
+      expect(call.body.reason).toBe(`HR_IMPORT batch ${batchId.slice(0, 8)}`);
       expect(call.body.reason).not.toMatch(/\d{13}/); // batchId เป็น UUID ไม่ใช่เลขบัตร
       expect(call.bytes).toBeLessThanOrEqual(MAX_BODY_BYTES);
     }
     // DRY_RUN ก็ต้องส่ง (API บังคับทุก mode)
     const dryStub = makeStubFetch();
     await run(batchId, dryStub, { mode: 'DRY_RUN' });
-    expect(dryStub.calls.every((c) => c.body.reason === `HR_IMPORT batch ${batchId}`)).toBe(true);
+    expect(dryStub.calls.every((c) => c.body.reason === importReason(batchId))).toBe(true);
   });
 
   test('800 แถวสังเคราะห์ -> หลาย request, ไม่มี request ใดเกิน limit, รวมผลถูกต้อง, บันทึกเวลาต่อ chunk', async () => {
@@ -320,13 +324,25 @@ describe('runImport: retry และการล้มกลางทาง', ()
 });
 
 describe('กับ API จริง', () => {
+  test('batch id ที่ UUID เต็มอ่านเป็นเลข 13 หลัก (เคยทำให้ API ตอบ 422 reason-contains-pid): นำเข้าสำเร็จ และ reason ที่เก็บเป็น "HR_IMPORT batch 12345678"', async () => {
+    const batchId = '12345678-1234-4567-8901-234567890123';
+    await adminPool.query(`DELETE FROM stg_hr.raw_row WHERE batch_id = $1`, [batchId]);
+    await adminPool.query(`DELETE FROM stg_hr.import_batch WHERE batch_id = $1`, [batchId]);
+    await seedBatch(3, { forcedBatchId: batchId });
+
+    const summary = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'APPLY', createIfMissing: true, retryDelayMs: 0 });
+    expect(summary).toMatchObject({ total: 3, created: 3, errors: [] });
+    const { rows } = await adminPool.query(`SELECT count(*)::int AS n FROM audit.data_change_log WHERE reason = 'HR_IMPORT batch 12345678'`);
+    expect(rows[0].n).toBeGreaterThanOrEqual(3);
+  });
+
   test('PR-D1: API จริงรับ batch ที่ runImport ส่ง (มี reason) และเก็บ reason เป็น "HR_IMPORT batch <id>" ในทุกแถว data_change_log (changed_by HR_IMPORT)', async () => {
     const { batchId } = await seedBatch(5);
     const summary = await runImport(pool, { apiBaseUrl, token, batchId, mode: 'APPLY', createIfMissing: true, retryDelayMs: 0 });
     expect(summary).toMatchObject({ total: 5, created: 5, errors: [] });
     const { rows } = await adminPool.query(
       `SELECT changed_by, actor_sub, count(*)::int AS n FROM audit.data_change_log WHERE reason = $1 GROUP BY 1, 2`,
-      [`HR_IMPORT batch ${batchId}`]
+      [importReason(batchId)]
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ changed_by: 'HR_IMPORT', actor_sub: 'system:hr-import' });

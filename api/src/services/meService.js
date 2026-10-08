@@ -155,6 +155,71 @@ function diffEmergencyContacts(oldRows, newRows) {
   return changes;
 }
 
+// ตรวจ/ทำให้เป็นรูปเดียวกันก่อนเขียน: priority 1-3 ไม่ซ้ำ (ซ้ำเดิมชน UNIQUE ของ DB แล้วเป็น 500), ไม่เกิน 3 รายการ
+function normalizeEmergencyContacts(contacts) {
+  if (!Array.isArray(contacts) || contacts.length > 3) {
+    throw new HttpProblem(422, 'emergency-contacts-invalid', 'รายการผู้ติดต่อฉุกเฉินไม่ถูกต้อง', 'ต้องเป็นรายการไม่เกิน 3 คน');
+  }
+  const incoming = contacts.map((contact, index) => ({
+    full_name: contact.fullName,
+    relationship: contact.relationship ?? null,
+    phone: contact.phone ?? null,
+    priority: contact.priority ?? index + 1,
+  }));
+  const priorities = incoming.map((c) => c.priority);
+  if (priorities.some((p) => !Number.isInteger(p) || p < 1 || p > 3) || new Set(priorities).size !== priorities.length) {
+    throw new HttpProblem(422, 'emergency-contacts-invalid', 'ลำดับ (priority) ของผู้ติดต่อฉุกเฉินไม่ถูกต้อง', 'priority ต้องเป็น 1-3 และห้ามซ้ำกัน');
+  }
+  return incoming;
+}
+
+// แกนกลางของการแทนที่ผู้ติดต่อฉุกเฉิน ใช้ร่วมกันทั้ง self-service (portal) และ HR (PR-D2): เรียกใน transaction ที่ล็อกแถว person (FOR UPDATE)
+// แล้วด้วย personRow = { version, status } คืนรายการใหม่ (แถวจาก DB) - ไม่เก็บค่าลง audit (ดูหมายเหตุด้านบน)
+//  - changedBy 'SELF' | 'HR', reasonFor(slot) สร้าง reason ของแต่ละแถว log, emitOutbox=false สำหรับบุคคลที่ยังไม่ claim (เหมือน provision)
+async function applyEmergencyContacts(client, { personId, personRow, contacts, changedBy, actor, reasonFor, emitOutbox = true }) {
+  const incoming = normalizeEmergencyContacts(contacts);
+
+  const { rows: before } = await client.query(
+    `SELECT full_name, relationship, phone, priority FROM mdm.emergency_contact WHERE person_id = $1`,
+    [personId]
+  );
+
+  await client.query(`DELETE FROM mdm.emergency_contact WHERE person_id = $1`, [personId]);
+  for (const c of incoming) {
+    // eslint-disable-next-line no-await-in-loop
+    await client.query(
+      `INSERT INTO mdm.emergency_contact (person_id, full_name, relationship, phone, priority) VALUES ($1, $2, $3, $4, $5)`,
+      [personId, c.full_name, c.relationship, c.phone, c.priority]
+    );
+  }
+
+  const changes = diffEmergencyContacts(before, incoming);
+  let newVersion = personRow.version;
+  if (changes.length > 0) {
+    for (const { slot, fieldKey } of changes) {
+      // oldValue/newValue เป็น null เสมอ (ไม่เก็บค่า) - field_policy ตั้ง log_values_in_audit=false ซ้ำอีกชั้น (migration 1700000000049)
+      // eslint-disable-next-line no-await-in-loop
+      await writeChangeLog(client, { personId, tableName: 'emergency_contact', fieldName: fieldKey, changedBy, actor, reason: reasonFor(slot) });
+    }
+    newVersion = personRow.version + 1;
+    await client.query(`UPDATE mdm.person SET version = $2 WHERE person_id = $1`, [personId, newVersion]);
+    if (emitOutbox) {
+      const changedFields = [...new Set(changes.map((c) => c.fieldKey))];
+      await client.query(
+        `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
+         VALUES ($1, 'CONTACT_UPDATED', $2, $3, $4)`,
+        [personId, JSON.stringify(changedFields), JSON.stringify({ personId, version: newVersion, status: personRow.status }), newVersion]
+      );
+    }
+  }
+
+  const { rows } = await client.query(
+    `SELECT full_name, relationship, phone, priority FROM mdm.emergency_contact WHERE person_id = $1 ORDER BY priority`,
+    [personId]
+  );
+  return { rows, changed: changes.length > 0, version: newVersion };
+}
+
 async function replaceMyEmergencyContacts(pool, personId, contacts, auth) {
   const actor = selfActor(personId, auth);
   return withTransaction(pool, async (client) => {
@@ -162,52 +227,14 @@ async function replaceMyEmergencyContacts(pool, personId, contacts, auth) {
     const { rows: personRows } = await client.query(`SELECT version, status FROM mdm.person WHERE person_id = $1 FOR UPDATE`, [personId]);
     if (personRows.length === 0) throw new HttpProblem(404, 'not-found', 'ไม่พบบุคคลนี้');
 
-    const { rows: before } = await client.query(
-      `SELECT full_name, relationship, phone, priority FROM mdm.emergency_contact WHERE person_id = $1`,
-      [personId]
-    );
-
-    await client.query(`DELETE FROM mdm.emergency_contact WHERE person_id = $1`, [personId]);
-    const incoming = [];
-    for (const [index, contact] of contacts.entries()) {
-      const priority = contact.priority ?? index + 1;
-      incoming.push({ full_name: contact.fullName, relationship: contact.relationship ?? null, phone: contact.phone ?? null, priority });
-      // eslint-disable-next-line no-await-in-loop
-      await client.query(
-        `INSERT INTO mdm.emergency_contact (person_id, full_name, relationship, phone, priority)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [personId, contact.fullName, contact.relationship, contact.phone, priority]
-      );
-    }
-
-    const changes = diffEmergencyContacts(before, incoming);
-    if (changes.length > 0) {
-      for (const { slot, fieldKey } of changes) {
-        // oldValue/newValue เป็น null เสมอ (ไม่เก็บค่า) - field_policy ตั้ง log_values_in_audit=false ซ้ำอีกชั้น (migration 1700000000049)
-        // eslint-disable-next-line no-await-in-loop
-        await writeChangeLog(client, {
-          personId,
-          tableName: 'emergency_contact',
-          fieldName: fieldKey,
-          changedBy: 'SELF',
-          actor,
-          reason: `ผู้ติดต่อฉุกเฉินลำดับที่ ${slot}`,
-        });
-      }
-      const changedFields = [...new Set(changes.map((c) => c.fieldKey))];
-      const newVersion = personRows[0].version + 1;
-      await client.query(`UPDATE mdm.person SET version = $2 WHERE person_id = $1`, [personId, newVersion]);
-      await client.query(
-        `INSERT INTO integration.outbox_event (person_id, event_type, changed_fields, payload, version)
-         VALUES ($1, 'CONTACT_UPDATED', $2, $3, $4)`,
-        [personId, JSON.stringify(changedFields), JSON.stringify({ personId, version: newVersion, status: personRows[0].status }), newVersion]
-      );
-    }
-
-    const { rows } = await client.query(
-      `SELECT full_name, relationship, phone, priority FROM mdm.emergency_contact WHERE person_id = $1 ORDER BY priority`,
-      [personId]
-    );
+    const { rows } = await applyEmergencyContacts(client, {
+      personId,
+      personRow: personRows[0],
+      contacts,
+      changedBy: 'SELF',
+      actor,
+      reasonFor: (slot) => `ผู้ติดต่อฉุกเฉินลำดับที่ ${slot}`,
+    });
     return presentEmergencyContacts(rows);
   });
 }
@@ -226,4 +253,12 @@ async function reportIdentityIssue(pool, personId, { fieldKey, description }, au
   });
 }
 
-module.exports = { updateMyContact, replaceMyEmergencyContacts, reportIdentityIssue };
+module.exports = {
+  updateMyContact,
+  replaceMyEmergencyContacts,
+  reportIdentityIssue,
+  applyEmergencyContacts,
+  normalizeEmergencyContacts,
+  diffEmergencyContacts,
+  CONTACT_FIELD_KEYS,
+};
