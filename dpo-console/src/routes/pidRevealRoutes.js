@@ -2,7 +2,7 @@ const express = require('express');
 const { escapeHtml, redactPid, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
 const { csrfTokenMatches } = require('../session/csrf');
-const { fmt, toIsoDateTime, renderApiError } = require('./auditRoutes');
+const { fmt, toThaiInputValue, toIsoDateTime, renderApiError } = require('./auditRoutes');
 
 // PR-B: รีวิวการเปิดเลขบัตร (GET /persons/{id}/pid) - รายการมาจาก GET /audit/access-logs?reviewStatus=... (เฉพาะการเปิด pid)
 // บันทึกผลรีวิวผ่าน POST /audit/access-logs/{accessId}/review (scope audit:review + role dpo - ตรวจที่ MDM API ทุกครั้ง)
@@ -36,8 +36,8 @@ function renderFilters(q) {
         ${REVIEW_STATUSES.map((s) => `<option value="${s}" ${q.reviewStatus === s ? 'selected' : ''}>${escapeHtml(STATUS_LABEL[s])} (${s})</option>`).join('')}
       </select>
     </div>
-    <div><label>จากวันที่-เวลา</label><input type="datetime-local" name="from" value="${escapeHtml(q.from || '')}" /></div>
-    <div><label>ถึงวันที่-เวลา</label><input type="datetime-local" name="to" value="${escapeHtml(q.to || '')}" /></div>
+    <div><label>จากวันที่-เวลา <span class="hint">(เวลาไทย)</span></label><input type="datetime-local" name="from" value="${escapeHtml(toThaiInputValue(q.from))}" /></div>
+    <div><label>ถึงวันที่-เวลา <span class="hint">(เวลาไทย)</span></label><input type="datetime-local" name="to" value="${escapeHtml(toThaiInputValue(q.to))}" /></div>
     <div><label>Person ID (UUID)</label><input name="personId" value="${escapeHtml(q.personId || '')}" pattern="[0-9a-fA-F-]{36}" /></div>
     <div><label>Client ID</label><input name="clientId" value="${escapeHtml(q.clientId || '')}" /></div>
     <div><button type="submit">กรอง</button></div>

@@ -2,7 +2,7 @@ const express = require('express');
 const { escapeHtml, redactPid, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
 const { csrfTokenMatches } = require('../session/csrf');
-const { fmt, toIsoDateTime, renderApiError } = require('./auditRoutes');
+const { fmt, toThaiInputValue, toIsoDateTime, renderApiError } = require('./auditRoutes');
 
 // PR-C: แจ้งเตือนพฤติกรรมการเข้าถึงข้อมูลผิดปกติ (worker access-anomaly-scan -> audit.access_alert) ให้ DPO รับทราบ/ปิดเรื่องพร้อมหมายเหตุ
 // รายการมาจาก GET /audit/alerts; รับทราบ/ปิดเรื่องผ่าน POST /audit/alerts/{id}/ack|close (scope audit:review + role dpo - ตรวจที่ MDM API ทุกครั้ง)
@@ -41,8 +41,8 @@ function renderFilters(q) {
   return `<form method="get" action="/dpo/alerts" class="filters">
     <div><label>สถานะ</label><select name="status">${options(STATUSES, q.status, STATUS_LABEL, false)}</select></div>
     <div><label>กฎ</label><select name="ruleCode">${options(RULES, q.ruleCode, RULE_LABEL, true)}</select></div>
-    <div><label>ตรวจพบตั้งแต่</label><input type="datetime-local" name="from" value="${escapeHtml(q.from || '')}" /></div>
-    <div><label>ตรวจพบถึง</label><input type="datetime-local" name="to" value="${escapeHtml(q.to || '')}" /></div>
+    <div><label>ตรวจพบตั้งแต่ <span class="hint">(เวลาไทย)</span></label><input type="datetime-local" name="from" value="${escapeHtml(toThaiInputValue(q.from))}" /></div>
+    <div><label>ตรวจพบถึง <span class="hint">(เวลาไทย)</span></label><input type="datetime-local" name="to" value="${escapeHtml(toThaiInputValue(q.to))}" /></div>
     <div><label>บัญชีผู้เข้าถึง (actor sub)</label><input name="actorSub" value="${escapeHtml(q.actorSub || '')}" /></div>
     <div><button type="submit">กรอง</button></div>
   </form>`;
@@ -68,14 +68,14 @@ function renderActionForm(alert, { csrfToken, returnStatus }) {
 function renderTable(alerts, { canReview, csrfToken, returnStatus }) {
   const rows = alerts
     .map((a) => {
-      const logLink = `/dpo/access-logs?${new URLSearchParams({ clientId: a.actorClient || '', from: a.windowStart, to: a.windowEnd }).toString()}`;
+      const logLink = `/dpo/access-logs?${new URLSearchParams({ clientId: a.actorClient || '', from: toThaiInputValue(a.windowStart), to: toThaiInputValue(a.windowEnd) }).toString()}`;
       return `<tr>
         <td>${escapeHtml(a.alertId)}</td>
         <td>${escapeHtml(fmt(a.detectedAt))}</td>
         <td>${escapeHtml(RULE_LABEL[a.ruleCode] || a.ruleCode)}<br /><span class="hint">${escapeHtml(a.ruleCode)}</span></td>
         <td><span class="badge badge-${escapeHtml(String(a.severity).toLowerCase())}">${escapeHtml(SEVERITY_LABEL[a.severity] || a.severity)}</span></td>
         <td>${escapeHtml(a.actorSub || '-')}<br /><span class="hint">${escapeHtml(a.actorClient || '-')}</span></td>
-        <td>${escapeHtml(fmt(a.windowStart))}<br />ถึง ${escapeHtml(fmt(a.windowEnd))}<br /><span class="hint">(UTC) <a href="${escapeHtml(logLink)}">ดู access log</a></span></td>
+        <td>${escapeHtml(fmt(a.windowStart))}<br />ถึง ${escapeHtml(fmt(a.windowEnd))}<br /><span class="hint"><a href="${escapeHtml(logLink)}">ดู access log</a></span></td>
         <td>${escapeHtml(a.metricCount)} / ${escapeHtml(a.threshold)}</td>
         <td><span class="badge badge-${escapeHtml(a.status.toLowerCase())}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}</span>${
           a.lastActionAt
