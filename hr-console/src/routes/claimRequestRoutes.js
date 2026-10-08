@@ -1,11 +1,11 @@
 const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
-const { PERSONNEL_TYPES, positionRuleFor } = require('../personnelTypes');
+const { positionRuleFor } = require('../personnelTypes');
+const { personnelTypeOptions, positionRules, orgUnitOptions, positionOptions, POSITION_LOCK_SCRIPT } = require('../employmentForm');
 const { MAX_LENGTH: JOB_TITLE_MAX_LENGTH, checkJobTitleText } = require('../jobTitleText');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const naturalCompare = (a, b) => String(a).localeCompare(String(b), 'th', { numeric: true });
 
 function fmt(value) {
   return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
@@ -43,103 +43,6 @@ function renderClaimRequestsTable(claimRequests) {
   </table>`;
 }
 
-function personnelTypeOptions() {
-  return PERSONNEL_TYPES.map((t) => `<option value="${escapeHtml(t.value)}">${escapeHtml(t.label)}</option>`).join('\n');
-}
-
-function positionRules() {
-  return Object.fromEntries(PERSONNEL_TYPES.map((t) => [t.value, t.positionRule]));
-}
-
-// dropdown หน่วยงาน "รหัส — ชื่อ" (เฉพาะที่ active) ค่าที่ส่งคือ orgUnitId
-function orgUnitOptions(orgUnits) {
-  return [...orgUnits]
-    .filter((o) => o.isActive)
-    .sort((a, b) => naturalCompare(a.code, b.code))
-    .map((o) => `<option value="${escapeHtml(o.orgUnitId)}">${escapeHtml(o.code)} — ${escapeHtml(o.nameTh)}</option>`)
-    .join('\n');
-}
-
-// dropdown ตำแหน่ง "เลขที่ตำแหน่ง — ชื่อตำแหน่ง · ประเภทตำแหน่ง (ชื่อไทย)" (เฉพาะที่ active) ไม่แสดงระดับ/สายงาน
-// (ระดับเป็นของ employment.level_code, สายงานเราไม่เก็บ) ทุก option พก data-org-unit ไว้ให้สคริปต์กรองตามหน่วยงานที่เลือก
-function positionOptions(positions, positionTypes) {
-  const typeName = new Map(positionTypes.map((t) => [t.code, t.nameTh]));
-  return [...positions]
-    .filter((p) => p.isActive)
-    .sort((a, b) => naturalCompare(a.positionNo, b.positionNo))
-    .map(
-      (p) =>
-        `<option value="${escapeHtml(p.positionId)}" data-org-unit="${escapeHtml(p.orgUnitId)}">${escapeHtml(p.positionNo)} — ${escapeHtml(p.titleTh)} · ${escapeHtml(typeName.get(p.positionType) || p.positionType)}</option>`
-    )
-    .join('\n');
-}
-
-// lock ช่องตำแหน่ง/ชื่อตำแหน่ง-ลักษณะงานตามประเภทบุคลากร + กรองตำแหน่งตามหน่วยงาน (ฝั่ง client เพื่อ UX เท่านั้น - server ของ console และ
-// MDM API ตรวจซ้ำเสมอ):
-//   FORBIDDEN -> ตำแหน่ง: ล้างค่า+disable | ชื่อตำแหน่ง/ลักษณะงาน: enable (ไม่บังคับ)
-//   REQUIRED  -> ตำแหน่ง: enable+required | ชื่อตำแหน่ง/ลักษณะงาน: ซ่อน+disable+ล้างค่า
-//   OPTIONAL (OTHER) -> เลือกได้อย่างใดอย่างหนึ่ง: เลือกตำแหน่งแล้ว = ปิดช่องข้อความ, กรอกข้อความแล้ว = ปิดช่องตำแหน่ง (ปิดแล้วค่าว่างเสมอ)
-//     ผู้ใช้เปลี่ยนใจได้โดยล้างช่องที่กรอกไว้ (เลือกตำแหน่งกลับเป็น "— เลือกตำแหน่ง —" หรือลบข้อความ) อีกช่องจะเปิดกลับเอง
-//     ถ้าเบราว์เซอร์คืนค่าฟอร์มมาทั้งสองช่อง (ไม่ควรเกิด) ตำแหน่งชนะและข้อความถูกล้าง
-//   (ยังไม่เลือกหน่วยงาน = ช่องตำแหน่งถูก disable เพราะยังไม่มีรายการให้เลือก)
-// refresh() รันตอนโหลดหน้า (select มีค่าเริ่มต้นอยู่แล้ว) + ทุกครั้งที่เปลี่ยนประเภทหรือหน่วยงาน + ตอน pageshow (เบราว์เซอร์คืนค่าฟอร์มเดิมเมื่อ
-// กด Back/bfcache โดยไม่ยิง change event - ถ้าไม่ apply ซ้ำ ช่องอาจค้างสถานะไม่ตรงกับประเภท/หน่วยงานที่เลือก) ส่วนการเลือกตำแหน่ง/พิมพ์ข้อความ
-// เรียกเฉพาะ applyState() (ไม่สร้างรายการตำแหน่งใหม่ทุกตัวอักษร)
-const POSITION_LOCK_SCRIPT = `<script>
-(function () {
-  var typeSelect = document.getElementById('personnelType');
-  var orgSelect = document.getElementById('orgUnitId');
-  var posSelect = document.getElementById('positionId');
-  var hint = document.getElementById('positionHint');
-  var jobInput = document.getElementById('jobTitleText');
-  var jobRow = document.getElementById('jobTitleRow');
-  var jobHint = document.getElementById('jobTitleHint');
-  var rules = JSON.parse(typeSelect.getAttribute('data-position-rules'));
-  var HINTS = { REQUIRED: '(จำเป็นต้องระบุ)', FORBIDDEN: '(ประเภทนี้ไม่มีตำแหน่ง - ช่องถูกปิด)', OPTIONAL: '(ไม่บังคับ - เลือกตำแหน่งหรือกรอกชื่อตำแหน่ง/ลักษณะงานอย่างใดอย่างหนึ่ง)' };
-  var JOB_HINTS = { FORBIDDEN: '(ไม่บังคับ)', OPTIONAL: '(ไม่บังคับ - กรอกแล้วช่องตำแหน่งจะถูกปิด)' };
-  var all = Array.prototype.slice.call(posSelect.options);
-  var placeholder = all.shift();
-
-  function filterPositions() {
-    var orgId = orgSelect.value;
-    var keep = posSelect.value;
-    var visible = all.filter(function (o) { return orgId && o.getAttribute('data-org-unit') === orgId; });
-    while (posSelect.firstChild) posSelect.removeChild(posSelect.firstChild);
-    posSelect.appendChild(placeholder);
-    visible.forEach(function (o) { posSelect.appendChild(o); });
-    placeholder.textContent = !orgId ? '— เลือกหน่วยงานก่อน —' : visible.length === 0 ? '— หน่วยงานนี้ไม่มีตำแหน่งที่ใช้งานอยู่ —' : '— เลือกตำแหน่ง —';
-    posSelect.value = visible.some(function (o) { return o.value === keep; }) ? keep : '';
-  }
-
-  function applyState() {
-    var rule = rules[typeSelect.value] || 'OPTIONAL';
-    var posOff = rule === 'FORBIDDEN';
-    var jobOff = rule === 'REQUIRED';
-    var why = '';
-    if (rule === 'OPTIONAL') {
-      if (posSelect.value !== '') { jobOff = true; why = '(ปิดเพราะเลือกตำแหน่งแล้ว - เลือก "— เลือกตำแหน่ง —" กลับเพื่อกรอกข้อความแทน)'; }
-      else if (jobInput.value.trim() !== '') { posOff = true; why = '(ปิดเพราะกรอกชื่อตำแหน่ง/ลักษณะงานแล้ว - ลบข้อความเพื่อเลือกตำแหน่งแทน)'; }
-    }
-    if (posOff) posSelect.value = '';
-    if (jobOff) jobInput.value = '';
-    posSelect.disabled = posOff || !orgSelect.value;
-    posSelect.required = rule === 'REQUIRED';
-    jobInput.disabled = jobOff;
-    jobRow.hidden = rule === 'REQUIRED';
-    hint.textContent = rule === 'OPTIONAL' && posOff ? why : HINTS[rule];
-    jobHint.textContent = rule === 'OPTIONAL' && jobOff ? why : (JOB_HINTS[rule] || '');
-  }
-
-  function refresh() { filterPositions(); applyState(); }
-
-  typeSelect.addEventListener('change', refresh);
-  orgSelect.addEventListener('change', refresh);
-  posSelect.addEventListener('change', applyState);
-  jobInput.addEventListener('input', applyState);
-  window.addEventListener('pageshow', refresh);
-  refresh();
-})();
-</script>`;
 
 function renderFormErrors(errors) {
   return `<ul class="error">${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`;

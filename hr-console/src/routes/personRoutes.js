@@ -4,6 +4,7 @@ const { MdmApiError } = require('../mdmClient');
 const { PERSONNEL_TYPES } = require('../personnelTypes');
 const { UUID_RE } = require('../masterData');
 const { csrfTokenMatches } = require('../session/csrf');
+const { renderHistory } = require('../historyView');
 
 // หน้าดูข้อมูลบุคคล (อ่านอย่างเดียว): ค้นหา / รายละเอียด / แสดงเลขบัตรเต็มแบบมีเหตุผล
 // - query string ใช้เฉพาะ q/filter/cursor เท่านั้น ห้ามมี pid; เหตุผลของการแสดงเลขบัตรส่งแบบ POST body เท่านั้น
@@ -15,6 +16,16 @@ const SCOPE_EMPLOYMENT = 'personnel:read:employment';
 const SCOPE_INACTIVE = 'personnel:read:inactive';
 
 const PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 20;
+
+// ข้อความยืนยันหลังบันทึกสำเร็จ (redirect มาพร้อม ?saved=<รหัส>) รับเฉพาะรหัสที่รู้จัก ไม่สะท้อนค่าใดจาก query ลงหน้า
+const SAVED_MESSAGES = {
+  created: 'เพิ่มบุคคลใหม่เรียบร้อยแล้ว บุคคลนี้อยู่ในสถานะรอยืนยันตัวตน (PENDING_CLAIM) และจะเชื่อมกับ ThaID อัตโนมัติเมื่อเข้าสู่ระบบครั้งแรก',
+  employment: 'บันทึกการเปลี่ยนแปลงข้อมูลการจ้างเรียบร้อยแล้ว (เก็บประวัติเดิมไว้เป็นช่วงเวลา)',
+  nochange: 'ไม่มีการเปลี่ยนแปลงข้อมูล จึงไม่ได้บันทึกอะไร',
+  deactivated: 'บันทึกการพ้นสภาพเรียบร้อยแล้ว ระบบระงับการเข้าถึงของบุคคลนี้แล้ว',
+  reactivated: 'คืนสภาพเรียบร้อยแล้ว บุคคลนี้ต้องยืนยันตัวตนผ่าน ThaID ใหม่ในการเข้าสู่ระบบครั้งถัดไป',
+};
 const REASON_MIN = 10;
 const REASON_MAX = 500;
 
@@ -228,7 +239,8 @@ function createPersonRoutes({ mdmClient }) {
       const nextLink = result.page?.nextCursor
         ? `<p><a href="${escapeHtml(listUrl(filters, { cursor: result.page.nextCursor }))}">หน้าถัดไป</a></p>`
         : '';
-      return send(req, res, 200, 'ข้อมูลบุคคล', `<h1>ข้อมูลบุคคล</h1>${form}${renderResultsTable(result.data, scopes)}${nextLink}`);
+      const addButton = req.hrAuth.isMasterDataAdmin ? '<p><a class="button" href="/hr/persons/new">+ เพิ่มบุคคลใหม่</a></p>' : '';
+      return send(req, res, 200, 'ข้อมูลบุคคล', `<h1>ข้อมูลบุคคล</h1>${addButton}${form}${renderResultsTable(result.data, scopes)}${nextLink}`);
     } catch (err) {
       if (err instanceof MdmApiError && [400, 403].includes(err.status)) {
         return send(req, res, err.status, 'ข้อมูลบุคคล', `<h1>ข้อมูลบุคคล</h1><p class="error">${escapeHtml(apiErrorText(err))}</p>`);
@@ -257,6 +269,43 @@ function createPersonRoutes({ mdmClient }) {
       }
 
       const verification = person.verification || {};
+      const isAdmin = req.hrAuth.isMasterDataAdmin === true;
+      const flash = SAVED_MESSAGES[String(req.query.saved)] ? `<p class="ok"><strong>${escapeHtml(SAVED_MESSAGES[String(req.query.saved)])}</strong></p>` : '';
+
+      // ปุ่มแก้ไข: เฉพาะผู้มี role hr_master_data_admin (ซ่อนเพื่อ UX เท่านั้น - MDM API ตรวจ role ซ้ำทุกคำขอ)
+      const id = encodeURIComponent(personId);
+      const actionButtons = isAdmin
+        ? `<p class="actions">${
+            person.status === 'INACTIVE'
+              ? `<a class="button" href="/hr/persons/${id}/reactivate">คืนสภาพ</a>`
+              : `<a class="button" href="/hr/persons/${id}/employment/edit">ย้ายหน่วยงาน / ตำแหน่ง / ประเภท</a><a class="button" href="/hr/persons/${id}/deactivate">พ้นสภาพ</a>`
+          }</p>`
+        : '';
+
+      // ประวัติการเปลี่ยนแปลง (เฉพาะ hr_master_data_admin): ความล้มเหลวของส่วนนี้ต้องไม่ทำให้ทั้งหน้าล้ม
+      let historySection = '';
+      if (isAdmin) {
+        try {
+          const cursor = /^\d{1,18}$/.test(String(req.query.historyCursor)) ? String(req.query.historyCursor) : undefined;
+          const result = await mdmClient.getPersonHistory(token, personId, { cursor, limit: HISTORY_PAGE_SIZE });
+          const lookups = { orgUnits: new Map(), positions: new Map() };
+          if (result.data.some((e) => e.fieldKey === 'employment.org_unit_id' || e.fieldKey === 'employment.position_id')) {
+            const [orgUnits, positions] = await Promise.all([
+              mdmClient.listOrgUnits(token, { activeOnly: false }),
+              mdmClient.listPositions(token, { activeOnly: false }),
+            ]);
+            for (const o of orgUnits) lookups.orgUnits.set(o.orgUnitId, `${o.code} — ${o.nameTh}`);
+            for (const p of positions) lookups.positions.set(p.positionId, `${p.positionNo} — ${p.titleTh}`);
+          }
+          historySection = `<h2 id="history">ประวัติการเปลี่ยนแปลง</h2>
+            <p class="hint">เห็นเฉพาะว่าฟิลด์ใดเปลี่ยน ใคร เมื่อไหร่ และเหตุผล ค่าของข้อมูลส่วนบุคคลบางชนิดถูกปกปิด</p>
+            ${renderHistory({ entries: result.data, nextCursor: result.page?.nextCursor, personId, lookups })}`;
+        } catch (err) {
+          historySection = `<h2 id="history">ประวัติการเปลี่ยนแปลง</h2><p class="error">แสดงประวัติการเปลี่ยนแปลงไม่ได้ในขณะนี้ (${escapeHtml(
+            err instanceof MdmApiError && err.status === 403 ? 'ไม่มีสิทธิ์ดูประวัติ' : 'ระบบขัดข้อง กรุณาลองใหม่ภายหลัง'
+          )})</p>`;
+        }
+      }
       const pidButton = scopes.has(SCOPE_PID)
         ? ` <form class="inline" method="get" action="/hr/persons/${encodeURIComponent(personId)}/reveal-pid"><button type="submit">แสดงเลขบัตร</button></form>`
         : '';
@@ -268,6 +317,8 @@ function createPersonRoutes({ mdmClient }) {
 
       const body = `<p><a href="/hr/persons">← กลับไปรายการ</a></p>
         <h1>${escapeHtml(fullName(basic))}</h1>
+        ${flash}
+        ${actionButtons}
         <h2>ข้อมูลทั่วไป</h2>
         ${definitionList([
           ['สถานะ', `<span class="badge badge-${escapeHtml(String(person.status).toLowerCase())}">${escapeHtml(person.status)}</span>`],
@@ -289,7 +340,8 @@ function createPersonRoutes({ mdmClient }) {
           ['สังกัด', escapeHtml(basic.orgUnit ? `${basic.orgUnit.nameTh}${basic.orgUnit.parentNameTh ? ` (${basic.orgUnit.parentNameTh})` : ''}` : '-')],
         ])}
         <h2>ประวัติการปฏิบัติงาน (Employment)</h2>
-        ${historyHtml}`;
+        ${historyHtml}
+        ${historySection}`;
       return send(req, res, 200, fullName(basic), body);
     } catch (err) {
       if (err instanceof MdmApiError && [403, 404].includes(err.status)) {

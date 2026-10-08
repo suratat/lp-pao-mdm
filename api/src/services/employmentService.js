@@ -1,7 +1,7 @@
 const { withTransaction } = require('../db/transaction');
 const { HttpProblem } = require('../security/httpProblem');
 const { presentEmployment } = require('./personPresenter');
-const { closeAndOpenEmployment } = require('./employmentShared');
+const { closeAndOpenEmployment, withCurrentEmployeeNo } = require('./employmentShared');
 const { writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
 const { composeReason } = require('./reason');
 
@@ -52,7 +52,7 @@ async function upsertEmployment(pool, personId, body, auth) {
     let employmentId;
     let changes;
     try {
-      ({ employmentId, changes } = await closeAndOpenEmployment(client, personId, body, 'HR'));
+      ({ employmentId, changes } = await closeAndOpenEmployment(client, personId, await withCurrentEmployeeNo(client, personId, body), 'HR'));
     } catch (err) {
       // closeAndOpenEmployment ห่อ error ของ Postgres ด้วย mapEmploymentConstraintError ให้แล้ว (มี .code)
       if (err instanceof HttpProblem) throw err; // เช่น 422 position-not-allowed/required จากกฎประเภทบุคลากร

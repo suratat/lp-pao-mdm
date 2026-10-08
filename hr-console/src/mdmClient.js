@@ -37,7 +37,13 @@ function createMdmClient({ baseUrl }) {
     if (res.status === 204 || res.status === 202) return null;
 
     const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      // ตอบกลับที่ไม่ใช่ JSON (เช่น หน้า 502/504 ของ nginx ตอน API ล่ม): ถ้าไม่ ok ให้เป็น MdmApiError ธรรมดา (หน้าจอแสดงข้อความไทย) ไม่ใช่ SyntaxError -> 500
+      if (res.ok) throw new Error('MDM API ตอบกลับที่ไม่ใช่ JSON');
+    }
 
     if (!res.ok) {
       throw new MdmApiError(res.status, data);
@@ -81,7 +87,7 @@ function createMdmClient({ baseUrl }) {
   function listPositions(accessToken, { orgUnitId, activeOnly } = {}) {
     const qs = new URLSearchParams();
     if (orgUnitId) qs.set('orgUnitId', orgUnitId);
-    if (activeOnly) qs.set('activeOnly', 'true');
+    if (activeOnly !== undefined) qs.set('activeOnly', activeOnly ? 'true' : 'false');
     const query = qs.toString();
     return call('GET', `/api/v1/positions${query ? `?${query}` : ''}`, accessToken);
   }
@@ -145,7 +151,39 @@ function createMdmClient({ baseUrl }) {
     return data.pid;
   }
 
+  // PR-D3: เขียนข้อมูลบุคคลด้วยมือ (ต้อง role hr_master_data_admin - MDM API ตรวจ) เลขบัตรอยู่ใน body ของ POST /persons เท่านั้น (ไม่ผ่าน URL)
+  // ผลลัพธ์ผ่าน stripEmployeeNo เหมือนทุกฟังก์ชันอ่านข้อมูลบุคคล
+  async function createPerson(accessToken, body) {
+    return stripEmployeeNo(await call('POST', '/api/v1/persons', accessToken, body));
+  }
+
+  async function updateEmployment(accessToken, personId, body) {
+    return stripEmployeeNo(await call('PUT', `/api/v1/persons/${encodeURIComponent(personId)}/employment`, accessToken, body));
+  }
+
+  async function deactivatePerson(accessToken, personId, body) {
+    return stripEmployeeNo(await call('POST', `/api/v1/persons/${encodeURIComponent(personId)}/deactivate`, accessToken, body));
+  }
+
+  async function reactivatePerson(accessToken, personId, body) {
+    return stripEmployeeNo(await call('POST', `/api/v1/persons/${encodeURIComponent(personId)}/reactivate`, accessToken, body));
+  }
+
+  // ประวัติการเปลี่ยนแปลงของบุคคล (scope personnel:manage:person + role hr_master_data_admin) เรียงใหม่ -> เก่า
+  function getPersonHistory(accessToken, personId, { cursor, limit } = {}) {
+    const qs = new URLSearchParams();
+    if (cursor) qs.set('cursor', cursor);
+    if (limit) qs.set('limit', String(limit));
+    const query = qs.toString();
+    return call('GET', `/api/v1/persons/${encodeURIComponent(personId)}/history${query ? `?${query}` : ''}`, accessToken);
+  }
+
   return {
+    createPerson,
+    updateEmployment,
+    deactivatePerson,
+    reactivatePerson,
+    getPersonHistory,
     searchPersons,
     getPerson,
     getEmployment,

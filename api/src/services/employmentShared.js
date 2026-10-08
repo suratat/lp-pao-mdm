@@ -87,6 +87,18 @@ async function closeAndOpenEmployment(client, personId, rawIncoming, updatedBy =
     return { employmentId: current.employment_id, changes: [] };
   }
 
+  // วันที่มีผลใหม่ต้องไม่ก่อนวันที่มีผลของ record ปัจจุบัน: ปิด record เดิมด้วย effective_to = effectiveFrom ใหม่ ถ้าก่อน effective_from เดิม ช่วงวันที่กลับด้าน
+  // Postgres ปฏิเสธตอนคำนวณ EXCLUDE constraint แล้วหลุดเป็น HTTP 500 (พบตอนทำหน้าย้ายตำแหน่งใน hr-console PR-D3) - ตอบ 422 ที่อ่านเข้าใจได้แทน
+  const toDay = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+  if (current && incoming.effectiveFrom < toDay(current.effective_from)) {
+    throw new HttpProblem(
+      422,
+      'effective-from-before-current',
+      'วันที่มีผลต้องไม่ก่อนวันที่มีผลของข้อมูลการจ้างปัจจุบัน',
+      `ข้อมูลการจ้างปัจจุบันมีผลตั้งแต่ ${toDay(current.effective_from)} วันที่มีผลใหม่ต้องเป็นวันเดียวกันหรือหลังจากนั้น`
+    );
+  }
+
   try {
     if (current) {
       await client.query(`UPDATE mdm.employment SET is_current = false, effective_to = $2 WHERE employment_id = $1`, [
@@ -122,4 +134,19 @@ async function closeAndOpenEmployment(client, personId, rawIncoming, updatedBy =
   }
 }
 
-module.exports = { serviceError, diffEmploymentFields, mapEmploymentConstraintError, closeAndOpenEmployment };
+// PUT /persons/{id}/employment และ POST .../reactivate: employeeNo (= เลขบัตรประชาชน) ไม่ส่ง = คงค่าเดิมของ employment ล่าสุดของบุคคลนั้น
+// หน้าจอ HR ไม่มีเลขบัตรเต็ม (ห้ามอยู่ใน URL/log/session และ API ส่งให้แค่ masked) จึงส่งซ้ำไม่ได้ - เดิมต้องกรอกเลขบัตรใหม่ทุกครั้งที่ย้ายตำแหน่ง
+// ซึ่งเสี่ยงพิมพ์ผิดแล้วเปลี่ยน employee_no เป็นของคนอื่น ถ้าส่งมาก็ใช้ค่าที่ส่งเหมือนเดิม; บุคคลที่ไม่เคยมี employment เลย -> 422 employee-no-required
+async function withCurrentEmployeeNo(client, personId, body) {
+  if (typeof body.employeeNo === 'string' && body.employeeNo !== '') return body;
+  const { rows } = await client.query(
+    `SELECT employee_no FROM mdm.employment WHERE person_id = $1 ORDER BY effective_from DESC, employment_id DESC LIMIT 1`,
+    [personId]
+  );
+  if (rows.length === 0) {
+    throw new HttpProblem(422, 'employee-no-required', 'ต้องระบุเลขประจำตัว', 'บุคคลนี้ยังไม่มีข้อมูลการปฏิบัติงานเดิมให้คงค่า employeeNo ต้องระบุ employeeNo');
+  }
+  return { ...body, employeeNo: rows[0].employee_no };
+}
+
+module.exports = { serviceError, diffEmploymentFields, mapEmploymentConstraintError, closeAndOpenEmployment, withCurrentEmployeeNo };

@@ -66,6 +66,11 @@ function defaultScenarios() {
       expiresIn: 1,
       rotateRefresh: true,
     },
+    // PR-D3: หน้าแก้ข้อมูลบุคคล - ผู้ดูแล HR = hr_officer + hr_master_data_admin (scope personnel:manage:person เป็น default ของ client ใน Keycloak)
+    'persons-admin-code': { roles: ['hr_officer', 'hr_master_data_admin'], displayName: 'ผู้ดูแล HR หนึ่ง', username: 'hr.admin', scope: `${HR_SCOPE_PERSONS_A} personnel:manage:person` },
+    'persons-admin-two-code': { roles: ['hr_officer', 'hr_master_data_admin'], displayName: 'ผู้ดูแล HR สอง', username: 'hr.admin2', scope: `${HR_SCOPE_PERSONS_A} personnel:manage:person` },
+    // hr_officer ธรรมดาที่ token มี scope personnel:manage:person ติดมา (เหมือน Keycloak จริง: scope ผูกให้ทั้ง client) แต่ไม่มี role hr_master_data_admin
+    'persons-officer-manage-scope-code': { roles: ['hr_officer'], displayName: 'เจ้าหน้าที่ทั่วไป', username: 'hr.officer', scope: `${HR_SCOPE_PERSONS_A} personnel:manage:person` },
     'persons-a-code': { roles: ['hr_officer'], displayName: 'HR ชุด A', username: 'hr.persons.a', scope: HR_SCOPE_PERSONS_A },
     'persons-masked-code': { roles: ['hr_officer'], displayName: 'HR เห็นเลขปิด', username: 'hr.persons.masked', scope: HR_SCOPE_PERSONS_MASKED },
     'persons-pid-code': { roles: ['hr_officer'], displayName: 'HR แสดงเลขบัตรได้', username: 'hr.persons.pid', scope: HR_SCOPE_PERSONS_PID },

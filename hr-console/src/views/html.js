@@ -41,6 +41,9 @@ function layout(title, bodyHtml, { displayName, isMasterDataAdmin } = {}) {
     dl.kv dt { font-weight: 600; } dl.kv dd { margin: 0; }
     .pid { font-family: ui-monospace, monospace; font-size: 1.3em; letter-spacing: 0.05em; }
     .actions form, .actions a { margin-right: 0.5rem; }
+    a.button, button.primary { display: inline-block; padding: 0.35rem 0.8rem; border: 1px solid #1a1a1a; border-radius: 0.3rem; background: #f4f4f4; color: #1a1a1a; text-decoration: none; }
+    fieldset.warn { border-color: #b00020; }
+    .history td:first-child { white-space: nowrap; }
   </style>
 </head>
 <body>

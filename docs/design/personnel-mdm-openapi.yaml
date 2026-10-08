@@ -2223,6 +2223,7 @@ components:
       properties:
         employeeNo:
           type: string
+          maxLength: 50
           description: เลขบัตรประชาชนของบุคคล (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก)
         personnelType: { $ref: '#/components/schemas/PersonnelType' }
         positionId:
@@ -2232,7 +2233,7 @@ components:
             เลขที่ตำแหน่ง - ไม่ระบุได้สำหรับบุคลากรที่ไม่มีตำแหน่งทางการตามโครงสร้างอัตรากำลัง
             (พนักงานจ้าง/จ้างเหมาบริการรายบุคคล)
         orgUnitId: { type: string, format: uuid }
-        levelCode: { type: string }
+        levelCode: { type: string, maxLength: 50 }
         jobTitleText:
           type: string
           maxLength: 255
@@ -2247,22 +2248,54 @@ components:
             (batch import รายงานเป็น error รายแถว: `JOB_TITLE_NOT_ALLOWED`, `POSITION_AND_JOB_TITLE_CONFLICT`, `JOB_TITLE_CONTAINS_PID`, `JOB_TITLE_TOO_LONG`)
         appointedDate: { type: string, format: date }
         effectiveFrom: { type: string, format: date }
-        emailWork: { type: [string, 'null'], format: email }
-        referenceDocument: { type: string, description: เลขที่คำสั่ง }
+        emailWork: { type: [string, 'null'], format: email, maxLength: 255 }
+        referenceDocument: { type: string, maxLength: 200, description: เลขที่คำสั่ง }
         expectedVersion:
           type: integer
           description: version ของ person ที่ผู้เรียกเห็นล่าสุด (optimistic locking) ถ้าไม่ตรงคืน 409
 
     EmploymentChangeRequest:
       description: |
-        EmploymentUpsert + `reason` (บังคับ) ใช้กับ PUT /persons/{id}/employment และ POST /persons/{id}/reactivate (HR ทำด้วยมือ)
-        ส่วน POST /persons (employment ซ้อนใน PersonProvisionRequest), resolve claim และ batch import ใช้ EmploymentUpsert เดิมที่ไม่มี reason ในตัว
-      allOf:
-        - $ref: '#/components/schemas/EmploymentUpsert'
-        - type: object
-          required: [reason]
-          properties:
-            reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลการเปลี่ยนแปลง (บังคับ ห้ามมีเลข 13 หลัก) }
+        ใช้กับ PUT /persons/{id}/employment และ POST /persons/{id}/reactivate (HR ทำด้วยมือ) = ฟิลด์ของ EmploymentUpsert + `reason` (บังคับ)
+        แต่ `employeeNo` ไม่บังคับ (ไม่ส่ง = คงเลขเดิม) ส่วน POST /persons (employment ซ้อนใน PersonProvisionRequest), resolve claim และ batch import ใช้ EmploymentUpsert เดิม
+      type: object
+      required: [personnelType, orgUnitId, effectiveFrom, reason]
+      properties:
+        employeeNo:
+          type: string
+          maxLength: 50
+          description: |
+            เลขบัตรประชาชน - **ไม่ส่ง = คงค่าเดิม** ของ employment ล่าสุดของบุคคลนั้น (หน้าจอ HR ไม่มีเลขเต็มให้ส่งซ้ำ) ส่งมา = ใช้ค่าที่ส่ง
+            (บุคคลที่ไม่เคยมี employment เลย -> 422 `employee-no-required`)
+        personnelType: { $ref: '#/components/schemas/PersonnelType' }
+        positionId:
+          type: string
+          format: uuid
+          description: |
+            เลขที่ตำแหน่ง - ไม่ระบุได้สำหรับบุคลากรที่ไม่มีตำแหน่งทางการตามโครงสร้างอัตรากำลัง
+            (พนักงานจ้าง/จ้างเหมาบริการรายบุคคล)
+        orgUnitId: { type: string, format: uuid }
+        levelCode: { type: string, maxLength: 50 }
+        jobTitleText:
+          type: string
+          maxLength: 255
+          description: |
+            ชื่อตำแหน่ง/ลักษณะงาน (ข้อความอิสระ) สำหรับบุคลากรที่ไม่มีเลขที่ตำแหน่ง - เก็บใน `employment.job_title_text` แยกจาก
+            `positionId` (ไม่แทน `basic.positionTitle` และไม่อยู่ใน token claims) ระบบตัด control/bidi characters, รวมบรรทัดเป็นบรรทัดเดียว
+            และ trim ก่อนบันทึก (ข้อความว่างหลังตัด = ไม่มีข้อความ) กฎตามประเภทบุคลากร (แยกจากกฎเลขที่ตำแหน่ง):
+            - ประเภทที่ต้องมีตำแหน่ง (`CIVIL_SERVANT`, `TEACHER`, `PERMANENT_EMPLOYEE`, `TRANSFERRED_HEALTH`) ที่ส่งฟิลด์นี้ -> 422 `job-title-not-allowed`
+            - `OTHER` ส่งทั้ง `positionId` และ `jobTitleText` -> 422 `position-and-job-title-conflict` (เลือกอย่างใดอย่างหนึ่ง หรือไม่ใส่เลย)
+            - ข้อความที่มีตัวเลข 13 หลักที่เข้าข่ายเลขบัตรประชาชน (ติดกันหรือมีขีด/เว้นวรรค) -> 422 `job-title-contains-pid`
+            - ยาวเกิน 255 ตัวอักษรหลัง normalize -> 422 `job-title-too-long`
+            (batch import รายงานเป็น error รายแถว: `JOB_TITLE_NOT_ALLOWED`, `POSITION_AND_JOB_TITLE_CONFLICT`, `JOB_TITLE_CONTAINS_PID`, `JOB_TITLE_TOO_LONG`)
+        appointedDate: { type: string, format: date }
+        effectiveFrom: { type: string, format: date }
+        emailWork: { type: [string, 'null'], format: email, maxLength: 255 }
+        referenceDocument: { type: string, maxLength: 200, description: เลขที่คำสั่ง }
+        expectedVersion:
+          type: integer
+          description: version ของ person ที่ผู้เรียกเห็นล่าสุด (optimistic locking) ถ้าไม่ตรงคืน 409
+        reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลการเปลี่ยนแปลง (บังคับ ห้ามมีเลข 13 หลัก) }
 
     EmploymentImportRow:
       type: object
