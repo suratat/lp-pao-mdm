@@ -77,6 +77,8 @@ function parseExpectedVersion(raw) {
   return /^\d{1,9}$/.test(String(raw ?? '')) && Number(raw) >= 1 ? Number(raw) : null;
 }
 
+const personName = (basic = {}) => `${basic.titleTh || ''}${basic.firstNameTh || ''} ${basic.lastNameTh || ''}`.trim() || '(ไม่มีชื่อ)';
+
 const byEffectiveDesc = (a, b) => String(b.effectiveFrom).localeCompare(String(a.effectiveFrom));
 
 function employmentPrefill(e = {}) {
@@ -119,7 +121,6 @@ function createPersonEditRoutes({ mdmClient }) {
     return { person, history: sorted, current: sorted.find((e) => e.isCurrent) || null, latest: sorted[0] || null };
   }
 
-  const personName = (basic = {}) => `${basic.titleTh || ''}${basic.firstNameTh || ''} ${basic.lastNameTh || ''}`.trim() || '(ไม่มีชื่อ)';
 
   // ------------------------------------------------------------------------------------------------------------------ เพิ่มบุคคลใหม่
 
@@ -437,4 +438,18 @@ function createPersonEditRoutes({ mdmClient }) {
   return router;
 }
 
-module.exports = { createPersonEditRoutes, validateWriteReason, SEPARATION_STATUSES, REASON_MIN };
+module.exports = {
+  createPersonEditRoutes,
+  validateWriteReason,
+  SEPARATION_STATUSES,
+  REASON_MIN,
+  // ใช้ร่วมกับหน้าแก้ข้อมูลส่วนบุคคล (PR-D4)
+  pageOpts,
+  requireMasterDataAdmin,
+  noStore,
+  errorList,
+  csrfField,
+  reasonField,
+  parseExpectedVersion,
+  personName,
+};

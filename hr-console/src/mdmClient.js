@@ -178,7 +178,29 @@ function createMdmClient({ baseUrl }) {
     return call('GET', `/api/v1/persons/${encodeURIComponent(personId)}/history${query ? `?${query}` : ''}`, accessToken);
   }
 
+  // PR-D4: หน้าแก้ข้อมูลส่วนบุคคล (scope personnel:manage:person + role hr_master_data_admin - MDM API ตรวจ) ผลลัพธ์คือ ManageProfile ล่าสุด
+  // ข้อมูลติดต่อ/ผู้ติดต่อฉุกเฉินอยู่ใน body เท่านั้น ไม่เข้า URL; ห้าม caller เก็บผลลง log
+  function getManageProfile(accessToken, personId) {
+    return call('GET', `/api/v1/persons/${encodeURIComponent(personId)}/manage-profile`, accessToken);
+  }
+
+  function patchContact(accessToken, personId, body) {
+    return call('PATCH', `/api/v1/persons/${encodeURIComponent(personId)}/contact`, accessToken, body);
+  }
+
+  function replaceEmergencyContacts(accessToken, personId, body) {
+    return call('PUT', `/api/v1/persons/${encodeURIComponent(personId)}/emergency-contacts`, accessToken, body);
+  }
+
+  function patchExpectedIdentity(accessToken, personId, body) {
+    return call('PATCH', `/api/v1/persons/${encodeURIComponent(personId)}/expected-identity`, accessToken, body);
+  }
+
   return {
+    getManageProfile,
+    patchContact,
+    replaceEmergencyContacts,
+    patchExpectedIdentity,
     createPerson,
     updateEmployment,
     deactivatePerson,
