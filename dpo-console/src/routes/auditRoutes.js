@@ -2,18 +2,15 @@ const express = require('express');
 const { escapeHtml, redactPid, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
 
-function fmt(value) {
-  return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
-}
+const { formatThaiDateTime, toThaiInputValue, thaiInputToIso } = require('../thaiTime');
+
+// แสดงเป็นเวลาไทย พ.ศ. (helper กลางที่ ../thaiTime) - ชื่อ fmt คงไว้ให้ route อื่นใช้ร่วมกัน
+const fmt = formatThaiDateTime;
 
 // <input type="datetime-local"> ส่งค่ามาแบบ "YYYY-MM-DDTHH:mm" (ไม่มีวินาที/timezone) ซึ่งไม่ตรงกับ
-// รูปแบบ date-time (RFC 3339) ที่ OpenAPI validator ของ MDM API บังคับ ("from"/"to"/"since" ต้อง parse
-// ผ่าน Date แล้วแปลงเป็น ISO string ก่อนส่งเสมอ มิฉะนั้น MDM API ตอบ 400 ทุกครั้งที่มีค่า)
-function toIsoDateTime(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-}
+// รูปแบบ date-time (RFC 3339) ที่ OpenAPI validator ของ MDM API บังคับ ("from"/"to"/"since" ต้องแปลงเป็น ISO UTC ก่อนส่งเสมอ)
+// ค่าที่ผู้ใช้กรอกคือ "เวลาไทย" (ไม่ขึ้นกับ TZ ของเครื่อง) - ดู ../thaiTime.thaiInputToIso
+const toIsoDateTime = thaiInputToIso;
 
 // ค่า old/new ที่ MDM API ปกปิด (valuesHidden) แสดงเป็น "(ปกปิด)" แยกจากกรณีไม่มีค่าจริง (ฟิลด์ใหม่/ถูกล้าง)
 function renderChangeValue(entry, value) {
@@ -46,12 +43,12 @@ function filterByActorType(data, actorType) {
 function renderFiltersForm(query) {
   return `<form method="get" action="/dpo/access-logs" class="filters">
     <div>
-      <label>จากวันที่-เวลา</label>
-      <input type="datetime-local" name="from" value="${escapeHtml(query.from || '')}" />
+      <label>จากวันที่-เวลา <span class="hint">(เวลาไทย)</span></label>
+      <input type="datetime-local" name="from" value="${escapeHtml(toThaiInputValue(query.from))}" />
     </div>
     <div>
-      <label>ถึงวันที่-เวลา</label>
-      <input type="datetime-local" name="to" value="${escapeHtml(query.to || '')}" />
+      <label>ถึงวันที่-เวลา <span class="hint">(เวลาไทย)</span></label>
+      <input type="datetime-local" name="to" value="${escapeHtml(toThaiInputValue(query.to))}" />
     </div>
     <div>
       <label>Person ID (UUID)</label>
@@ -123,8 +120,8 @@ function renderChangeLogFilters(q) {
         <option value="REFERENCE" ${q.source === 'REFERENCE' ? 'selected' : ''}>REFERENCE - หน่วยงาน/ตำแหน่ง</option>
       </select>
     </div>
-    <div><label>จากวันที่-เวลา</label><input type="datetime-local" name="from" value="${escapeHtml(q.from || '')}" /></div>
-    <div><label>ถึงวันที่-เวลา</label><input type="datetime-local" name="to" value="${escapeHtml(q.to || '')}" /></div>
+    <div><label>จากวันที่-เวลา <span class="hint">(เวลาไทย)</span></label><input type="datetime-local" name="from" value="${escapeHtml(toThaiInputValue(q.from))}" /></div>
+    <div><label>ถึงวันที่-เวลา <span class="hint">(เวลาไทย)</span></label><input type="datetime-local" name="to" value="${escapeHtml(toThaiInputValue(q.to))}" /></div>
     <div><label>ผู้กระทำ (actor sub)</label><input name="actorSub" value="${escapeHtml(q.actorSub || '')}" /></div>
     <div><label>ตาราง (table)</label><input name="tableName" value="${escapeHtml(q.tableName || '')}" /></div>
     <div><label>Person ID <span class="hint">(เฉพาะ PERSON)</span></label><input name="personId" value="${escapeHtml(q.personId || '')}" pattern="[0-9a-fA-F-]{36}" /></div>
@@ -288,8 +285,8 @@ function createAuditRoutes({ mdmClient }) {
           `<h1>ประวัติการเปลี่ยนแปลง - ${escapeHtml(personId)}</h1>
            <p class="hint">ค่าของฟิลด์ที่จัดชั้น CONFIDENTIAL/SENSITIVE/RESTRICTED จะแสดงเป็น "(ปกปิด)" เสมอ เห็นเฉพาะชื่อฟิลด์ที่เปลี่ยน (ปกปิดโดย MDM API เอง)</p>
            <form method="get" action="/dpo/persons/${encodeURIComponent(personId)}/change-log">
-             <label>ตั้งแต่วันที่-เวลา</label>
-             <input type="datetime-local" name="since" value="${escapeHtml(req.query.since || '')}" />
+             <label>ตั้งแต่วันที่-เวลา <span class="hint">(เวลาไทย)</span></label>
+             <input type="datetime-local" name="since" value="${escapeHtml(toThaiInputValue(req.query.since))}" />
              <button type="submit" style="margin-top:0.5rem">กรอง</button>
            </form>
            <table>
@@ -312,4 +309,4 @@ function createAuditRoutes({ mdmClient }) {
   return router;
 }
 
-module.exports = { createAuditRoutes, fmt, toIsoDateTime, renderApiError };
+module.exports = { createAuditRoutes, fmt, toThaiInputValue, toIsoDateTime, renderApiError };
