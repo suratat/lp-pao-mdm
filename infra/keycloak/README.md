@@ -73,3 +73,24 @@ claims ใน access token ที่วัดจริงกับ Keycloak 26.0
   แล้วตรวจด้วย `evaluate-scopes/generate-example-access-token` ของ service account user
 - **ผู้ใช้ที่จะใช้ 4 endpoint นี้ผ่านหน้าจอ HR (PR-D3):** ต้องมีทั้ง `hr_officer` และ `hr_master_data_admin` (ขั้นตอนกำหนด role เหมือนหัวข้อ T10 ข้างบน)
 - `POST /sync/hr/employment-batch` ต้องส่ง `reason` ระดับ batch ทุกครั้ง (migrate-cli ส่งให้อัตโนมัติเป็น `HR_IMPORT batch <id>`) ผู้เรียกอื่นที่ไม่ส่ง -> 400
+
+## PR-D2 (HR จัดการข้อมูลบุคคล): scope `personnel:manage:person` — ใช้คู่กับ role `hr_master_data_admin`
+
+- **client scope `personnel:manage:person`** — เป็น default client scope ของ `hr-console` เท่านั้น (เหมือน `personnel:manage:reference`): **Keycloak ไม่มีกลไกใส่ scope ตาม role ของผู้ใช้**
+  scope นี้จึงอยู่ใน access token ของ `hr_officer` **ทุกคน** สิทธิ์จริงถูกกั้นที่ MDM API ซึ่งตรวจ **ทั้ง scope และ realm role `hr_master_data_admin`** ทุก request
+  (`realm_access.roles` ของ access token): token ที่มีแค่ scope -> `403 insufficient-role` ใช้กับ endpoint
+  `GET /persons/{id}/manage-profile`, `PATCH /persons/{id}/expected-identity`, `PATCH /persons/{id}/contact`, `PUT /persons/{id}/emergency-contacts`, `GET /persons/{id}/history`
+- **ข้อมูลติดต่อส่วนตัว (เบอร์/อีเมล/ที่อยู่/ผู้ติดต่อฉุกเฉิน)** เห็นได้เฉพาะผู้ถือ role `hr_master_data_admin`: `hr_officer` ที่ไม่มี role นี้ไม่เห็นทั้งใน endpoint ใหม่และใน
+  `GET /persons/{id}` เดิม (API ตัดกลุ่ม contact/emergencyContacts แม้ token จะมี `personnel:read:contact`) ไม่ต้องตั้งค่า Keycloak เพิ่มสำหรับข้อนี้
+- **ไม่ต้องสร้าง role ใหม่** — ใช้ `hr_master_data_admin` เดิม (ผู้ใช้ต้องมีทั้ง `hr_officer` และ `hr_master_data_admin`)
+- **realm ที่รันอยู่แล้ว (VPN-MDM) ต้องตั้งมือ** เพราะ `--import-realm` ไม่ทับ realm เดิม ขั้นตอนใน Admin Console (realm `lp-pao`):
+  1. Client scopes -> **Create client scope** -> Name `personnel:manage:person`, Type `None`, Protocol `OpenID Connect`, **Include in token scope = On**, Display on consent screen = Off,
+     Description ตาม `realm-export.json` (ไม่เกิน 255 ตัวอักษร) -> Save
+  2. Clients -> `hr-console` -> Client scopes -> **Add client scope** -> เลือก `personnel:manage:person` -> **Add -> Default**
+  3. Users -> เจ้าหน้าที่ที่จะแก้ข้อมูลบุคคล -> Role mapping -> ตรวจว่ามีทั้ง `hr_officer` และ `hr_master_data_admin`
+  4. ผู้ใช้ต้อง login ใหม่ (หรือรอ refresh token) จึงจะได้ scope ใหม่ใน token
+- **การตรวจสอบหลังตั้งค่า:** `GET /admin/realms/lp-pao/clients/{hr-console uuid}/evaluate-scopes/generate-example-access-token?userId=...&scope=openid` ด้วยผู้ใช้ที่มีเฉพาะ `hr_officer`
+  และผู้ใช้ที่มีทั้งสอง role — ทั้งคู่ต้องเห็น `personnel:manage:person` ใน `scope` แต่มีเฉพาะคนที่สองที่ `realm_access.roles` มี `hr_master_data_admin`
+  (เรียก `GET /persons/{id}/manage-profile` ด้วยคนแรกต้องได้ 403 `insufficient-role`)
+- **แถวใน `field_policy`** (`person.expected_first_name_th`, `person.expected_last_name_th`, `person.expected_birth_date`) ใช้ `required_scope = personnel:manage:person` เพื่อบันทึกชั้นความลับ
+  (วันเกิด = CONFIDENTIAL ปกปิดค่าในหน้า DPO/ประวัติ) ไม่มีผลต่อการ mask response ของ `Person`

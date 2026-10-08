@@ -8,7 +8,15 @@ const FIXTURE_PERSON_ID = '11111111-1111-1111-1111-111111111111';
 // MDM API ตรวจ role นี้จาก access token ทุก request (scope ใน token ไม่ใช่ตัวกั้นสิทธิ์ - ดู infra/keycloak/README.md)
 const MASTER_DATA_ADMIN_ROLE = 'hr_master_data_admin';
 
+// scope ของ endpoint จัดการข้อมูลบุคคลโดย HR (PR-D2: manage-profile, expected-identity, contact, emergency-contacts, history) - ไม่ผูกกับ field ใดใน
+// response ของ Person (คนละเรื่องกับ personnel:read:contact) ใช้คู่กับ realm role hr_master_data_admin เสมอ
+const SCOPE_MANAGE_PERSON = 'personnel:manage:person';
+// role ของเจ้าหน้าที่ HR ทั่วไปที่ล็อกอิน hr-console (ยังไม่มีสิทธิ์ดูข้อมูลติดต่อส่วนตัว นอกจากจะมี MASTER_DATA_ADMIN_ROLE ด้วย)
+const HR_OFFICER_ROLE = 'hr_officer';
+
 module.exports = {
   FIXTURE_PERSON_ID,
   MASTER_DATA_ADMIN_ROLE,
+  SCOPE_MANAGE_PERSON,
+  HR_OFFICER_ROLE,
 };

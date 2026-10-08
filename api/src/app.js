@@ -20,6 +20,7 @@ const createEventsRouter = require('./routes/events');
 const createWebhooksRouter = require('./routes/webhooks');
 const createReferenceRouter = require('./routes/reference');
 const createAuditRouter = require('./routes/audit');
+const createPersonManageRouter = require('./routes/personManage');
 
 // authConfig: { jwks, issuer, audience } - jwks เป็น URL string (production, createRemoteJWKSet)
 // หรือ jose GetKeyFunction (test, createLocalJWKSet) ดู security/jwt.js
@@ -64,6 +65,7 @@ async function createApp({ pool, authConfig, vault }) {
   v1.use(createWebhooksRouter({ pool, vault }));
   v1.use(createReferenceRouter(pool));
   v1.use(createAuditRouter(pool));
+  v1.use(createPersonManageRouter(pool));
 
   app.use('/api/v1', v1);
 

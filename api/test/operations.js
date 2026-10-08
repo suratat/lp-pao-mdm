@@ -185,7 +185,23 @@ async function seedFixtures({ adminPool, vault }) {
   const alertForAckId = await insertAlert('ack');
   const alertForCloseId = await insertAlert('close');
 
+  // PR-D2: บุคคล PENDING_CLAIM (version 1) สามคน สำหรับ expected-identity / contact / emergency-contacts (แต่ละ operation แก้คนละคน)
+  const makePendingPerson = async () =>
+    (
+      await adminPool.query(
+        `INSERT INTO mdm.person (pid_hash, status, verification_status, expected_first_name_th, expected_last_name_th, version)
+         VALUES ($1, 'PENDING_CLAIM', 'UNVERIFIED', 'ทดสอบ', 'สัญญา', 1) RETURNING person_id`,
+        [crypto.randomBytes(32).toString('hex')]
+      )
+    ).rows[0].person_id;
+  const manageIdentityPersonId = await makePendingPerson();
+  const manageContactPersonId = await makePendingPerson();
+  const manageEmergencyPersonId = await makePendingPerson();
+
   return {
+    manageIdentityPersonId,
+    manageContactPersonId,
+    manageEmergencyPersonId,
     alertForAckId,
     alertForCloseId,
     pidRevealAccessId: Number(revealRows[0].access_id),
@@ -575,6 +591,38 @@ function buildOperationDescriptors() {
       body: (ids) => ({ accessedAt: ids.pidRevealAccessedAt, status: 'REVIEWED', note: 'ตรวจแล้ว' }),
       expectStatus: 201,
     },
+    { name: 'getManageProfile', method: 'get', pathTemplate: '/persons/:personId/manage-profile', path: (ids) => `/persons/${ids.readPersonId}/manage-profile`, scope: 'personnel:manage:person', roles: ['hr_master_data_admin'], expectStatus: 200 },
+    {
+      name: 'updateExpectedIdentity',
+      method: 'patch',
+      pathTemplate: '/persons/:personId/expected-identity',
+      path: (ids) => `/persons/${ids.manageIdentityPersonId}/expected-identity`,
+      scope: 'personnel:manage:person',
+      roles: ['hr_master_data_admin'],
+      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', firstNameTh: 'สมศรี', birthDate: '1991-02-03' },
+      expectStatus: 200,
+    },
+    {
+      name: 'updateContactByHr',
+      method: 'patch',
+      pathTemplate: '/persons/:personId/contact',
+      path: (ids) => `/persons/${ids.manageContactPersonId}/contact`,
+      scope: 'personnel:manage:person',
+      roles: ['hr_master_data_admin'],
+      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', mobilePhone: '0812345678', currentAddress: { houseNo: '1', province: { code: '52' } } },
+      expectStatus: 200,
+    },
+    {
+      name: 'replaceEmergencyContactsByHr',
+      method: 'put',
+      pathTemplate: '/persons/:personId/emergency-contacts',
+      path: (ids) => `/persons/${ids.manageEmergencyPersonId}/emergency-contacts`,
+      scope: 'personnel:manage:person',
+      roles: ['hr_master_data_admin'],
+      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', contacts: [{ fullName: 'ผู้ติดต่อสมมติ', relationship: 'เพื่อน', phone: '0811110000', priority: 1 }] },
+      expectStatus: 200,
+    },
+    { name: 'getPersonHistory', method: 'get', pathTemplate: '/persons/:personId/history', path: (ids) => `/persons/${ids.readPersonId}/history`, scope: 'personnel:manage:person', roles: ['hr_master_data_admin'], expectStatus: 200 },
     { name: 'listAccessAlerts', method: 'get', pathTemplate: '/audit/alerts', path: () => '/audit/alerts', scope: 'audit:read', expectStatus: 200 },
     {
       name: 'ackAccessAlert',

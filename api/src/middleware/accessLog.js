@@ -1,6 +1,7 @@
 const { maskBySchema } = require('../security/fieldMask');
 const { getResponseSchemaForOperation } = require('../openapiSpec');
 const { resolvePurposeCode } = require('../services/purposeCode');
+const { HR_OFFICER_ROLE, MASTER_DATA_ADMIN_ROLE } = require('../constants');
 
 // เฉพาะ operation ที่ในสเกลตันนี้คืนข้อมูลของบุคคลจริงที่มีอยู่ใน DB (ไม่ใช่ stub ที่ยังไม่ได้ต่อ service จริง)
 // endpoint ที่เหลือ (provision/deactivate/sync ฯลฯ) เป็น business logic ของ T3-T5 ซึ่งต้องเขียน access_log
@@ -20,6 +21,12 @@ const PERSONAL_DATA_OPERATIONS = new Set([
   'provisionPerson',
   'deactivatePerson',
   'reactivatePerson',
+  // PR-D2: endpoint จัดการข้อมูลบุคคลโดย HR คืนข้อมูลติดต่อส่วนตัว/ประวัติ -> เขียน access_log ทุกครั้ง (รวม PATCH/PUT ที่คืนโปรไฟล์ใหม่)
+  'getManageProfile',
+  'updateExpectedIdentity',
+  'updateContactByHr',
+  'replaceEmergencyContactsByHr',
+  'getPersonHistory',
 ]);
 
 // ไม่ระบุ index ของ array (เช่น emergencyContacts[0].phone) เพื่อไม่ให้ path ยาวเกินจำเป็นและกันข้อมูลระเบิด
@@ -44,9 +51,17 @@ function flattenFieldPaths(value, prefix = '', out = []) {
 const LIST_OPERATIONS = new Set(['searchPersons']);
 
 // ?pidFormat=masked = ผู้เรียกขอไม่รับเลขเต็มแม้มี personnel:read:pid -> ตัดฟิลด์ที่ผูกกับ scope นั้นออกเหมือนไม่มี scope
+// PR-D2: ผู้ใช้ที่มี role hr_officer แต่ไม่มี hr_master_data_admin "ต้องไม่เห็นข้อมูลติดต่อส่วนตัว" (เบอร์/อีเมล/ที่อยู่/ผู้ติดต่อฉุกเฉิน) ต่อให้ token
+// มี scope personnel:read:contact ติดมา (scope ใน token ผูกให้ทั้ง client ไม่ใช่ตัวกั้นสิทธิ์รายบุคคล) - ตัด scope นั้นออกก่อน mask
+// ระบบปลายทางที่ไม่มี role hr_officer (service account ของ eoffice ฯลฯ) ยังเห็นตาม scope ที่ DPO อนุมัติเหมือนเดิม
 function effectiveScopes(req) {
-  const scopes = req.auth?.scope || [];
-  return req.query?.pidFormat === 'masked' ? scopes.filter((s) => s !== 'personnel:read:pid') : scopes;
+  let scopes = req.auth?.scope || [];
+  if (req.query?.pidFormat === 'masked') scopes = scopes.filter((s) => s !== 'personnel:read:pid');
+  const roles = req.auth?.roles || [];
+  if (roles.includes(HR_OFFICER_ROLE) && !roles.includes(MASTER_DATA_ADMIN_ROLE)) {
+    scopes = scopes.filter((s) => s !== 'personnel:read:contact');
+  }
+  return scopes;
 }
 
 function extractSubjectPersonId(req, body) {
