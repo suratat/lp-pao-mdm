@@ -2,7 +2,7 @@ const { withTransaction } = require('../db/transaction');
 const { HttpProblem } = require('../security/httpProblem');
 const { isValidPid, pidHash } = require('../security/pid');
 const { loadAndPresentPerson } = require('./personPresenter');
-const { closeAndOpenEmployment } = require('./employmentShared');
+const { closeAndOpenEmployment, withCurrentEmployeeNo } = require('./employmentShared');
 const { writeChangeLog, writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
 const { composeReason } = require('./reason');
 const { assertBirthDateInRange } = require('./personManageService');
@@ -170,7 +170,7 @@ async function reactivatePerson(pool, personId, body, auth) {
       throw new HttpProblem(409, 'version-conflict', 'version ไม่ตรงกับปัจจุบัน');
     }
 
-    const { changes } = await closeAndOpenEmployment(client, personId, body, 'HR');
+    const { changes } = await closeAndOpenEmployment(client, personId, await withCurrentEmployeeNo(client, personId, body), 'HR');
     await logEmploymentChanges(client, personId, changes, reason, actor);
 
     const newVersion = rows[0].version + 1;
