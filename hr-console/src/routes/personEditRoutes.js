@@ -5,7 +5,8 @@ const { UUID_RE } = require('../masterData');
 const { csrfTokenMatches } = require('../session/csrf');
 const { isValidPid, normalizePidInput, looksLikePid } = require('../pid');
 const { renderFailure, statusFor, failureMessage, isVersionConflict, problemType, isRemoteFailure } = require('../apiErrors');
-const { POSITION_LOCK_SCRIPT, renderEmploymentFields, validateEmploymentInput, todayBangkok, isRealDate } = require('../employmentForm');
+const { POSITION_LOCK_SCRIPT, renderEmploymentFields, validateEmploymentInput, isRealDate } = require('../employmentForm');
+const { todayBangkok, renderDateInput, formatThaiDate } = require('../thaiTime');
 
 // PR-D3: HR เพิ่มบุคคลใหม่ / ย้ายหน่วยงาน-ตำแหน่ง-ประเภท / พ้นสภาพ / คืนสภาพ - เฉพาะผู้มี realm role hr_master_data_admin
 // gate ที่นี่เป็นชั้นแรก (UX + ปิดทางเข้า) MDM API ตรวจ role + scope จาก token ซ้ำทุก request เสมอ (403 insufficient-role)
@@ -139,7 +140,7 @@ function createPersonEditRoutes({ mdmClient }) {
           <div><label>นามสกุล (ไทย)</label><input name="lastNameTh" maxlength="${NAME_MAX}" value="${escapeHtml(values.lastNameTh)}" required /></div>
         </div>
         <label>วันเกิด <span class="hint">(ไม่บังคับ)</span></label>
-        <input name="birthDate" type="date" min="${MIN_BIRTH_DATE}" max="${todayBangkok()}" value="${escapeHtml(values.birthDate || '')}" />
+        ${renderDateInput({ name: 'birthDate', value: values.birthDate || '', min: MIN_BIRTH_DATE, max: todayBangkok() })}
         ${renderEmploymentFields({ values: { effectiveFrom: todayBangkok(), ...values }, ...lists })}
         ${reasonField(values.reason)}
         <p><button type="submit" class="primary">เพิ่มบุคคล</button> <a href="/hr/persons">ยกเลิก</a></p>
@@ -182,7 +183,7 @@ function createPersonEditRoutes({ mdmClient }) {
       }
       if (values.birthDate) {
         if (!isRealDate(values.birthDate)) errors.push('วันเกิดไม่ถูกต้อง');
-        else if (values.birthDate < MIN_BIRTH_DATE || values.birthDate > todayBangkok()) errors.push(`วันเกิดต้องอยู่ระหว่าง ${MIN_BIRTH_DATE} ถึงวันนี้`);
+        else if (values.birthDate < MIN_BIRTH_DATE || values.birthDate > todayBangkok()) errors.push(`วันเกิดต้องอยู่ระหว่าง ${formatThaiDate(MIN_BIRTH_DATE)} ถึงวันนี้`);
       }
       const reasonCheck = validateWriteReason(values.reason);
       errors.push(...reasonCheck.errors);
@@ -238,13 +239,13 @@ function createPersonEditRoutes({ mdmClient }) {
           ? 'ระบบจะปิดข้อมูลการจ้างปัจจุบัน (สิ้นสุดวันที่มีผลใหม่) และเปิดข้อมูลใหม่ เก็บประวัติเป็นช่วงเวลา เลขบัตรประชาชนคงเดิม ไม่ต้องกรอก'
           : 'คืนสถานะใช้งานและเปิดข้อมูลการจ้างใหม่ ผู้ใช้ต้องยืนยันตัวตนผ่าน ThaID ใหม่ในการเข้าสู่ระบบครั้งถัดไป เลขบัตรประชาชนคงเดิม ไม่ต้องกรอก'
       }</p>
-      ${isEdit && current ? `<p class="hint">ข้อมูลปัจจุบันมีผลตั้งแต่ ${escapeHtml(current.effectiveFrom)} - วันที่มีผลใหม่ต้องไม่ก่อนวันนี้</p>` : ''}
-      ${!isEdit && latest?.separationDate ? `<p class="hint">พ้นสภาพเมื่อ ${escapeHtml(latest.separationDate)}</p>` : ''}
+      ${isEdit && current ? `<p class="hint">ข้อมูลปัจจุบันมีผลตั้งแต่ ${escapeHtml(formatThaiDate(current.effectiveFrom))} - วันที่มีผลใหม่ต้องไม่ก่อนวันนี้</p>` : ''}
+      ${!isEdit && latest?.separationDate ? `<p class="hint">พ้นสภาพเมื่อ ${escapeHtml(formatThaiDate(latest.separationDate))}</p>` : ''}
       ${errorList(errors)}
       <form method="post" action="/hr/persons/${encodeURIComponent(personId)}/${isEdit ? 'employment/edit' : 'reactivate'}" autocomplete="off">
         ${csrfField(req)}
         <input type="hidden" name="expectedVersion" value="${escapeHtml(person.version)}" />
-        ${renderEmploymentFields({ values: { effectiveFrom: todayBangkok(), ...values }, ...lists }).replace('name="effectiveFrom" type="date" required', `name="effectiveFrom" type="date" required${minDate ? ` min="${escapeHtml(minDate)}"` : ''}`)}
+        ${renderEmploymentFields({ values: { effectiveFrom: todayBangkok(), ...values }, ...lists, effectiveFromMin: minDate || undefined })}
         ${reasonField(reason)}
         <p><button type="submit" class="primary">${isEdit ? 'บันทึกการเปลี่ยนแปลง' : 'คืนสภาพ'}</button> <a href="${detailUrl(personId)}">ยกเลิก</a></p>
       </form>
@@ -301,7 +302,7 @@ function createPersonEditRoutes({ mdmClient }) {
       if (kind === 'edit' && errors.length === 0) {
         await reload();
         if (ctx.current && employmentCheck.employment.effectiveFrom < ctx.current.effectiveFrom) {
-          errors.push(`วันที่มีผลต้องไม่ก่อน ${ctx.current.effectiveFrom} (วันที่มีผลของข้อมูลการจ้างปัจจุบัน)`);
+          errors.push(`วันที่มีผลต้องไม่ก่อน ${formatThaiDate(ctx.current.effectiveFrom)} (วันที่มีผลของข้อมูลการจ้างปัจจุบัน)`);
         }
       }
 
@@ -358,7 +359,7 @@ function createPersonEditRoutes({ mdmClient }) {
         <label>สาเหตุที่พ้นสภาพ</label>
         <select name="employmentStatus" required>${options}</select>
         <label>วันที่พ้นสภาพ</label>
-        <input name="separationDate" type="date" required value="${escapeHtml(values.separationDate || todayBangkok())}" />
+        ${renderDateInput({ name: 'separationDate', value: values.separationDate || todayBangkok(), required: true })}
         <label>เลขที่คำสั่ง (referenceDocument) <span class="hint">(ไม่บังคับ)</span></label>
         <input name="referenceDocument" maxlength="200" value="${escapeHtml(values.referenceDocument)}" />
         ${reasonField(values.reason)}

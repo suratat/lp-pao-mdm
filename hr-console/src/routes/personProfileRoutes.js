@@ -5,7 +5,8 @@ const { UUID_RE } = require('../masterData');
 const { csrfTokenMatches } = require('../session/csrf');
 const { looksLikePid } = require('../pid');
 const { renderFailure, statusFor, failureMessage, isVersionConflict, isRemoteFailure } = require('../apiErrors');
-const { isRealDate, todayBangkok } = require('../employmentForm');
+const { isRealDate } = require('../employmentForm');
+const { todayBangkok, renderDateInput, formatThaiDate } = require('../thaiTime');
 const { pageOpts, requireMasterDataAdmin, noStore, errorList, csrfField, reasonField, parseExpectedVersion, validateWriteReason } = require('./personEditRoutes');
 
 // PR-D4: HR แก้ข้อมูลส่วนบุคคล (ข้อมูลติดต่อ, ผู้ติดต่อฉุกเฉิน, ชื่อ-วันเกิดที่ HR กรอกของคนที่ยังไม่ยืนยัน ThaID) - เฉพาะ hr_master_data_admin
@@ -318,7 +319,7 @@ function createPersonProfileRoutes({ mdmClient }) {
         <div><label>นามสกุล (ไทย)</label><input name="lastNameTh" maxlength="${NAME_MAX}" value="${escapeHtml(values.lastNameTh)}" required /></div>
       </div>
       <label>วันเกิด <span class="hint">(ไม่บังคับ เว้นว่าง = ล้างค่า)</span></label>
-      <input name="birthDate" type="date" min="${MIN_BIRTH_DATE}" max="${todayBangkok()}" value="${escapeHtml(values.birthDate || '')}" />`;
+      ${renderDateInput({ name: 'birthDate', value: values.birthDate || '', min: MIN_BIRTH_DATE, max: todayBangkok() })}`;
     return formShell(req, personId, {
       heading: 'แก้ชื่อ-นามสกุลและวันเกิด (ที่ HR กรอก)',
       intro: IDENTITY_NOTE,
@@ -335,7 +336,7 @@ function createPersonProfileRoutes({ mdmClient }) {
     const shown = [
       ['ชื่อ (ไทย)', identity.firstNameTh],
       ['นามสกุล (ไทย)', identity.lastNameTh],
-      ['วันเกิด', identity.birthDate],
+      ['วันเกิด', formatThaiDate(identity.birthDate)],
     ]
       .filter(([, v]) => v)
       .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`)
@@ -371,7 +372,7 @@ function createPersonProfileRoutes({ mdmClient }) {
     }
     if (values.birthDate) {
       if (!isRealDate(values.birthDate)) errors.push('วันเกิดไม่ถูกต้อง');
-      else if (values.birthDate < MIN_BIRTH_DATE || values.birthDate > todayBangkok()) errors.push(`วันเกิดต้องอยู่ระหว่าง ${MIN_BIRTH_DATE} ถึงวันนี้`);
+      else if (values.birthDate < MIN_BIRTH_DATE || values.birthDate > todayBangkok()) errors.push(`วันเกิดต้องอยู่ระหว่าง ${formatThaiDate(MIN_BIRTH_DATE)} ถึงวันนี้`);
     }
     return {
       values,

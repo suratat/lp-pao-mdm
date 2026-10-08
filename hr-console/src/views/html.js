@@ -1,3 +1,5 @@
+const { BE_DATE_SCRIPT } = require('../thaiTime');
+
 // ไม่เพิ่ม template engine ใหม่ (ejs/pug ไม่มีในรายการ dependency ที่อนุมัติ) - render ด้วย string
 // literal ธรรมดา ต้อง escape เองทุกจุดที่แทรกข้อมูลที่มาจาก MDM API/ผู้ใช้ (แนวทางเดียวกับ portal/src/views/html.js)
 function escapeHtml(value) {
@@ -44,6 +46,7 @@ function layout(title, bodyHtml, { displayName, isMasterDataAdmin } = {}) {
     a.button, button.primary { display: inline-block; padding: 0.35rem 0.8rem; border: 1px solid #1a1a1a; border-radius: 0.3rem; background: #f4f4f4; color: #1a1a1a; text-decoration: none; }
     fieldset.warn { border-color: #b00020; }
     .history td:first-child { white-space: nowrap; }
+    .be-date { display: block; color: #666; font-size: 0.85em; min-height: 1.1em; }
   </style>
 </head>
 <body>
@@ -57,6 +60,7 @@ function layout(title, bodyHtml, { displayName, isMasterDataAdmin } = {}) {
   </nav>
   <hr />
   ${bodyHtml}
+  ${BE_DATE_SCRIPT}
 </body>
 </html>`;
 }

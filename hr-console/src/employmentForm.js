@@ -2,6 +2,7 @@ const { escapeHtml } = require('./views/html');
 const { PERSONNEL_TYPES, positionRuleFor } = require('./personnelTypes');
 const { MAX_LENGTH: JOB_TITLE_MAX_LENGTH, checkJobTitleText } = require('./jobTitleText');
 const { UUID_RE } = require('./masterData');
+const { todayBangkok, renderDateInput } = require('./thaiTime'); // วันนี้ตามเวลาไทย + ช่องวันที่พร้อมข้อความ พ.ศ.
 
 // ส่วนฟอร์ม "ข้อมูลการจ้าง" ที่ใช้ร่วมกัน: อนุมัติ claim, เพิ่มบุคคลใหม่, ย้ายหน่วยงาน/ตำแหน่ง/ประเภท, คืนสภาพ (ย้ายมาจาก claimRequestRoutes.js
 // ไม่เปลี่ยนพฤติกรรม - เพิ่มแค่พารามิเตอร์ selected สำหรับเติมค่าเดิมลงฟอร์มแก้ไข)
@@ -114,13 +115,9 @@ function isRealDate(text) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text;
 }
 
-// วันนี้ตามเวลาไทย (YYYY-MM-DD) - ค่าเริ่มต้นของ "วันที่มีผล"
-function todayBangkok() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-}
 
 // ช่องกรอกข้อมูลการจ้างทั้งชุด (ไม่รวม employeeNo/เหตุผล/CSRF ซึ่งเป็นของแต่ละฟอร์ม) values = ค่าที่จะเติมลงฟอร์ม (ค่าเดิม หรือค่าที่ผู้ใช้เพิ่งกรอก)
-function renderEmploymentFields({ values = {}, orgUnits, positions, positionTypes }) {
+function renderEmploymentFields({ values = {}, orgUnits, positions, positionTypes, effectiveFromMin }) {
   return `<label>ประเภทบุคลากร</label>
     <select name="personnelType" id="personnelType" required data-position-rules="${escapeHtml(JSON.stringify(positionRules()))}">${personnelTypeOptions(values.personnelType)}</select>
     <label>หน่วยงาน</label>
@@ -138,9 +135,9 @@ function renderEmploymentFields({ values = {}, orgUnits, positions, positionType
       <input name="jobTitleText" id="jobTitleText" maxlength="${JOB_TITLE_MAX_LENGTH}" autocomplete="off" value="${escapeHtml(values.jobTitleText)}" placeholder="เช่น พนักงานขับรถยนต์ หรือ ผู้ช่วยช่างไฟฟ้า" />
     </div>
     <label>วันที่มีผล (effectiveFrom)</label>
-    <input name="effectiveFrom" type="date" required value="${escapeHtml(values.effectiveFrom || '')}" />
+    ${renderDateInput({ name: 'effectiveFrom', value: values.effectiveFrom || '', required: true, min: effectiveFromMin })}
     <label>วันบรรจุ (appointedDate)</label>
-    <input name="appointedDate" type="date" value="${escapeHtml(values.appointedDate || '')}" />
+    ${renderDateInput({ name: 'appointedDate', value: values.appointedDate || '' })}
     <label>ระดับ/ชั้น (levelCode)</label>
     <input name="levelCode" maxlength="${LIMITS.levelCode}" value="${escapeHtml(values.levelCode)}" />
     <label>อีเมลที่ทำงาน</label>

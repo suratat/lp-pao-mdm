@@ -1,6 +1,7 @@
 const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
+const { formatThaiDateTime, formatThaiDate } = require('../thaiTime');
 const { PERSONNEL_TYPES } = require('../personnelTypes');
 const { UUID_RE } = require('../masterData');
 const { csrfTokenMatches } = require('../session/csrf');
@@ -36,9 +37,7 @@ const STATUS_LABEL = { ACTIVE: 'ใช้งาน (ACTIVE)', PENDING_CLAIM: '�
 const PERSONNEL_TYPE_LABEL = Object.fromEntries(PERSONNEL_TYPES.map((t) => [t.value, t.label]));
 const naturalCompare = (a, b) => String(a).localeCompare(String(b), 'th', { numeric: true });
 
-function fmt(value) {
-  return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
-}
+const fmt = formatThaiDateTime;
 
 function pageOpts(req) {
   return { displayName: req.hrAuth.displayName, isMasterDataAdmin: req.hrAuth.isMasterDataAdmin };
@@ -170,13 +169,13 @@ function renderEmploymentHistory(history) {
     .sort((a, b) => String(b.effectiveFrom).localeCompare(String(a.effectiveFrom)))
     .map(
       (e) => `<tr>
-        <td>${escapeHtml(e.effectiveFrom || '-')}</td>
-        <td>${escapeHtml(e.effectiveTo || '-')}${e.isCurrent ? ' <span class="badge">ปัจจุบัน</span>' : ''}</td>
+        <td>${escapeHtml(formatThaiDate(e.effectiveFrom))}</td>
+        <td>${escapeHtml(formatThaiDate(e.effectiveTo))}${e.isCurrent ? ' <span class="badge">ปัจจุบัน</span>' : ''}</td>
         <td>${escapeHtml(PERSONNEL_TYPE_LABEL[e.personnelType] || e.personnelType || '-')}</td>
         <td>${positionText(e.position, e.jobTitleText)}</td>
         <td>${escapeHtml(e.orgUnit?.nameTh || '-')}</td>
         <td>${escapeHtml(e.levelCode || '-')}</td>
-        <td>${escapeHtml(e.employmentStatus || '-')}${e.separationDate ? `<br><span class="hint">พ้นสภาพ ${escapeHtml(e.separationDate)}</span>` : ''}</td>
+        <td>${escapeHtml(e.employmentStatus || '-')}${e.separationDate ? `<br><span class="hint">พ้นสภาพ ${escapeHtml(formatThaiDate(e.separationDate))}</span>` : ''}</td>
       </tr>`
     )
     .join('\n');

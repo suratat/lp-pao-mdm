@@ -1,6 +1,7 @@
 const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
+const { formatThaiDate } = require('../thaiTime');
 
 function renderError(err) {
   if (err instanceof MdmApiError) {
@@ -32,7 +33,7 @@ function createMeRoutes({ mdmClient }) {
              <tr><th>สังกัด</th><td>${escapeHtml(basic.orgUnit?.nameTh || '-')}</td></tr>
              <tr><th>สถานะ</th><td>${escapeHtml(me.status)}</td></tr>
              <tr><th>สถานะการยืนยัน ThaID</th><td>${escapeHtml(verification.verificationStatus || '-')}</td></tr>
-             <tr><th>วันบรรจุ</th><td>${escapeHtml(employment.appointedDate || '-')}</td></tr>
+             <tr><th>วันบรรจุ</th><td>${escapeHtml(formatThaiDate(employment.appointedDate))}</td></tr>
            </table>`
         )
       );
