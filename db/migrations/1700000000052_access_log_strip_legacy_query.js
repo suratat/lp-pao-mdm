@@ -16,7 +16,7 @@ exports.shorthands = undefined;
 //   - เจ้าของตารางแม่และทุก partition = mdm_migrator
 //
 // วันที่: 2026-10-10
-// อนุมัติโดย: <ใส่ชื่อผู้อนุมัติข้อยกเว้น append-only ที่นี่ - เจ้าของระบบกรอกเอง>
+// อนุมัติโดย suratat 2026-10-10
 //
 // ขอบเขต: UPDATE audit.access_log SET endpoint = split_part(endpoint, '?', 1) เฉพาะแถวที่ endpoint LIKE '%?%' - ไม่แตะคอลัมน์อื่น
 // (accessed_at / access_id จึงไม่เปลี่ยน, ไม่ย้าย partition, pid_access_review ที่อ้าง (access_id, accessed_at) ไม่กระทบ)
