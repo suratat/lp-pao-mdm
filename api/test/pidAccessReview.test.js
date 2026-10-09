@@ -61,7 +61,7 @@ async function makePerson() {
 
 // เปิดเลขบัตรจริงผ่าน API (เขียน access_log ด้วย endpoint ไม่มี query string) แล้วคืนแถว access_log ของครั้งนั้น
 async function reveal(personId, sub, justification = 'ตรวจสอบสิทธิ์เบิกจ่ายเงินเดือนประจำเดือน') {
-  const res = await (await api('get', `/persons/${personId}/pid`, { scope: 'personnel:read:pid', sub, azp: 'hr-console' })).query({
+  const res = await (await api('post', `/persons/${personId}/pid`, { scope: 'personnel:read:pid', sub, azp: 'hr-console' })).send({
     justification,
   });
   expect(res.status).toBe(200);
@@ -86,7 +86,7 @@ async function reviewRows(accessId) {
 }
 
 describe('justification ที่มีเลข 13 หลัก -> 422 (ไม่เขียน access_log, ไม่ถอดรหัส)', () => {
-  test('GET /persons/{id}/pid: ทั้งแบบติดกันและแบบมีขีด/ช่องว่างคั่น', async () => {
+  test('POST /persons/{id}/pid: ทั้งแบบติดกันและแบบมีขีด/ช่องว่างคั่น', async () => {
     const { personId } = await makePerson();
     const fake = makeFakePid();
     const dashed = `${fake.slice(0, 1)}-${fake.slice(1, 5)}-${fake.slice(5, 10)}-${fake.slice(10, 12)}-${fake.slice(12)}`;
@@ -94,7 +94,7 @@ describe('justification ที่มีเลข 13 หลัก -> 422 (ไม�
 
     for (const justification of [`ขอตรวจเลข ${fake} ของพนักงาน`, `ขอตรวจเลข ${dashed} ของพนักงาน`]) {
       // eslint-disable-next-line no-await-in-loop
-      const res = await (await api('get', `/persons/${personId}/pid`, { scope: 'personnel:read:pid', sub, azp: 'hr-console' })).query({
+      const res = await (await api('post', `/persons/${personId}/pid`, { scope: 'personnel:read:pid', sub, azp: 'hr-console' })).send({
         justification,
       });
       expect(res.status).toBe(422);
@@ -140,6 +140,39 @@ describe('GET /audit/access-logs: accessId, justification และสถาน�
     const pending = await listLogs({ personId, reviewStatus: 'PENDING', limit: 100 });
     expect(pending.body.data.map((e) => e.accessId)).toEqual([row.accessId]);
     expect((await listLogs({ personId, reviewStatus: 'REVIEWED' })).body.data).toEqual([]);
+  });
+
+  test('POST ใหม่ถูกนับเป็นการเปิด pid (method POST, PENDING) และแถว GET เก่าที่ endpoint ไม่มี query ก็นับ — ทั้งสองแบบอยู่ในตัวกรอง reviewStatus เดียวกัน', async () => {
+    const { personId } = await makePerson();
+    const row = await reveal(personId, uniqueSub('post-reveal'));
+    const { rows: m } = await ctx.pool.query('SELECT http_method FROM audit.access_log WHERE access_id = $1', [row.accessId]);
+    expect(m[0].http_method).toBe('POST');
+    await ctx.pool.query(
+      `INSERT INTO audit.access_log (subject_person_id, actor_type, actor_sub, keycloak_client_id, endpoint, http_method, fields_returned, justification, request_id, response_status)
+       VALUES ($1, 'SERVICE', 'legacy-get-noquery', 'hr-console', $2, 'GET', '["pid"]', 'เหตุผลเก่าหลัง #73', gen_random_uuid()::text, 200)`,
+      [personId, `/api/v1/persons/${personId}/pid`]
+    );
+    const res = await listLogs({ personId, reviewStatus: 'PENDING' });
+    expect(res.body.data.map((e) => e.endpoint)).toEqual([`/api/v1/persons/${personId}/pid`, `/api/v1/persons/${personId}/pid`]);
+    // POST ที่ไม่ใช่การเปิด pid (เช่น lookup) และ POST ที่ล้มเหลว ไม่นับ
+    await ctx.pool.query(
+      `INSERT INTO audit.access_log (subject_person_id, actor_type, actor_sub, keycloak_client_id, endpoint, http_method, fields_returned, justification, request_id, response_status)
+       VALUES ($1, 'SERVICE', 'x', 'hr-console', $2, 'POST', '["pid"]', 'x', gen_random_uuid()::text, 403)`,
+      [personId, `/api/v1/persons/${personId}/pid`]
+    );
+    expect((await listLogs({ personId, reviewStatus: 'PENDING' })).body.data).toHaveLength(2);
+  });
+
+  test('GET /persons/{id}/pid ถูกถอดออกแล้ว (ไม่ถอดรหัส ไม่เขียน access_log)', async () => {
+    const { personId } = await makePerson();
+    const sub = uniqueSub('get-gone');
+    const res = await (await api('get', `/persons/${personId}/pid`, { scope: 'personnel:read:pid', sub, azp: 'hr-console' })).query({
+      justification: 'ทดสอบว่า GET ใช้ไม่ได้แล้ว',
+    });
+    expect([404, 405]).toContain(res.status);
+    expect(JSON.stringify(res.body)).not.toMatch(/\d{13}/);
+    const { rows } = await ctx.pool.query('SELECT count(*)::int AS n FROM audit.access_log WHERE actor_sub = $1', [sub]);
+    expect(rows[0].n).toBe(0);
   });
 
   test('แถวเก่าที่ endpoint มี ?justification= ต่อท้ายยังนับเป็นการเปิด pid และ justification ที่มีเลข 13 หลักหลุดมาถูกปกปิด', async () => {

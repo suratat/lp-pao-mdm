@@ -84,14 +84,14 @@ function createPersonsRouter({ pool, vault, pepper }) {
     }
   });
 
-  router.get('/persons/:personId/pid', requireScope('personnel:read:pid'), async (req, res, next) => {
+  router.post('/persons/:personId/pid', requireScope('personnel:read:pid'), async (req, res, next) => {
     try {
       const pid = await pidService.reveal(
         { pool, vault },
         {
           personId: req.params.personId,
           actor: req.auth,
-          justification: req.query.justification,
+          justification: req.body?.justification,
           requestMeta: buildRequestMeta(req),
         }
       );

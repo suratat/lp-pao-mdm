@@ -76,6 +76,11 @@ const get = async (path, scope, opts = {}) => {
   return request(ctx.app).get(`/api/v1${path}`).set('Authorization', `Bearer ${token}`);
 };
 
+const post = async (path, body, scope, opts = {}) => {
+  const token = await ctx.auth.signToken({ scope, ...opts });
+  return request(ctx.app).post(`/api/v1${path}`).set('Authorization', `Bearer ${token}`).send(body);
+};
+
 describe('maskPid', () => {
   test('เหลือ 4 หลักท้าย รูปแบบ X-XXXX-XXXX5-67-8', () => {
     expect(maskPid('1234567890128')).toBe('X-XXXX-XXXX0-12-8');
@@ -320,14 +325,14 @@ describe('access_log ของ GET /persons และ GET /persons/{id}', () => 
   });
 });
 
-describe('GET /persons/{id}/pid: เหตุผลและผู้กดถูกบันทึก', () => {
+describe('POST /persons/{id}/pid: เหตุผลและผู้กดถูกบันทึก', () => {
   test('เขียน access_log พร้อม justification และ actor_sub ของผู้กด, ตอบ no-store', async () => {
     const { first, last } = uniqueName();
     const pid = makeFakePid();
     const { personId } = await makePerson({ first, last, pid });
     const justification = 'ตรวจสอบเอกสารประกอบการบรรจุ';
 
-    const res = await get(`/persons/${personId}/pid?justification=${encodeURIComponent(justification)}`, 'personnel:read:pid', {
+    const res = await post(`/persons/${personId}/pid`, { justification }, 'personnel:read:pid', {
       sub: 'hr-user-3',
       azp: 'hr-console',
     });
@@ -353,7 +358,7 @@ describe('GET /persons/{id}/pid: เหตุผลและผู้กดถ�
   test('เหตุผลสั้นกว่า 10 ตัวอักษร -> 400 และไม่เขียน access_log', async () => {
     const { first, last } = uniqueName();
     const { personId } = await makePerson({ first, last });
-    const res = await get(`/persons/${personId}/pid?justification=short`, 'personnel:read:pid');
+    const res = await post(`/persons/${personId}/pid`, { justification: 'short' }, 'personnel:read:pid');
     expect(res.status).toBe(400);
     const { rows } = await adminPool.query('SELECT 1 FROM audit.access_log WHERE subject_person_id = $1', [personId]);
     expect(rows).toHaveLength(0);
@@ -362,7 +367,7 @@ describe('GET /persons/{id}/pid: เหตุผลและผู้กดถ�
   test('ไม่มี read:pid -> 403', async () => {
     const { first, last } = uniqueName();
     const { personId } = await makePerson({ first, last });
-    const res = await get(`/persons/${personId}/pid?justification=${encodeURIComponent('เหตุผลที่ยาวพอสมควร')}`, 'personnel:read:basic personnel:read:pid_masked');
+    const res = await post(`/persons/${personId}/pid`, { justification: 'เหตุผลที่ยาวพอสมควร' }, 'personnel:read:basic personnel:read:pid_masked');
     expect(res.status).toBe(403);
   });
 });

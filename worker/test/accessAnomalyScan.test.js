@@ -154,13 +154,15 @@ describe('PID_REVEAL_FREQUENT: เปิดเลขบัตรบ่อย', (
     const five = uniqueActor('pid5');
     const four = uniqueActor('pid4');
     for (let i = 0; i < 4; i += 1) await insertAccess({ accessedAt: minutesBefore(ASOF, 30 + i), actor: four, endpoint: revealEndpoint(personIds[i]), personId: personIds[i] });
-    for (let i = 0; i < 4; i += 1) await insertAccess({ accessedAt: minutesBefore(ASOF, 30 + i), actor: five, endpoint: revealEndpoint(personIds[i]), personId: personIds[i] });
+    // `five`: POST ใหม่ 2 ครั้ง + GET เก่าที่ endpoint ไม่มี query 2 ครั้ง + GET เก่าที่มี ?justification= 1 ครั้ง (รวม 5)
+    for (let i = 0; i < 2; i += 1) await insertAccess({ accessedAt: minutesBefore(ASOF, 30 + i), actor: five, endpoint: revealEndpoint(personIds[i]), personId: personIds[i], method: 'POST' });
+    for (let i = 2; i < 4; i += 1) await insertAccess({ accessedAt: minutesBefore(ASOF, 30 + i), actor: five, endpoint: revealEndpoint(personIds[i]), personId: personIds[i] });
     // ตัวที่ 5 ของ `five` เป็นรูปแบบเก่า (query string ต่อท้าย)
     await insertAccess({ accessedAt: minutesBefore(ASOF, 20), actor: five, endpoint: `${revealEndpoint(personIds[4])}?justification=x`, personId: personIds[4] });
-    // ไม่นับ: ไม่สำเร็จ / ไม่ใช่ GET / endpoint อื่น
+    // ไม่นับ: ไม่สำเร็จ / method อื่น (PUT) / endpoint อื่น (POST ไป endpoint ที่ไม่ใช่ /pid)
     await insertAccess({ accessedAt: minutesBefore(ASOF, 10), actor: four, endpoint: revealEndpoint(personIds[5]), personId: personIds[5], status: 403 });
-    await insertAccess({ accessedAt: minutesBefore(ASOF, 10), actor: four, endpoint: revealEndpoint(personIds[6]), personId: personIds[6], method: 'POST' });
-    await insertAccess({ accessedAt: minutesBefore(ASOF, 10), actor: four, endpoint: detail(personIds[7]), personId: personIds[7] });
+    await insertAccess({ accessedAt: minutesBefore(ASOF, 10), actor: four, endpoint: revealEndpoint(personIds[6]), personId: personIds[6], method: 'PUT' });
+    await insertAccess({ accessedAt: minutesBefore(ASOF, 10), actor: four, endpoint: detail(personIds[7]), personId: personIds[7], method: 'POST' });
 
     await scan(config());
     const [alert] = await alertsFor(five);

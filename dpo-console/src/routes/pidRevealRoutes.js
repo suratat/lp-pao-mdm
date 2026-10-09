@@ -4,7 +4,7 @@ const { MdmApiError } = require('../mdmClient');
 const { csrfTokenMatches } = require('../session/csrf');
 const { fmt, toThaiInputValue, toIsoDateTime, renderApiError } = require('./auditRoutes');
 
-// PR-B: รีวิวการเปิดเลขบัตร (GET /persons/{id}/pid) - รายการมาจาก GET /audit/access-logs?reviewStatus=... (เฉพาะการเปิด pid)
+// PR-B: รีวิวการเปิดเลขบัตร (POST /persons/{id}/pid; แถวก่อน PR-B เป็น GET) - รายการมาจาก GET /audit/access-logs?reviewStatus=... (เฉพาะการเปิด pid)
 // บันทึกผลรีวิวผ่าน POST /audit/access-logs/{accessId}/review (scope audit:review + role dpo - ตรวจที่ MDM API ทุกครั้ง)
 // หน้านี้ไม่แสดงเลขบัตรเลย (แสดงแค่ใคร/เมื่อไหร่/เหตุผล) และไม่มีทางเรียกดูเลขบัตรจากที่นี่
 
@@ -126,7 +126,7 @@ function createPidRevealRoutes({ mdmClient }) {
         200,
         'การเปิดเลขบัตร',
         `<h1>การเปิดเลขบัตรประชาชน</h1>
-         <p class="hint">รายการที่มีการเปิดเลขบัตรเต็ม (GET /persons/{id}/pid) เรียงเก่า → ใหม่ หน้านี้ไม่แสดงเลขบัตร ผู้เปิดเลขบัตรรีวิวรายการของตนเองไม่ได้ ${
+         <p class="hint">รายการที่มีการเปิดเลขบัตรเต็ม (POST /persons/{id}/pid; แถวก่อน PR-B เป็น GET) เรียงเก่า → ใหม่ หน้านี้ไม่แสดงเลขบัตร ผู้เปิดเลขบัตรรีวิวรายการของตนเองไม่ได้ ${
            canReview ? '' : '<strong>(บัญชีนี้อ่านอย่างเดียว: บันทึกผลรีวิวได้เฉพาะ role dpo)</strong>'
          }</p>
          ${renderFilters({ reviewStatus, from, to, personId, clientId })}

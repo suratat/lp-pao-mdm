@@ -41,7 +41,7 @@ Express app แยกจาก `api/`, `worker/`, `portal/`, `hr-console/` — �
      `system:thaid-sync` (sync ตอน login ThaID), `system:hr-import` (นำเข้าจาก HR) + `actor_client` (azp) แถวที่เขียนก่อน PR-A
      (migration 1700000000045) แสดง "ไม่ทราบ" เพราะแก้ย้อนหลังไม่ได้ (append-only)
 
-4. `GET /dpo/pid-reveals` — รายการ "การเปิดเลขบัตรเต็ม" (`GET /persons/{id}/pid`) ที่รอรีวิว/รีวิวแล้ว/ขอคำชี้แจง (ตัวกรอง `reviewStatus`
+4. `GET /dpo/pid-reveals` — รายการ "การเปิดเลขบัตรเต็ม" (`POST /persons/{id}/pid`; แถวก่อน PR-B เป็น `GET`) ที่รอรีวิว/รีวิวแล้ว/ขอคำชี้แจง (ตัวกรอง `reviewStatus`
    ของ `GET /audit/access-logs`, เรียงเก่า → ใหม่) แสดง Access ID, ผู้เปิด/client, personId, justification, สถานะรีวิว **ไม่แสดงเลขบัตร**
    และ `POST /dpo/pid-reveals/{accessId}/review` บันทึกผลรีวิว (`REVIEWED` / `NEEDS_EXPLANATION` + หมายเหตุ) ผ่าน
    `POST /audit/access-logs/{accessId}/review` (scope `audit:review` **และ** realm role `dpo` - ตรวจที่ MDM API ทุกครั้ง)
