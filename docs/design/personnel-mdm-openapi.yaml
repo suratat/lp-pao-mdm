@@ -956,6 +956,9 @@ paths:
     get:
       tags: [Provisioning]
       summary: Personnel whose ThaID data is stale or expired (HR dashboard)
+      description: |
+        บุคคลสถานะ `INACTIVE` อยู่ในรายการเฉพาะ token ที่มี scope `personnel:read:inactive` - ถ้าไม่มี scope นี้ระบบตัดคน INACTIVE ออกจากรายการเงียบๆ
+        (ไม่ตอบ 403 ทั้งรายการ) ต่างจาก endpoint รายบุคคลที่ตอบ 403
       operationId: listStalePersons
       security:
         - keycloak: [personnel:provision]

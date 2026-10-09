@@ -1,7 +1,7 @@
 const express = require('express');
 const { requireScope, SCOPE_READ_BASIC } = require('../middleware/auth');
 const provisioningService = require('../services/provisioningService');
-const { MASTER_DATA_ADMIN_ROLE } = require('../constants');
+const { MASTER_DATA_ADMIN_ROLE, SCOPE_READ_INACTIVE } = require('../constants');
 const { requireRole } = require('../middleware/auth');
 
 // เขียนข้อมูลบุคคลด้วยมือ (สร้าง/พ้นสภาพ/คืนสภาพ): ต้องมี realm role hr_master_data_admin เพิ่มจาก scope เสมอ
@@ -85,6 +85,7 @@ function createProvisioningRouter({ pool, vault, pepper }) {
         orgUnitId: req.query.orgUnitId,
         cursor: req.query.cursor,
         limit: req.query.limit ? Number(req.query.limit) : 50,
+        includeInactive: (req.auth?.scope || []).includes(SCOPE_READ_INACTIVE),
       });
       res.json(result);
     } catch (err) {

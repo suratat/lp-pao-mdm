@@ -353,12 +353,14 @@ async function resolveClaimRequest({ pool, vault, pepper }, claimRequestId, body
 }
 
 // GET /reverify/stale (HR dashboard)
-async function listStalePersons(pool, { verificationStatus, orgUnitId, cursor, limit }) {
+// includeInactive=false (token ไม่มี personnel:read:inactive): ตัดบุคคล INACTIVE ออกจากรายการเงียบๆ (ไม่ 403 ทั้ง list) ใน SQL เพื่อให้ cursor/limit ถูกต้อง
+async function listStalePersons(pool, { verificationStatus, orgUnitId, cursor, limit, includeInactive = false }) {
   const statuses = verificationStatus && verificationStatus.length > 0 ? verificationStatus : ['STALE', 'EXPIRED'];
   const conditions = ['p.verification_status = ANY($1::text[])'];
   const params = [statuses];
   let join = '';
 
+  if (!includeInactive) conditions.push("p.status <> 'INACTIVE'");
   if (orgUnitId) {
     join = 'JOIN mdm.employment e ON e.person_id = p.person_id AND e.is_current = true';
     params.push(orgUnitId);

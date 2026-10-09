@@ -178,6 +178,55 @@ describe('endpoint รายบุคคล: บุคคล INACTIVE ต้อ�
   });
 });
 
+describe('GET /reverify/stale: คน INACTIVE ต้องมี personnel:read:inactive', () => {
+  const STALE_SCOPE = 'personnel:provision personnel:read:basic';
+
+  test('ไม่มี read:inactive -> ตัดคน INACTIVE ออกเงียบๆ (200 ไม่ใช่ 403) / มี -> เห็น / คน ACTIVE เห็นทั้งสองกรณี', async () => {
+    const unit = await insertFixtureOrgUnit(adminPool); // หน่วยงานเฉพาะเทสต์นี้ เพื่อไม่ปนกับแถว STALE ของเทสต์อื่น
+    const mk = async (status, tag) => {
+      const { first, last } = uniqueName();
+      const { personId } = await makePerson({ status, first: `${tag}${first}`, last });
+      await adminPool.query(`UPDATE mdm.person SET verification_status = 'STALE' WHERE person_id = $1`, [personId]);
+      await adminPool.query(`UPDATE mdm.employment SET org_unit_id = $2 WHERE person_id = $1`, [personId, unit]);
+      return personId;
+    };
+    const active = await mk('ACTIVE', 'A');
+    const inactive = await mk('INACTIVE', 'I');
+    const path = `/reverify/stale?verificationStatus=STALE&orgUnitId=${unit}&limit=100`;
+
+    const without = await get(path, STALE_SCOPE, { roles: ['hr_master_data_admin'] });
+    expect(without.status).toBe(200);
+    expect(without.body.data.map((p) => p.personId)).toEqual([active]);
+
+    const withScope = await get(path, `${STALE_SCOPE} personnel:read:inactive`, { roles: ['hr_master_data_admin'] });
+    expect(withScope.status).toBe(200);
+    expect(withScope.body.data.map((p) => p.personId).sort()).toEqual([active, inactive].sort());
+  });
+
+  test('cursor/limit ถูกต้องเมื่อกรอง INACTIVE: limit=1 ไม่ข้ามคน ACTIVE ที่อยู่หลังคน INACTIVE', async () => {
+    const unit = await insertFixtureOrgUnit(adminPool);
+    const ids = [];
+    for (const status of ['INACTIVE', 'ACTIVE', 'INACTIVE', 'ACTIVE']) {
+      const { first, last } = uniqueName();
+      const { personId } = await makePerson({ status, first, last });
+      await adminPool.query(`UPDATE mdm.person SET verification_status = 'STALE' WHERE person_id = $1`, [personId]);
+      await adminPool.query(`UPDATE mdm.employment SET org_unit_id = $2 WHERE person_id = $1`, [personId, unit]);
+      if (status === 'ACTIVE') ids.push(personId);
+    }
+    const seen = [];
+    let cursor;
+    for (let i = 0; i < 5; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await get(`/reverify/stale?verificationStatus=STALE&orgUnitId=${unit}&limit=1${cursor ? `&cursor=${cursor}` : ''}`, STALE_SCOPE, { roles: ['hr_master_data_admin'] });
+      expect(res.status).toBe(200);
+      seen.push(...res.body.data.map((p) => p.personId));
+      cursor = res.body.page.nextCursor;
+      if (!cursor) break;
+    }
+    expect(seen.sort()).toEqual(ids.sort());
+  });
+});
+
 describe('GET /persons: ค้นชื่อเต็ม', () => {
   test('"ชื่อ นามสกุล" จับคู่ prefix ของชื่อและนามสกุล', async () => {
     const { first, last } = uniqueName();
