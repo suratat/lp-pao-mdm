@@ -3,8 +3,9 @@ const { requireScope } = require('../middleware/auth');
 const personService = require('../services/personService');
 const pidService = require('../services/pidService');
 const { HttpProblem } = require('../security/httpProblem');
+const { requireInactiveScope } = require('../middleware/inactiveScope');
+const { SCOPE_READ_INACTIVE } = require('../constants');
 
-const SCOPE_READ_INACTIVE = 'personnel:read:inactive';
 
 function buildRequestMeta(req, extra = {}) {
   return {
@@ -61,7 +62,7 @@ function createPersonsRouter({ pool, vault, pepper }) {
     }
   });
 
-  router.get('/persons/:personId', requireScope('personnel:read:basic'), async (req, res, next) => {
+  router.get('/persons/:personId', requireScope('personnel:read:basic'), requireInactiveScope(pool), async (req, res, next) => {
     try {
       const person = await personService.getPerson(pool, req.params.personId);
       res.json(person);
@@ -70,7 +71,7 @@ function createPersonsRouter({ pool, vault, pepper }) {
     }
   });
 
-  router.get('/persons/:personId/photo', requireScope('personnel:read:photo'), async (req, res, next) => {
+  router.get('/persons/:personId/photo', requireScope('personnel:read:photo'), requireInactiveScope(pool), async (req, res, next) => {
     try {
       const { buffer, mimeType, sha256 } = await personService.getPersonPhoto(pool, vault, req.params.personId, {
         actor: req.auth,
@@ -84,7 +85,7 @@ function createPersonsRouter({ pool, vault, pepper }) {
     }
   });
 
-  router.post('/persons/:personId/pid', requireScope('personnel:read:pid'), async (req, res, next) => {
+  router.post('/persons/:personId/pid', requireScope('personnel:read:pid'), requireInactiveScope(pool), async (req, res, next) => {
     try {
       const pid = await pidService.reveal(
         { pool, vault },

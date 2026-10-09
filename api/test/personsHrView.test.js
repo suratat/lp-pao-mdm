@@ -125,6 +125,108 @@ describe('GET /persons: personnel:read:inactive', () => {
   });
 });
 
+describe('endpoint รายบุคคล: บุคคล INACTIVE ต้องมี personnel:read:inactive', () => {
+  const ADMIN = { roles: ['hr_master_data_admin'] };
+  // [ชื่อ, method, path, scope พื้นฐานของ endpoint, opts, status ที่คาดเมื่อมี read:inactive]
+  const cases = (id) => [
+    ['getPerson', 'get', `/persons/${id}`, 'personnel:read:basic', {}, 200],
+    ['getEmployment', 'get', `/persons/${id}/employment`, 'personnel:read:employment', {}, 200],
+    ['getPersonPhoto', 'get', `/persons/${id}/photo`, 'personnel:read:photo', {}, 404], // ไม่มีรูป -> 404 แปลว่าผ่านด่านสิทธิ์แล้ว
+    ['getPersonPid', 'post', `/persons/${id}/pid`, 'personnel:read:pid', {}, 200],
+    ['getManageProfile', 'get', `/persons/${id}/manage-profile`, 'personnel:manage:person', ADMIN, 200],
+    ['getPersonHistory', 'get', `/persons/${id}/history`, 'personnel:manage:person', ADMIN, 200],
+    ['getPersonChangeLog', 'get', `/persons/${id}/change-log`, 'audit:read', {}, 200],
+  ];
+  const call = async (method, path, scope, opts) =>
+    method === 'post' ? post(path, { justification: 'ตรวจสอบเอกสารประกอบการบรรจุ' }, scope, opts) : get(path, scope, opts);
+
+  test('คน INACTIVE: ไม่มี read:inactive -> 403 insufficient-scope, ไม่เขียน access_log; มี read:inactive -> ผ่าน (ทุก endpoint)', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ status: 'INACTIVE', first, last });
+    for (const [name, method, path, scope, opts, okStatus] of cases(personId)) {
+      // eslint-disable-next-line no-await-in-loop
+      const denied = await call(method, path, scope, { sub: 'hr-inactive', azp: 'hr-console', ...opts });
+      expect([name, denied.status]).toEqual([name, 403]);
+      expect(denied.body.type).toMatch(/insufficient-scope/);
+      expect(denied.body.detail).toContain('personnel:read:inactive');
+      // eslint-disable-next-line no-await-in-loop
+      const allowed = await call(method, path, `${scope} personnel:read:inactive`, { sub: 'hr-inactive', azp: 'hr-console', ...opts });
+      expect([name, allowed.status]).toEqual([name, okStatus]);
+    }
+    const { rows } = await adminPool.query(
+      `SELECT endpoint, response_status FROM audit.access_log WHERE subject_person_id = $1 AND actor_sub = 'hr-inactive'`,
+      [personId]
+    );
+    expect(rows.every((r) => r.response_status < 400)).toBe(true); // คำขอที่ถูกปฏิเสธไม่มีแถวใน access_log (เหมือน 403 อื่น)
+  });
+
+  test('คน ACTIVE ไม่ต้องมี read:inactive (ไม่กระทบ)', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ status: 'ACTIVE', first, last });
+    for (const [name, method, path, scope, opts, okStatus] of cases(personId)) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await call(method, path, scope, opts);
+      expect([name, res.status]).toEqual([name, okStatus]);
+    }
+  });
+
+  test('คน PENDING_CLAIM ไม่ต้องมี read:inactive และบุคคลที่ไม่มีอยู่ยังได้ 404 (ไม่ใช่ 403)', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ status: 'PENDING_CLAIM', first, last, withIdentity: false });
+    expect((await get(`/persons/${personId}`, 'personnel:read:basic')).status).toBe(200);
+    expect((await get(`/persons/${crypto.randomUUID()}`, 'personnel:read:basic')).status).toBe(404);
+  });
+});
+
+describe('GET /reverify/stale: คน INACTIVE ต้องมี personnel:read:inactive', () => {
+  const STALE_SCOPE = 'personnel:provision personnel:read:basic';
+
+  test('ไม่มี read:inactive -> ตัดคน INACTIVE ออกเงียบๆ (200 ไม่ใช่ 403) / มี -> เห็น / คน ACTIVE เห็นทั้งสองกรณี', async () => {
+    const unit = await insertFixtureOrgUnit(adminPool); // หน่วยงานเฉพาะเทสต์นี้ เพื่อไม่ปนกับแถว STALE ของเทสต์อื่น
+    const mk = async (status, tag) => {
+      const { first, last } = uniqueName();
+      const { personId } = await makePerson({ status, first: `${tag}${first}`, last });
+      await adminPool.query(`UPDATE mdm.person SET verification_status = 'STALE' WHERE person_id = $1`, [personId]);
+      await adminPool.query(`UPDATE mdm.employment SET org_unit_id = $2 WHERE person_id = $1`, [personId, unit]);
+      return personId;
+    };
+    const active = await mk('ACTIVE', 'A');
+    const inactive = await mk('INACTIVE', 'I');
+    const path = `/reverify/stale?verificationStatus=STALE&orgUnitId=${unit}&limit=100`;
+
+    const without = await get(path, STALE_SCOPE, { roles: ['hr_master_data_admin'] });
+    expect(without.status).toBe(200);
+    expect(without.body.data.map((p) => p.personId)).toEqual([active]);
+
+    const withScope = await get(path, `${STALE_SCOPE} personnel:read:inactive`, { roles: ['hr_master_data_admin'] });
+    expect(withScope.status).toBe(200);
+    expect(withScope.body.data.map((p) => p.personId).sort()).toEqual([active, inactive].sort());
+  });
+
+  test('cursor/limit ถูกต้องเมื่อกรอง INACTIVE: limit=1 ไม่ข้ามคน ACTIVE ที่อยู่หลังคน INACTIVE', async () => {
+    const unit = await insertFixtureOrgUnit(adminPool);
+    const ids = [];
+    for (const status of ['INACTIVE', 'ACTIVE', 'INACTIVE', 'ACTIVE']) {
+      const { first, last } = uniqueName();
+      const { personId } = await makePerson({ status, first, last });
+      await adminPool.query(`UPDATE mdm.person SET verification_status = 'STALE' WHERE person_id = $1`, [personId]);
+      await adminPool.query(`UPDATE mdm.employment SET org_unit_id = $2 WHERE person_id = $1`, [personId, unit]);
+      if (status === 'ACTIVE') ids.push(personId);
+    }
+    const seen = [];
+    let cursor;
+    for (let i = 0; i < 5; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await get(`/reverify/stale?verificationStatus=STALE&orgUnitId=${unit}&limit=1${cursor ? `&cursor=${cursor}` : ''}`, STALE_SCOPE, { roles: ['hr_master_data_admin'] });
+      expect(res.status).toBe(200);
+      seen.push(...res.body.data.map((p) => p.personId));
+      cursor = res.body.page.nextCursor;
+      if (!cursor) break;
+    }
+    expect(seen.sort()).toEqual(ids.sort());
+  });
+});
+
 describe('GET /persons: ค้นชื่อเต็ม', () => {
   test('"ชื่อ นามสกุล" จับคู่ prefix ของชื่อและนามสกุล', async () => {
     const { first, last } = uniqueName();

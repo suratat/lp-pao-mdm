@@ -13,10 +13,13 @@ const MASTER_DATA_ADMIN_ROLE = 'hr_master_data_admin';
 const SCOPE_MANAGE_PERSON = 'personnel:manage:person';
 // role ของเจ้าหน้าที่ HR ทั่วไปที่ล็อกอิน hr-console (ยังไม่มีสิทธิ์ดูข้อมูลติดต่อส่วนตัว นอกจากจะมี MASTER_DATA_ADMIN_ROLE ด้วย)
 const HR_OFFICER_ROLE = 'hr_officer';
+// เห็นบุคคลสถานะ INACTIVE (ลาออก/โอนย้าย) ทั้งใน list และ endpoint รายบุคคล
+const SCOPE_READ_INACTIVE = 'personnel:read:inactive';
 
 module.exports = {
   FIXTURE_PERSON_ID,
   MASTER_DATA_ADMIN_ROLE,
   SCOPE_MANAGE_PERSON,
   HR_OFFICER_ROLE,
+  SCOPE_READ_INACTIVE,
 };

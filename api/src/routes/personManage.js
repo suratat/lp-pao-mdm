@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireScope, requireRole } = require('../middleware/auth');
 const { MASTER_DATA_ADMIN_ROLE, SCOPE_MANAGE_PERSON } = require('../constants');
+const { requireInactiveScope } = require('../middleware/inactiveScope');
 const manage = require('../services/personManageService');
 
 // PR-D2: HR จัดการข้อมูลบุคคลที่ไม่ใช่ของ ThaID - ทุก endpoint ต้องมี scope personnel:manage:person "และ" realm role hr_master_data_admin
@@ -16,7 +17,7 @@ function createPersonManageRouter(pool) {
     }
   };
 
-  router.get('/persons/:personId/manage-profile', ...gate, handler((req) => manage.getManageProfile(pool, req.params.personId)));
+  router.get('/persons/:personId/manage-profile', ...gate, requireInactiveScope(pool), handler((req) => manage.getManageProfile(pool, req.params.personId)));
 
   router.patch('/persons/:personId/expected-identity', ...gate, handler((req) => manage.patchExpectedIdentity(pool, req.params.personId, req.body, req.auth)));
 
@@ -27,6 +28,7 @@ function createPersonManageRouter(pool) {
   router.get(
     '/persons/:personId/history',
     ...gate,
+    requireInactiveScope(pool),
     handler((req) =>
       manage.getPersonHistory(pool, req.params.personId, {
         cursor: req.query.cursor,

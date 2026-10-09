@@ -1,12 +1,13 @@
 const express = require('express');
 const { requireScope, requireRole } = require('../middleware/auth');
 const { MASTER_DATA_ADMIN_ROLE } = require('../constants');
+const { requireInactiveScope } = require('../middleware/inactiveScope');
 const { getEmploymentHistory, upsertEmployment } = require('../services/employmentService');
 
 function createEmploymentRouter(pool) {
   const router = express.Router();
 
-  router.get('/persons/:personId/employment', requireScope('personnel:read:employment'), async (req, res, next) => {
+  router.get('/persons/:personId/employment', requireScope('personnel:read:employment'), requireInactiveScope(pool), async (req, res, next) => {
     try {
       const currentOnly = req.query.currentOnly === 'true' || req.query.currentOnly === true;
       const history = await getEmploymentHistory(pool, req.params.personId, currentOnly);

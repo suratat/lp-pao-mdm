@@ -43,6 +43,10 @@ function problemType(err) {
 // คืนข้อความไทยสำหรับ error ของ API (MdmApiError) - ถ้าไม่รู้จัก type: ใช้ detail ของ API เมื่อเป็นภาษาไทย ไม่งั้นข้อความกลางๆ
 function messageFor(err) {
   const type = problemType(err);
+  // บุคคลสถานะ INACTIVE ต้องมี personnel:read:inactive - ข้อความทั่วไปของ insufficient-scope (ให้ออก/เข้าระบบใหม่) ชี้ผิดทาง
+  if (type === 'insufficient-scope' && String(err.problem?.detail || '').includes('personnel:read:inactive')) {
+    return 'บัญชีนี้ไม่มีสิทธิ์ดูข้อมูลบุคคลที่พ้นสภาพ (INACTIVE) กรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์';
+  }
   if (MESSAGES[type]) return MESSAGES[type];
   if (err.status === 401) return 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่';
   const detail = err.problem?.detail;

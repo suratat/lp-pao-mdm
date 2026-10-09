@@ -1,12 +1,13 @@
 const express = require('express');
 const { requireScope, requireRole } = require('../middleware/auth');
 const { getPersonChangeLog, listChangeLogs, listAccessLogs, reviewPidAccess } = require('../services/auditService');
+const { requireInactiveScope } = require('../middleware/inactiveScope');
 const { listAlerts, actOnAlert } = require('../services/alertService');
 
 function createAuditRouter(pool) {
   const router = express.Router();
 
-  router.get('/persons/:personId/change-log', requireScope('audit:read'), async (req, res, next) => {
+  router.get('/persons/:personId/change-log', requireScope('audit:read'), requireInactiveScope(pool), async (req, res, next) => {
     try {
       const result = await getPersonChangeLog(pool, req.params.personId, {
         since: req.query.since,
