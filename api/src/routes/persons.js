@@ -8,7 +8,8 @@ const SCOPE_READ_INACTIVE = 'personnel:read:inactive';
 
 function buildRequestMeta(req, extra = {}) {
   return {
-    endpoint: req.originalUrl,
+    // ตัด query string ออก (ดูเหตุผลใน middleware/accessLog.js)
+    endpoint: req.originalUrl.split('?')[0],
     httpMethod: req.method,
     requestId: req.id,
     clientIp: req.ip,
@@ -91,8 +92,7 @@ function createPersonsRouter({ pool, vault, pepper }) {
           personId: req.params.personId,
           actor: req.auth,
           justification: req.query.justification,
-          // ตัด query string ออกจาก endpoint ใน access_log: justification มีคอลัมน์ของตัวเองแล้ว ไม่ต้องซ้ำใน endpoint
-          requestMeta: buildRequestMeta(req, { endpoint: req.originalUrl.split('?')[0] }),
+          requestMeta: buildRequestMeta(req),
         }
       );
       res.setHeader('Cache-Control', 'private, no-store');

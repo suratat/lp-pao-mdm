@@ -79,6 +79,8 @@ paths:
             ไม่รองรับค้นหาด้วย employeeNo อีกต่อไป เพราะ employeeNo = เลขบัตรประชาชน (pid) เสมอ
             (อบจ.ลำปางไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) การค้นหาด้วยค่านี้ผ่าน query string จะทำให้ pid
             หลุดไปอยู่ใน URL/access log ซึ่งขัดกฎข้อ 1 ของ CLAUDE.md
+            ช่องว่างในชื่อ-สกุลส่งเป็น `%20` หรือ `+` ก็ได้ (`+` ถูก decode เป็นช่องว่าง) - พารามิเตอร์อื่นยังห้ามมี `+` ดิบ
+          allowReserved: true
           schema: { type: string, minLength: 2, maxLength: 100 }
         - name: orgUnitId
           in: query

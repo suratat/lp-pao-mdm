@@ -123,7 +123,8 @@ function personalDataResponseMiddleware(spec, pool) {
                 req.auth.personId ? 'USER' : 'SERVICE',
                 req.auth.sub || null,
                 req.auth.azp || null,
-                req.originalUrl,
+                // ตัด query string ออก: ค่าใน query (เช่น q = ชื่อคน, justification) ไม่ควรถูกเก็บถาวรในคอลัมน์ endpoint
+                req.originalUrl.split('?')[0],
                 req.method,
                 purposeCode,
                 req.query.justification || null,

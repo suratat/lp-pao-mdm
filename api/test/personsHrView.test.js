@@ -283,9 +283,34 @@ describe('access_log ของ GET /persons และ GET /persons/{id}', () => 
     expect(rows.map((r) => r.subject_person_id).sort()).toEqual([a.personId, b.personId].sort());
     for (const row of rows) {
       expect(row.actor_sub).toBe('hr-user-2');
-      expect(row.endpoint).toContain('/persons?q=');
+      // query string (q = ชื่อคน) ต้องไม่ถูกเก็บลงคอลัมน์ endpoint
+      expect(row.endpoint).toBe('/api/v1/persons');
       expect(row.fields_returned).toContain('basic.employeeNoMasked');
     }
+  });
+
+  test('GET /persons/{id}?pidFormat=masked -> endpoint ใน access_log ไม่มี query string', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ first, last });
+    await get(`/persons/${personId}?pidFormat=masked`, 'personnel:read:basic');
+    const { rows } = await adminPool.query('SELECT endpoint FROM audit.access_log WHERE subject_person_id = $1', [personId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].endpoint).toBe(`/api/v1/persons/${personId}`);
+  });
+
+  test('q ที่ใช้ + เป็นช่องว่าง (form-encoding) ค้น "ชื่อ นามสกุล" ได้ เหมือน %20', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ first, last });
+    for (const sep of ['+', '%20']) {
+      const res = await get(`/persons?q=${first}${sep}${last}`, 'personnel:read:basic');
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((p) => p.personId)).toEqual([personId]);
+    }
+  });
+
+  test('พารามิเตอร์อื่นที่ไม่ใช่ q ยังปฏิเสธ + ดิบ (updatedSince=...+07:00 -> 400)', async () => {
+    const res = await get('/persons?updatedSince=2026-10-08T17:00:00+07:00', 'personnel:read:basic');
+    expect(res.status).toBe(400);
   });
 
   test('ผลค้นหาว่าง -> ไม่เขียน access_log และตอบ 200', async () => {
