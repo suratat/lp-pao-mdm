@@ -204,7 +204,7 @@
       "attributes": {
         "access.token.lifespan": "900"
       },
-      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "audit:read", "audit:review", "events:read"],
+      "defaultClientScopes": ["basic", "roles", "mdm-api-audience", "audit:read", "audit:review", "events:read", "personnel:read:inactive"],
       "optionalClientScopes": []
     },
     {

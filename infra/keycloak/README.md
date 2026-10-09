@@ -94,3 +94,14 @@ claims ใน access token ที่วัดจริงกับ Keycloak 26.0
   (เรียก `GET /persons/{id}/manage-profile` ด้วยคนแรกต้องได้ 403 `insufficient-role`)
 - **แถวใน `field_policy`** (`person.expected_first_name_th`, `person.expected_last_name_th`, `person.expected_birth_date`) ใช้ `required_scope = personnel:manage:person` เพื่อบันทึกชั้นความลับ
   (วันเกิด = CONFIDENTIAL ปกปิดค่าในหน้า DPO/ประวัติ) ไม่มีผลต่อการ mask response ของ `Person`
+
+## PR-C: scope `personnel:read:inactive` เป็น Default ของ `dpo-console`
+
+- **ทำไม:** ตั้งแต่ PR-C endpoint รายบุคคลที่อ่านข้อมูล (`GET /persons/{id}`, `/photo`, `/employment`, `/change-log`, `/manage-profile`, `/history`, `POST /persons/{id}/pid`) ตอบ `403 insufficient-scope` เมื่อบุคคลเป็น `INACTIVE` และ token ไม่มี `personnel:read:inactive` `dpo-console` เรียก `GET /persons/{id}/change-log` เพื่อตรวจย้อนหลัง จึงต้องมี scope นี้ ไม่งั้นหน้า change-log รายบุคคลของคนที่พ้นสภาพได้ 403 (`hr-console` มี scope นี้เป็น Default อยู่แล้วตั้งแต่ 2026-10-04)
+- **ไม่ต้องสร้าง client scope ใหม่** — `personnel:read:inactive` มีอยู่แล้ว แค่ผูกเพิ่มกับ client
+- **realm ที่รันอยู่แล้ว (VPN-MDM) ต้องตั้งมือ** เพราะ `--import-realm` ไม่ทับ realm เดิม ขั้นตอนใน Admin Console (realm `lp-pao`):
+  1. Clients -> `dpo-console` -> Client scopes -> **Add client scope** -> เลือก `personnel:read:inactive` -> **Add -> Default**
+  2. ผู้ใช้ต้อง login ใหม่ (หรือรอ refresh token) จึงจะได้ scope ใหม่ใน token
+- **การตรวจสอบหลังตั้งค่า:** `GET /admin/realms/lp-pao/clients/{dpo-console uuid}/evaluate-scopes/generate-example-access-token?userId=...&scope=openid` ต้องเห็น `personnel:read:inactive` ใน `scope` จากนั้นเปิดหน้า change-log รายบุคคลของคนสถานะ INACTIVE ใน dpo-console ต้องไม่ได้ 403
+- **ขอบเขตของ scope นี้:** scope ใน token ผูกให้ผู้ใช้ทุกคนของ client ไม่ใช่สิทธิ์รายบุคคล (เหมือน scope อื่นของ dpo-console) การกั้นที่เหลืออยู่ที่ scope `audit:read` และ role ฝั่ง API ตามเดิม
+- **client อื่นที่ยังไม่มี scope นี้:** `mdm-portal` (Optional) และ `eoffice` ไม่ได้ผูกไว้ — ตรวจ `audit.access_log` ย้อนหลัง 30 วันบน prod (2026-10-10) แล้วไม่พบ eoffice เรียก endpoint รายบุคคลหรือ `/reverify/stale` ถ้า eoffice จะเรียกข้อมูลคน INACTIVE ในอนาคตต้องขอ scope นี้ผ่าน DPO
