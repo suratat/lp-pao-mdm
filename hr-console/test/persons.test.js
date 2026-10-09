@@ -226,6 +226,20 @@ describe('GET /hr/persons: ค้นหา', () => {
     expect(res.text).not.toContain(inactive.personId);
   });
 
+  test('หน้ารายละเอียดของคน INACTIVE: ไม่มี read:inactive -> 403 พร้อมข้อความไทย (ไม่ใช่ 500, ไม่รั่วข้อมูลบุคคล); มี read:inactive -> เห็นหน้า', async () => {
+    const { first, last } = uniqueName();
+    const inactive = await makePerson({ first, last, status: 'INACTIVE' });
+    const denied = await (await loginAsHrOfficer(harness.hrConsoleApp, 'good-code')).get(`/hr/persons/${inactive.personId}`); // ไม่มี read:inactive
+    expect(denied.status).toBe(403);
+    expect(denied.text).toContain('ไม่มีสิทธิ์ดูข้อมูลบุคคลที่พ้นสภาพ');
+    expect(denied.text).not.toContain(first);
+    expect(denied.text).not.toContain(inactive.pid);
+
+    const allowed = await (await loginAsHrOfficer(harness.hrConsoleApp, 'persons-a-code')).get(`/hr/persons/${inactive.personId}`);
+    expect(allowed.status).toBe(200);
+    expect(allowed.text).toContain(first);
+  });
+
   test('กรองประเภทบุคลากร และแสดง job_title_text/ตำแหน่ง', async () => {
     const { first, last } = uniqueName();
     const a = await makePerson({ first, last, personnelType: 'GENERAL_EMPLOYEE', jobTitleText: 'พนักงานขับรถ' });

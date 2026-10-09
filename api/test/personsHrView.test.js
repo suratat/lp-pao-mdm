@@ -125,6 +125,59 @@ describe('GET /persons: personnel:read:inactive', () => {
   });
 });
 
+describe('endpoint รายบุคคล: บุคคล INACTIVE ต้องมี personnel:read:inactive', () => {
+  const ADMIN = { roles: ['hr_master_data_admin'] };
+  // [ชื่อ, method, path, scope พื้นฐานของ endpoint, opts, status ที่คาดเมื่อมี read:inactive]
+  const cases = (id) => [
+    ['getPerson', 'get', `/persons/${id}`, 'personnel:read:basic', {}, 200],
+    ['getEmployment', 'get', `/persons/${id}/employment`, 'personnel:read:employment', {}, 200],
+    ['getPersonPhoto', 'get', `/persons/${id}/photo`, 'personnel:read:photo', {}, 404], // ไม่มีรูป -> 404 แปลว่าผ่านด่านสิทธิ์แล้ว
+    ['getPersonPid', 'post', `/persons/${id}/pid`, 'personnel:read:pid', {}, 200],
+    ['getManageProfile', 'get', `/persons/${id}/manage-profile`, 'personnel:manage:person', ADMIN, 200],
+    ['getPersonHistory', 'get', `/persons/${id}/history`, 'personnel:manage:person', ADMIN, 200],
+    ['getPersonChangeLog', 'get', `/persons/${id}/change-log`, 'audit:read', {}, 200],
+  ];
+  const call = async (method, path, scope, opts) =>
+    method === 'post' ? post(path, { justification: 'ตรวจสอบเอกสารประกอบการบรรจุ' }, scope, opts) : get(path, scope, opts);
+
+  test('คน INACTIVE: ไม่มี read:inactive -> 403 insufficient-scope, ไม่เขียน access_log; มี read:inactive -> ผ่าน (ทุก endpoint)', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ status: 'INACTIVE', first, last });
+    for (const [name, method, path, scope, opts, okStatus] of cases(personId)) {
+      // eslint-disable-next-line no-await-in-loop
+      const denied = await call(method, path, scope, { sub: 'hr-inactive', azp: 'hr-console', ...opts });
+      expect([name, denied.status]).toEqual([name, 403]);
+      expect(denied.body.type).toMatch(/insufficient-scope/);
+      expect(denied.body.detail).toContain('personnel:read:inactive');
+      // eslint-disable-next-line no-await-in-loop
+      const allowed = await call(method, path, `${scope} personnel:read:inactive`, { sub: 'hr-inactive', azp: 'hr-console', ...opts });
+      expect([name, allowed.status]).toEqual([name, okStatus]);
+    }
+    const { rows } = await adminPool.query(
+      `SELECT endpoint, response_status FROM audit.access_log WHERE subject_person_id = $1 AND actor_sub = 'hr-inactive'`,
+      [personId]
+    );
+    expect(rows.every((r) => r.response_status < 400)).toBe(true); // คำขอที่ถูกปฏิเสธไม่มีแถวใน access_log (เหมือน 403 อื่น)
+  });
+
+  test('คน ACTIVE ไม่ต้องมี read:inactive (ไม่กระทบ)', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ status: 'ACTIVE', first, last });
+    for (const [name, method, path, scope, opts, okStatus] of cases(personId)) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await call(method, path, scope, opts);
+      expect([name, res.status]).toEqual([name, okStatus]);
+    }
+  });
+
+  test('คน PENDING_CLAIM ไม่ต้องมี read:inactive และบุคคลที่ไม่มีอยู่ยังได้ 404 (ไม่ใช่ 403)', async () => {
+    const { first, last } = uniqueName();
+    const { personId } = await makePerson({ status: 'PENDING_CLAIM', first, last, withIdentity: false });
+    expect((await get(`/persons/${personId}`, 'personnel:read:basic')).status).toBe(200);
+    expect((await get(`/persons/${crypto.randomUUID()}`, 'personnel:read:basic')).status).toBe(404);
+  });
+});
+
 describe('GET /persons: ค้นชื่อเต็ม', () => {
   test('"ชื่อ นามสกุล" จับคู่ prefix ของชื่อและนามสกุล', async () => {
     const { first, last } = uniqueName();

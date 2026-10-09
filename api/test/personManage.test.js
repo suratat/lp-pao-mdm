@@ -27,7 +27,8 @@ afterAll(async () => {
 const ROLE = 'hr_master_data_admin';
 const SCOPE = 'personnel:manage:person';
 const uniqueSub = (prefix) => `${prefix}-${crypto.randomUUID()}`;
-const mgr = (extra = {}) => ({ scope: SCOPE, sub: uniqueSub('hr'), azp: 'hr-console', roles: [ROLE], ...extra });
+// hr-console ถือ personnel:read:inactive เป็น default scope จึงใส่ให้ทุกเทสต์ (คน INACTIVE ต้องมี scope นี้ - ทดสอบตรงๆ ที่ personsHrView.test.js)
+const mgr = (extra = {}) => ({ scope: `${SCOPE} personnel:read:inactive`, sub: uniqueSub('hr'), azp: 'hr-console', roles: [ROLE], ...extra });
 
 async function call(method, urlPath, auth, body) {
   const token = await ctx.auth.signToken(auth);

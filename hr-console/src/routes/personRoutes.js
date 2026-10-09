@@ -47,6 +47,8 @@ function fullName(basic = {}) {
   return `${basic.titleTh || ''}${basic.firstNameTh || ''} ${basic.lastNameTh || ''}`.trim() || '(ไม่มีชื่อ)';
 }
 
+const { messageFor } = require('../apiErrors');
+
 function apiErrorText(err) {
   if (err instanceof MdmApiError) {
     return `MDM API ปฏิเสธคำขอ (${err.status}): ${err.problem?.detail || err.problem?.title || ''}`;
@@ -348,7 +350,7 @@ function createPersonRoutes({ mdmClient }) {
       return send(req, res, 200, fullName(basic), body);
     } catch (err) {
       if (err instanceof MdmApiError && [403, 404].includes(err.status)) {
-        return send(req, res, err.status, 'ข้อมูลบุคคล', `<p class="error">${escapeHtml(err.status === 404 ? 'ไม่พบบุคคลนี้' : apiErrorText(err))}</p><p><a href="/hr/persons">← กลับไปรายการ</a></p>`);
+        return send(req, res, err.status, 'ข้อมูลบุคคล', `<p class="error">${escapeHtml(err.status === 404 ? 'ไม่พบบุคคลนี้' : messageFor(err))}</p><p><a href="/hr/persons">← กลับไปรายการ</a></p>`);
       }
       return next(err);
     }
