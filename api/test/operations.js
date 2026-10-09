@@ -287,10 +287,10 @@ function buildOperationDescriptors() {
     },
     {
       name: 'getPersonPid',
-      method: 'get',
+      method: 'post',
       pathTemplate: '/persons/:personId/pid',
       path: (ids) => `/persons/${ids.readPersonId}/pid`,
-      query: { justification: 'ทดสอบเหตุผลการถอดรหัสเลขบัตร' },
+      body: () => ({ justification: 'ทดสอบเหตุผลการถอดรหัสเลขบัตร' }),
       scope: 'personnel:read:pid',
       expectStatus: 200,
     },

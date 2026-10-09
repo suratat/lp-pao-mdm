@@ -140,14 +140,10 @@ function createMdmClient({ baseUrl }) {
     return stripEmployeeNo(await call('GET', `/api/v1/persons/${encodeURIComponent(personId)}/employment?pidFormat=masked`, accessToken));
   }
 
-  // เฉพาะฟังก์ชันนี้ที่คืนเลขเต็ม (GET /persons/{id}/pid - API บันทึกเหตุผลและผู้กดลง access_log) คืนแค่สตริงเลข ไม่คืน object
-  // ที่มีเหตุผล ห้าม caller เก็บค่านี้ลง session/log - justification ส่งเป็น query ตามสัญญา API (server-to-server) ไม่ผ่านเบราว์เซอร์
+  // เฉพาะฟังก์ชันนี้ที่คืนเลขเต็ม (POST /persons/{id}/pid - API บันทึกเหตุผลและผู้กดลง access_log) คืนแค่สตริงเลข ไม่คืน object
+  // ที่มีเหตุผล ห้าม caller เก็บค่านี้ลง session/log - justification ส่งใน JSON body (server-to-server) ไม่อยู่ใน URL
   async function revealPid(accessToken, personId, justification) {
-    const data = await call(
-      'GET',
-      `/api/v1/persons/${encodeURIComponent(personId)}/pid?justification=${encodeURIComponent(justification)}`,
-      accessToken
-    );
+    const data = await call('POST', `/api/v1/persons/${encodeURIComponent(personId)}/pid`, accessToken, { justification });
     return data.pid;
   }
 

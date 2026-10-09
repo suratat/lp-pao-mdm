@@ -565,7 +565,7 @@ erDiagram
 | Persons | `GET /persons` (ค้นหา, filter สังกัด/ตำแหน่ง/สถานะ/`updatedSince`, cursor pagination) | `personnel:read:basic` (+scope กลุ่มฟิลด์อื่น) | ระบบปลายทาง |
 | | `GET /persons/{personId}` (รองรับ `fields=` และ ETag/304) | `personnel:read:basic` (+) | ระบบปลายทาง |
 | | `GET /persons/{personId}/photo` | `personnel:read:photo` | ระบบปลายทาง |
-| | `GET /persons/{personId}/pid?justification=` (endpoint แยก, no-store, audit แยก) | `personnel:read:pid` | ระบบที่มีฐานกฎหมายต้องใช้ pid เท่านั้น |
+| | `POST /persons/{personId}/pid` (justification ใน JSON body, endpoint แยก, no-store, audit แยก) | `personnel:read:pid` | ระบบที่มีฐานกฎหมายต้องใช้ pid เท่านั้น |
 | | `POST /persons/lookup` (pid → personId, rate limit, 404 แบบเดียวกันทุกกรณี) | `personnel:lookup:pid` | ตอน migrate/เชื่อมครั้งแรก |
 | Provisioning | `POST /persons` (pre-provision → PENDING_CLAIM), `GET /claim-requests`, `POST /claim-requests/{id}/resolve` (PROVISION/LINK/REJECT), `GET /reverify/stale` | `personnel:provision` | HR console |
 | | `POST /persons/{id}/deactivate` (soft delete + revoke), `/reactivate`, `/reverify` | `personnel:write:employment` | HR console |

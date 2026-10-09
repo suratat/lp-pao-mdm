@@ -149,9 +149,9 @@ async function listChangeLogs(
   return { data, page: { nextCursor: hasMore ? page[page.length - 1].log_id : null, limit } };
 }
 
-// แถว access_log ที่เป็น "การเปิดเลขบัตร" (GET /persons/{uuid}/pid ที่สำเร็จ) - นิยามเดียวใช้ทั้งตอนแสดงสถานะรีวิว, กรอง reviewStatus และตรวจก่อนรีวิว
+// แถว access_log ที่เป็น "การเปิดเลขบัตร" (POST /persons/{uuid}/pid ที่สำเร็จ; แถวก่อน PR-B เป็น GET) - นิยามเดียวใช้ทั้งตอนแสดงสถานะรีวิว, กรอง reviewStatus และตรวจก่อนรีวิว
 // endpoint รุ่นก่อน #73 มี ?justification=... ต่อท้าย จึงยอมให้ตามหลัง /pid ด้วย ? หรือจบสตริง
-const PID_REVEAL_SQL = `(al.http_method = 'GET' AND al.response_status = 200
+const PID_REVEAL_SQL = `(al.http_method IN ('GET', 'POST') AND al.response_status = 200
   AND al.endpoint ~ '/persons/[0-9a-fA-F-]{36}/pid(\\?|$)')`;
 
 const REVIEW_STATUSES = ['PENDING', 'REVIEWED', 'NEEDS_EXPLANATION'];

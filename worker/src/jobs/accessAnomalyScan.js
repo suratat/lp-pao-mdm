@@ -8,7 +8,7 @@
 // นิยามแถวที่นับ (ตรงกับที่ api/src/middleware/accessLog.js เขียน):
 //  - BULK_VIEW  : เปิดดูบุคคลรายคน = endpoint มี /persons/<uuid> นับ DISTINCT subject_person_id ต่อ actor+client ในหน้าต่าง W นาที
 //                 ไม่นับแถวของ searchPersons (endpoint /persons?... ไม่มี uuid - ผลค้นหา 1 หน้าเขียนได้ถึง 100 แถว) และไม่นับ response >= 400
-//  - PID_REVEAL_FREQUENT: GET /persons/<uuid>/pid ที่สำเร็จ (200) นับจำนวนครั้งต่อ actor+client ในหน้าต่าง W นาที (นิยามเดียวกับ PID_REVEAL_SQL ใน
+//  - PID_REVEAL_FREQUENT: POST /persons/<uuid>/pid ที่สำเร็จ (200; แถวก่อน PR-B เป็น GET) นับจำนวนครั้งต่อ actor+client ในหน้าต่าง W นาที (นิยามเดียวกับ PID_REVEAL_SQL ใน
 //                 auditService.js ของ API)
 //  - OFF_HOURS  : ทุกแถวที่เกิดนอก [workStart, workEnd) จ.-ศ. เวลา Asia/Bangkok รวมเสาร์-อาทิตย์ทั้งวัน 1 alert ต่อ actor+client ต่อวัน (ตามเวลาไทย)
 const OFF_HOURS_TZ = 'Asia/Bangkok';
@@ -54,7 +54,7 @@ const PID_REVEAL_SQL = `
     WHERE al.accessed_at > $1::timestamptz - make_interval(mins => $2::int)
       AND al.accessed_at <= $1::timestamptz
       AND al.keycloak_client_id = ANY($4::text[])
-      AND al.http_method = 'GET'
+      AND al.http_method IN ('GET', 'POST')
       AND al.response_status = 200
       AND al.endpoint ~ '${PID_REVEAL_RE}'
     GROUP BY 1, 2

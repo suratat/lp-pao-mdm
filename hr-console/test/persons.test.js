@@ -116,11 +116,13 @@ describe('mdmClient: ชั้นป้องกันเลขบัตรเ�
     expect(input.a[0].employeeNo).toBe('x');
   });
 
-  test('revealPid ส่งเหตุผลไปกับ GET /pid และคืนเฉพาะเลข (ไม่ถูก strip)', async () => {
+  test('revealPid ส่งเหตุผลใน JSON body ของ POST /pid (ไม่อยู่ใน URL) และคืนเฉพาะเลข (ไม่ถูก strip)', async () => {
     responder = () => ({ personId: 'p1', pid: '3100000005678' });
     const pid = await client().revealPid('t', 'p1', 'ตรวจเอกสารบรรจุ');
     expect(pid).toBe('3100000005678');
-    expect(calls[0].url).toContain('/api/v1/persons/p1/pid?justification=');
+    expect(calls[0].url).toMatch(/\/api\/v1\/persons\/p1\/pid$/);
+    expect(calls[0].init.method).toBe('POST');
+    expect(JSON.parse(calls[0].init.body)).toEqual({ justification: 'ตรวจเอกสารบรรจุ' });
   });
 });
 

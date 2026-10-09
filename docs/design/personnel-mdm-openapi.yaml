@@ -8,7 +8,7 @@ info:
 
     **หลักการที่ผู้เรียกใช้ต้องทราบ**
     - ระบบปลายทางอ้างอิงบุคลากรด้วย `personId` (UUID) เท่านั้น เลขบัตรประชาชน (pid) จะไม่ปรากฏใน response ใด ๆ
-      ยกเว้น `GET /persons/{personId}/pid` ซึ่งต้องมี scope `personnel:read:pid` และต้องระบุเหตุผลทุกครั้ง
+      ยกเว้น `POST /persons/{personId}/pid` ซึ่งต้องมี scope `personnel:read:pid` และต้องระบุเหตุผลทุกครั้ง
     - การเข้าถึงข้อมูลควบคุมแบบ field-level ด้วย OAuth2 scope จาก Keycloak
       แต่ละกลุ่มฟิลด์ระบุ scope ที่ต้องใช้ไว้ใน `x-required-scope` ของ schema ฟิลด์ที่ไม่มีสิทธิ์จะถูกตัดออกจาก response (ไม่ใช่ null)
     - ทุกคำขอที่คืนข้อมูลส่วนบุคคลถูกบันทึกใน access log (PDPA audit trail) พร้อม `purpose` ของระบบผู้เรียก
@@ -273,22 +273,28 @@ paths:
   /persons/{personId}/pid:
     parameters:
       - $ref: '#/components/parameters/PersonId'
-    get:
+    post:
       tags: [Persons]
       summary: Decrypt and return the national ID number (highly restricted)
       description: |
         คืนเลขบัตรประชาชนแบบถอดรหัสแล้ว สำหรับระบบที่มีฐานทางกฎหมายต้องใช้ pid เท่านั้น (เช่น ส่งข้อมูลให้กรมบัญชีกลาง กบข. หรือประกันสังคม)
         - ต้องมี scope `personnel:read:pid` ซึ่งอนุมัติเป็นราย client โดย DPO
-        - ต้องส่ง `justification` ทุกครั้ง และถูกบันทึกใน access log แบบแยกตรวจสอบได้
+        - ต้องส่ง `justification` ทุกครั้งใน JSON body (ไม่ส่งทาง query string เพื่อไม่ให้เหตุผลไปอยู่ใน URL/log ของ proxy) และถูกบันทึกใน access log แบบแยกตรวจสอบได้
+        - เป็น `POST` ตั้งแต่ PR-B (เดิมเป็น `GET ...?justification=`; แถวเก่าใน access log ยังเป็น `GET`)
         - response ห้าม cache, ระบบผู้เรียกห้ามเก็บ pid ลง log ของตนเอง
       operationId: getPersonPid
       security:
         - keycloak: [personnel:read:pid]
-      parameters:
-        - name: justification
-          in: query
-          required: true
-          schema: { type: string, minLength: 10, maxLength: 500 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [justification]
+              additionalProperties: false
+              properties:
+                justification: { type: string, minLength: 10, maxLength: 500 }
       responses:
         '200':
           description: เลขบัตรประชาชน
@@ -1416,7 +1422,7 @@ paths:
         - name: reviewStatus
           in: query
           description: |
-            เฉพาะรายการ "เปิดเลขบัตร" (`GET /persons/{id}/pid` ที่สำเร็จ) ที่สถานะรีวิวล่าสุดตรงค่านี้
+            เฉพาะรายการ "เปิดเลขบัตร" (`POST /persons/{id}/pid` ที่สำเร็จ และแถวเก่าที่เป็น `GET`) ที่สถานะรีวิวล่าสุดตรงค่านี้
             `PENDING` = ยังไม่มีผลรีวิว (ไม่เก็บเป็นแถว คำนวณตอนอ่าน) เรียงเก่า -> ใหม่
           schema: { type: string, enum: [PENDING, REVIEWED, NEEDS_EXPLANATION] }
         - $ref: '#/components/parameters/Cursor'
