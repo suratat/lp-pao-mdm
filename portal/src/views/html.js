@@ -15,6 +15,10 @@ function escapeHtml(value) {
 const NAV_CONSENTS_PLACEHOLDER = '<!--nav-consents-->';
 const NAV_CONSENTS_LINK = '<a href="/portal/me/consents">ความยินยอม</a>';
 
+// เมนู "ผู้ติดต่อฉุกเฉิน" ขึ้นกับ PORTAL_EMERGENCY_CONTACTS_ENABLED - กลไกเดียวกับ NAV_CONSENTS_PLACEHOLDER
+const NAV_EMERGENCY_PLACEHOLDER = '<!--nav-emergency-contacts-->';
+const NAV_EMERGENCY_LINK = '<a href="/portal/me/emergency-contacts">ผู้ติดต่อฉุกเฉิน</a>';
+
 function layout(title, bodyHtml) {
   return `<!doctype html>
 <html lang="th">
@@ -36,7 +40,7 @@ function layout(title, bodyHtml) {
   <nav>
     <a href="/portal/me">ข้อมูลของฉัน</a>
     <a href="/portal/me/contact">ข้อมูลติดต่อ</a>
-    <a href="/portal/me/emergency-contacts">ผู้ติดต่อฉุกเฉิน</a>
+    ${NAV_EMERGENCY_PLACEHOLDER}
     ${NAV_CONSENTS_PLACEHOLDER}
     <a href="/portal/me/report-identity-issue">แจ้งข้อมูลผิด</a>
     <a href="/auth/logout">ออกจากระบบ</a>
@@ -47,4 +51,11 @@ function layout(title, bodyHtml) {
 </html>`;
 }
 
-module.exports = { escapeHtml, layout, NAV_CONSENTS_PLACEHOLDER, NAV_CONSENTS_LINK };
+module.exports = {
+  escapeHtml,
+  layout,
+  NAV_CONSENTS_PLACEHOLDER,
+  NAV_CONSENTS_LINK,
+  NAV_EMERGENCY_PLACEHOLDER,
+  NAV_EMERGENCY_LINK,
+};
