@@ -430,18 +430,18 @@ describe('PATCH /persons/{id}/contact', () => {
     const auth = mgr();
     const first = await patch(personId, version, {
       mobilePhone: '0812345678', phoneAlt: '021112222', emailPersonal: 'a@example.com', lineId: 'line.a', sameAsRegistered: false,
-      currentAddress: { houseNo: '99/1', moo: '3', soi: 'ซอย 5', road: 'ถนนทดสอบ', postcode: '52000', fullText: '99/1 หมู่ 3 ต.เวียงเหนือ', subdistrict: { code: '520101' }, district: { code: '5201' }, province: { code: '52' } },
+      currentAddress: { moo: '3', soi: 'ซอย 5', road: 'ถนนทดสอบ', postcode: '52000', subdistrict: { code: '520101' }, district: { code: '5201' }, province: { code: '52' } },
     }, auth);
     expect(first.status).toBe(200);
     expect(first.body.version).toBe(version + 1);
     expect(first.body.contact).toMatchObject({ mobilePhone: '0812345678', phoneAlt: '021112222', emailPersonal: 'a@example.com', lineId: 'line.a', sameAsRegistered: false, updatedBy: 'HR' });
-    expect(first.body.contact.currentAddress).toMatchObject({ houseNo: '99/1', moo: '3', postcode: '52000', subdistrict: { code: '520101' }, province: { code: '52' } });
+    expect(first.body.contact.currentAddress).toMatchObject({ moo: '3', postcode: '52000', subdistrict: { code: '520101' }, province: { code: '52' } });
 
     // แก้เฉพาะเบอร์มือถือ + ล้าง lineId (null) + ล้าง phoneAlt (สตริงว่าง) + แก้ที่อยู่เฉพาะ road (ส่วนอื่นของที่อยู่ต้องอยู่เหมือนเดิม)
     const second = await patch(personId, first.body.version, { mobilePhone: '0899999999', lineId: null, phoneAlt: '   ', currentAddress: { road: 'ถนนใหม่', district: null } }, auth);
     expect(second.status).toBe(200);
     expect(second.body.contact).toMatchObject({ mobilePhone: '0899999999', lineId: null, phoneAlt: null, emailPersonal: 'a@example.com', sameAsRegistered: false });
-    expect(second.body.contact.currentAddress).toMatchObject({ houseNo: '99/1', road: 'ถนนใหม่', postcode: '52000', subdistrict: { code: '520101' } });
+    expect(second.body.contact.currentAddress).toMatchObject({ road: 'ถนนใหม่', postcode: '52000', subdistrict: { code: '520101' } });
     expect(second.body.contact.currentAddress.district).toBeUndefined();
 
     const logs = (await logsFor(personId)).filter((l) => l.table_name === 'person_contact');
@@ -480,9 +480,9 @@ describe('PATCH /persons/{id}/contact', () => {
   test('ความยาว/รูปแบบเกินคอลัมน์ DB ทุกฟิลด์ -> 400 (ไม่ใช่ 500) และไม่เขียน; ความยาวสูงสุดพอดีผ่าน', async () => {
     const { personId, version } = await provision();
     const bad = [
-      { mobilePhone: '081234567' + '0'.repeat(5) }, { mobilePhone: 'abc' }, { phoneAlt: '0'.repeat(21) }, { emailPersonal: `${'a'.repeat(250)}@example.com` }, { emailPersonal: 'not-an-email' },
-      { lineId: 'l'.repeat(101) }, { currentAddress: { houseNo: 'h'.repeat(51) } }, { currentAddress: { moo: 'm'.repeat(21) } }, { currentAddress: { soi: 's'.repeat(101) } },
-      { currentAddress: { road: 'r'.repeat(101) } }, { currentAddress: { postcode: '1'.repeat(11) } }, { currentAddress: { fullText: 'f'.repeat(2001) } },
+      { mobilePhone: '0'.repeat(31) }, { phoneAlt: '0'.repeat(31) }, { emailPersonal: 'e'.repeat(301) },
+      { lineId: 'l'.repeat(101) }, { currentAddress: { moo: 'm'.repeat(21) } }, { currentAddress: { soi: 's'.repeat(101) } },
+      { currentAddress: { road: 'r'.repeat(101) } }, { currentAddress: { postcode: '1'.repeat(11) } },
       { currentAddress: { subdistrict: { code: '1'.repeat(11) } } }, { currentAddress: { province: { code: '1'.repeat(11) } } },
     ];
     for (const body of bad) {
@@ -493,8 +493,8 @@ describe('PATCH /persons/{id}/contact', () => {
     expect(await versionOf(personId)).toBe(version);
 
     const max = await patch(personId, version, {
-      phoneAlt: '0'.repeat(20), lineId: 'l'.repeat(100),
-      currentAddress: { houseNo: 'h'.repeat(50), moo: 'm'.repeat(20), soi: 's'.repeat(100), road: 'r'.repeat(100), postcode: '1'.repeat(10), fullText: 'f'.repeat(2000), subdistrict: { code: '1'.repeat(10) } },
+      phoneAlt: '0812345678', lineId: 'l'.repeat(100),
+      currentAddress: { moo: 'm'.repeat(20), soi: 's'.repeat(100), road: 'r'.repeat(100), postcode: '1'.repeat(10), subdistrict: { code: '1'.repeat(10) } },
     });
     expect(max.status).toBe(200);
   });

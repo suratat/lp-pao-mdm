@@ -609,7 +609,7 @@ function buildOperationDescriptors() {
       path: (ids) => `/persons/${ids.manageContactPersonId}/contact`,
       scope: 'personnel:manage:person',
       roles: ['hr_master_data_admin'],
-      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', mobilePhone: '0812345678', currentAddress: { houseNo: '1', province: { code: '52' } } },
+      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', mobilePhone: '0812345678', currentAddress: { road: 'ถนนทดสอบ', province: { code: '52' } } },
       expectStatus: 200,
     },
     {

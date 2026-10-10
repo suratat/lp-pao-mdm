@@ -687,7 +687,10 @@ paths:
     put:
       tags: [Me]
       summary: Update own contact information (self-service)
-      description: เจ้าของข้อมูลแก้ไขได้เฉพาะฟิลด์ที่ไม่ได้มาจาก ThaID และไม่ใช่ข้อมูลการปฏิบัติงาน สร้างเหตุการณ์ `CONTACT_UPDATED`
+      description: |
+        เจ้าของข้อมูลแก้ไขได้เฉพาะฟิลด์ที่ไม่ได้มาจาก ThaID และไม่ใช่ข้อมูลการปฏิบัติงาน สร้างเหตุการณ์ `CONTACT_UPDATED`
+        ตรวจรูปแบบเบอร์/อีเมลตามที่อธิบายใน `ContactUpdate` (ไม่ผ่าน -> 422 `invalid-contact`)
+        `houseNo` และ `fullText` ของที่อยู่ปัจจุบันไม่รับแล้ว แต่ค่าเดิมที่เก็บไว้ถูกคงไว้ ไม่ถูกล้างเมื่อ PUT
       operationId: updateMyContact
       security:
         - keycloak: [personnel:self]
@@ -703,6 +706,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Contact' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /me/emergency-contacts:
     put:
@@ -1993,13 +1997,34 @@ components:
 
     ContactUpdate:
       type: object
+      description: |
+        ข้อมูลติดต่อที่เจ้าตัวแก้เอง (`PUT /me/contact`) ตรวจรูปแบบที่ API (422 `invalid-contact` พร้อม `errors[{field, message}]` ภาษาไทย) เฉพาะฟิลด์ที่ส่งมา **และ** ต่างจากค่าที่เก็บไว้
+        (ค่าเดิมที่ไม่ได้แก้ผ่านเสมอ ไม่ถูกบังคับแก้ย้อนหลัง):
+        - `mobilePhone`: ลบช่องว่าง/ขีด/วงเล็บ/จุด แปลง `+66`/`66` นำหน้าเป็น `0` แล้วต้องเป็นตัวเลข 10 หลักขึ้นต้น 06, 08 หรือ 09; เก็บเป็นตัวเลขล้วน
+        - `phoneAlt`: มือถือ (กฎเดียวกัน) หรือโทรศัพท์บ้าน/สำนักงาน 9 หลักขึ้นต้น 02, 03, 04, 05 หรือ 07; เก็บเป็นตัวเลขล้วน
+        - `emailPersonal` (ป้ายที่ผู้ใช้เห็นคือ "อีเมล"): trim, ไม่มีช่องว่าง, มี `@` หนึ่งตัว, โดเมนมีจุดและไม่ขึ้นต้น/ลงท้ายด้วยจุดหรือ `-`, ยาวไม่เกิน 254, ไม่ใช่ IP
+        - สตริงว่าง = ล้างค่า (null)
+        ไม่รับ `currentAddress.houseNo` และ `currentAddress.fullText` อีกต่อไป (400) ข้อมูลที่เก็บไว้เดิมคงอยู่ ไม่ถูกลบหรือแก้โดย endpoint นี้
       properties:
-        mobilePhone: { type: [string, 'null'], pattern: '^0[0-9]{8,9}$' }
-        phoneAlt: { type: [string, 'null'] }
-        emailPersonal: { type: [string, 'null'], format: email }
+        mobilePhone: { type: [string, 'null'], maxLength: 30 }
+        phoneAlt: { type: [string, 'null'], maxLength: 30 }
+        emailPersonal: { type: [string, 'null'], maxLength: 300 }
         lineId: { type: [string, 'null'] }
         sameAsRegistered: { type: boolean }
-        currentAddress: { $ref: '#/components/schemas/Address' }
+        currentAddress: { $ref: '#/components/schemas/CurrentAddressUpdate' }
+
+    CurrentAddressUpdate:
+      type: object
+      description: ที่อยู่ปัจจุบันในคำขอแก้ไข - ไม่มี `houseNo` และ `fullText` (เลิกเก็บแล้ว) ส่งฟิลด์เหล่านี้มา = 400
+      additionalProperties: false
+      properties:
+        moo: { type: string }
+        soi: { type: string }
+        road: { type: string }
+        subdistrict: { $ref: '#/components/schemas/AreaCode' }
+        district: { $ref: '#/components/schemas/AreaCode' }
+        province: { $ref: '#/components/schemas/AreaCode' }
+        postcode: { type: string }
 
     ManageProfile:
       type: object
@@ -2059,22 +2084,24 @@ components:
       allOf:
         - $ref: '#/components/schemas/ManageWriteBase'
         - type: object
-          description: ส่งอย่างน้อยหนึ่งฟิลด์; ฟิลด์ที่ไม่ส่ง = ไม่แตะ, null/สตริงว่าง = ล้างค่า
+          description: |
+            ส่งอย่างน้อยหนึ่งฟิลด์; ฟิลด์ที่ไม่ส่ง = ไม่แตะ, null/สตริงว่าง = ล้างค่า
+            ตรวจรูปแบบที่ API เฉพาะฟิลด์ที่ส่งมาและต่างจากค่าเดิม (422 `invalid-contact` พร้อม `errors[{field, message}]` ภาษาไทย) กติกา `mobilePhone`/`phoneAlt`/`emailPersonal`
+            เหมือน `ContactUpdate` (เก็บเบอร์เป็นตัวเลขล้วนหลัง normalize) ไม่รับ `currentAddress.houseNo` / `currentAddress.fullText` (400) ค่าเดิมที่เก็บไว้คงอยู่
           properties:
-            mobilePhone: { type: [string, 'null'], maxLength: 20, pattern: '^(0[0-9]{8,9})?$' }
-            phoneAlt: { type: [string, 'null'], maxLength: 20 }
-            emailPersonal: { type: [string, 'null'], format: email, maxLength: 255 }
+            mobilePhone: { type: [string, 'null'], maxLength: 30 }
+            phoneAlt: { type: [string, 'null'], maxLength: 30 }
+            emailPersonal: { type: [string, 'null'], maxLength: 300 }
             lineId: { type: [string, 'null'], maxLength: 100 }
             sameAsRegistered: { type: boolean }
             currentAddress:
               type: object
+              additionalProperties: false
               properties:
-                houseNo: { type: [string, 'null'], maxLength: 50 }
                 moo: { type: [string, 'null'], maxLength: 20 }
                 soi: { type: [string, 'null'], maxLength: 100 }
                 road: { type: [string, 'null'], maxLength: 100 }
                 postcode: { type: [string, 'null'], maxLength: 10 }
-                fullText: { type: [string, 'null'], maxLength: 2000 }
                 subdistrict: { $ref: '#/components/schemas/AreaCodePatch' }
                 district: { $ref: '#/components/schemas/AreaCodePatch' }
                 province: { $ref: '#/components/schemas/AreaCodePatch' }

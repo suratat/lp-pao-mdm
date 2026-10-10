@@ -78,12 +78,12 @@ erDiagram
 
     PERSON_CONTACT {
         uuid person_id PK "FK to PERSON, 1:1"
-        varchar mobile_phone
-        varchar phone_alt
-        varchar email_personal
+        varchar mobile_phone "digits only, 10 หลัก ขึ้นต้น 06/08/09"
+        varchar phone_alt "digits only; มือถือ หรือ โทรศัพท์บ้าน 9 หลัก 02/03/04/05/07"
+        varchar email_personal "UI ใช้ป้ายว่า อีเมล; ตรวจรูปแบบ"
         varchar line_id
         bool same_as_registered
-        text cur_address_text "current address"
+        text cur_address_text "เลิกเก็บ (API ไม่รับแล้ว) ข้อมูลเดิมคงไว้"
         varchar cur_subdistrict_code
         varchar cur_district_code
         varchar cur_province_code

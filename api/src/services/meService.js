@@ -2,6 +2,7 @@ const { withTransaction } = require('../db/transaction');
 const { HttpProblem } = require('../security/httpProblem');
 const { presentContact, presentEmergencyContacts } = require('./personPresenter');
 const { writeChangeLog, actorFromSelf } = require('./changeLogWriter');
+const { validateContactFields } = require('../security/contactFields');
 
 // actor ของงานในไฟล์นี้คือเจ้าของข้อมูลเอง (ผ่าน portal): sub ใน Bearer token เป็น service account ของ portal จึงใช้ personId แทน
 function selfActor(personId, auth) {
@@ -36,12 +37,16 @@ async function updateMyContact(pool, personId, body, auth) {
     const existing = existingRows[0] || null;
     const addr = body.currentAddress || {};
 
+    // ตรวจรูปแบบเฉพาะฟิลด์ที่ส่งมาและต่างจากค่าที่เก็บไว้ (ค่าเดิมที่ไม่ได้แก้ผ่านเสมอ); เบอร์เก็บเป็นตัวเลขล้วน, ค่าว่าง = null
+    const checked = validateContactFields(body, existing);
+
     const newValues = {
-      mobile_phone: body.mobilePhone ?? null,
-      phone_alt: body.phoneAlt ?? null,
-      email_personal: body.emailPersonal ?? null,
+      mobile_phone: 'mobilePhone' in checked ? checked.mobilePhone : (body.mobilePhone ?? null),
+      phone_alt: 'phoneAlt' in checked ? checked.phoneAlt : (body.phoneAlt ?? null),
+      email_personal: 'emailPersonal' in checked ? checked.emailPersonal : (body.emailPersonal ?? null),
       line_id: body.lineId ?? null,
-      cur_house_no: addr.houseNo ?? null,
+      // บ้านเลขที่ / ที่อยู่แบบเต็ม เลิกเก็บแล้ว (request ไม่รับ) แต่ข้อมูลเดิมต้องไม่ถูกล้างเมื่อ PUT: คงค่าที่เก็บไว้
+      cur_house_no: existing?.cur_house_no ?? null,
       cur_moo: addr.moo ?? null,
       cur_soi: addr.soi ?? null,
       cur_road: addr.road ?? null,
@@ -49,7 +54,7 @@ async function updateMyContact(pool, personId, body, auth) {
       cur_district_code: addr.district?.code ?? null,
       cur_province_code: addr.province?.code ?? null,
       cur_postcode: addr.postcode ?? null,
-      cur_address_text: addr.fullText ?? null,
+      cur_address_text: existing?.cur_address_text ?? null,
     };
     const sameAsRegistered = body.sameAsRegistered ?? false;
 
