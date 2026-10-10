@@ -62,7 +62,7 @@ class FormErrors extends Error {
 
 const syntheticProblem = (status, type) => new MdmApiError(status, { type: `https://mdm.lp-pao.go.th/problems/${type}` });
 
-function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
+function createPersonProfileRoutes({ mdmClient, emailCheck = {}, emergencyContactsEnabled = false }) {
   const router = express.Router();
   const guard = [noStore, requireMasterDataAdmin];
   const send = (req, res, status, title, body) => res.status(status).send(layout(title, body, pageOpts(req)));
@@ -293,12 +293,6 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
     return values;
   };
 
-  router.get('/hr/persons/:personId/emergency-contacts/edit', ...guard, (req, res, next) =>
-    showForm(req, res, next, {
-      title: 'แก้ผู้ติดต่อฉุกเฉิน',
-      render: (profile) => renderEmergencyForm(req, { personId: profile.personId, version: profile.version, values: emergencyValuesFrom(profile) }),
-    })
-  );
 
   // แถวที่กรอกไม่ครบ "ต้องปฏิเสธทั้งฟอร์ม" บอกว่าช่องไหนขาดอะไร (ห้ามทิ้งเงียบ - บั๊กเดิมของ portal) แถวว่างทั้งแถวคือไม่มีผู้ติดต่อ
   const validateEmergency = (body) => {
@@ -329,16 +323,26 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
     })),
   });
 
-  router.post('/hr/persons/:personId/emergency-contacts/edit', ...guard, bodyParser, (req, res, next) =>
-    handleWrite(req, res, next, {
-      title: 'แก้ผู้ติดต่อฉุกเฉิน',
-      formPath: 'emergency-contacts/edit',
-      validate: validateEmergency,
-      compute: computeEmergency,
-      call: (token, personId, body) => mdmClient.replaceEmergencyContacts(token, personId, body),
-      savedCode: 'emergency',
-    })
-  );
+  // ปิดอยู่ (HR_EMERGENCY_CONTACTS_ENABLED ไม่เป็น true) = ไม่ mount จึงเป็น 404; เปิดกลับได้ด้วย env เดียว (ข้อมูลและ API ไม่ถูกแตะ)
+  if (emergencyContactsEnabled) {
+    router.get('/hr/persons/:personId/emergency-contacts/edit', ...guard, (req, res, next) =>
+      showForm(req, res, next, {
+        title: 'แก้ผู้ติดต่อฉุกเฉิน',
+        render: (profile) => renderEmergencyForm(req, { personId: profile.personId, version: profile.version, values: emergencyValuesFrom(profile) }),
+      })
+    );
+
+    router.post('/hr/persons/:personId/emergency-contacts/edit', ...guard, bodyParser, (req, res, next) =>
+      handleWrite(req, res, next, {
+        title: 'แก้ผู้ติดต่อฉุกเฉิน',
+        formPath: 'emergency-contacts/edit',
+        validate: validateEmergency,
+        compute: computeEmergency,
+        call: (token, personId, body) => mdmClient.replaceEmergencyContacts(token, personId, body),
+        savedCode: 'emergency',
+      })
+    );
+  }
 
   // ------------------------------------------------------------------------------------------------- ชื่อ-นามสกุลไทย/วันเกิด (HR กรอก)
 
