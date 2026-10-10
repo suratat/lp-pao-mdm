@@ -5,7 +5,6 @@ const { loadAndPresentPerson } = require('./personPresenter');
 const { closeAndOpenEmployment, withCurrentEmployeeNo } = require('./employmentShared');
 const { writeChangeLog, writeChangeLogs, actorFromAuth } = require('./changeLogWriter');
 const { composeReason } = require('./reason');
-const { assertBirthDateInRange } = require('./personManageService');
 
 const PID_KEY_NAME = 'mdm-pid';
 
@@ -18,14 +17,13 @@ function logEmploymentChanges(client, personId, changes, reason, actor) {
 // เพราะตอนนั้นยังไม่มี endpoint นี้)
 async function provisionPerson({ pool, vault, pepper }, body, auth) {
   const actor = actorFromAuth(auth);
-  const { pid, expectedFirstNameTh, expectedLastNameTh, expectedBirthDate, employment, externalIds } = body;
+  const { pid, expectedFirstNameTh, expectedLastNameTh, employment, externalIds } = body;
 
   if (!isValidPid(pid)) {
     throw new HttpProblem(400, 'invalid-pid', 'เลขบัตรประชาชนไม่ถูกต้อง', 'pid ไม่ผ่านการตรวจ checksum (mod 11)');
   }
   // เหตุผลบังคับ (422 ถ้าว่าง/มีเลข 13 หลัก) - ตรวจก่อนแตะ DB ทุกอย่าง
   const reason = composeReason(body.reason, employment?.referenceDocument);
-  assertBirthDateInRange(expectedBirthDate);
 
   const hash = pidHash(pid, pepper);
 
@@ -38,17 +36,16 @@ async function provisionPerson({ pool, vault, pepper }, body, auth) {
     }
 
     const { rows: inserted } = await client.query(
-      `INSERT INTO mdm.person (pid_hash, status, verification_status, expected_first_name_th, expected_last_name_th, expected_birth_date)
-       VALUES ($1, 'PENDING_CLAIM', 'UNVERIFIED', $2, $3, $4)
+      `INSERT INTO mdm.person (pid_hash, status, verification_status, expected_first_name_th, expected_last_name_th)
+       VALUES ($1, 'PENDING_CLAIM', 'UNVERIFIED', $2, $3)
        RETURNING person_id`,
-      [hash, expectedFirstNameTh, expectedLastNameTh, expectedBirthDate ?? null]
+      [hash, expectedFirstNameTh, expectedLastNameTh]
     );
     const personId = inserted[0].person_id;
     // ข้อมูลที่ HR กรอกตอนสร้างก็ต้องมีร่องรอย (ค่าเดิมไม่มี -> ค่าใหม่) ใน transaction เดียวกัน
     for (const [column, value] of [
       ['expected_first_name_th', expectedFirstNameTh],
       ['expected_last_name_th', expectedLastNameTh],
-      ['expected_birth_date', expectedBirthDate ?? null],
     ]) {
       if (value === null) continue;
       // eslint-disable-next-line no-await-in-loop

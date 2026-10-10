@@ -94,6 +94,7 @@ claims ใน access token ที่วัดจริงกับ Keycloak 26.0
   (เรียก `GET /persons/{id}/manage-profile` ด้วยคนแรกต้องได้ 403 `insufficient-role`)
 - **แถวใน `field_policy`** (`person.expected_first_name_th`, `person.expected_last_name_th`, `person.expected_birth_date`) ใช้ `required_scope = personnel:manage:person` เพื่อบันทึกชั้นความลับ
   (วันเกิด = CONFIDENTIAL ปกปิดค่าในหน้า DPO/ประวัติ) ไม่มีผลต่อการ mask response ของ `Person`
+  (เลิกเก็บ `expected_birth_date` แล้ว: คอลัมน์ ข้อมูลเดิม และแถว field_policy คงไว้เพื่ออ่านประวัติเก่า ไม่มีโค้ดเขียนค่านี้อีก)
 
 ## PR-C: scope `personnel:read:inactive` เป็น Default ของ `dpo-console`
 

@@ -542,9 +542,10 @@ paths:
       - $ref: '#/components/parameters/PersonId'
     patch:
       tags: [Provisioning]
-      summary: Edit the identity data HR expects (names, birth date) of a person who never verified with ThaID
+      summary: Edit the names HR expects of a person who never verified with ThaID
       description: |
-        แก้ชื่อ-นามสกุลไทยและวันเกิดที่ HR กรอกไว้ (คอลัมน์ `expected_*` บน `mdm.person` ไม่แตะ `person_identity`) ส่งเฉพาะฟิลด์ที่แก้ `birthDate: null` ล้างค่า
+        แก้ชื่อ-นามสกุลไทยที่ HR กรอกไว้ (คอลัมน์ `expected_*` บน `mdm.person` ไม่แตะ `person_identity`) ส่งเฉพาะฟิลด์ที่แก้ ไม่ส่งฟิลด์ใดเลย -> 422 `no-changes-requested`
+        **เลิกเก็บวันเกิดที่ HR กรอกแล้ว:** ส่ง `birthDate` มา = 400 (ค่าเดิมในคอลัมน์ `expected_birth_date` คงอยู่ ไม่ถูกลบ/แก้ และไม่ถูกคืนใน `manage-profile`; วันเกิดจาก ThaID คือ `identity.birthDate` ไม่เกี่ยว)
         ThaID เป็นหลักเสมอ: ตอน claim ค่าจาก ThaID เขียนลง `person_identity` โดยไม่ดูค่าเหล่านี้ (ไม่ตรงกันก็เก็บเฉยๆ ไม่แจ้งเตือน)
         **คนที่เคยยืนยันแล้ว** (`thaid_verified_at` หรือ `claimed_at` ไม่เป็น NULL หรือสถานะไม่ใช่ `PENDING_CLAIM`) -> 409 `identity-locked` ที่ API และ trigger ใน DB
         กันซ้ำอีกชั้น (การแข่งกับ `/sync/thaid` ถูกกันด้วยการล็อกแถว person `FOR UPDATE` ทั้งสองฝั่ง)
@@ -2030,7 +2031,6 @@ components:
           properties:
             firstNameTh: { type: string }
             lastNameTh: { type: string }
-            birthDate: { type: string, format: date }
             editable: { type: boolean, description: แก้ได้เฉพาะคนที่ยังไม่เคยยืนยัน ThaID }
             lockedReason:
               type: [string, 'null']
@@ -2065,7 +2065,7 @@ components:
           properties:
             firstNameTh: { type: string, minLength: 1, maxLength: 200 }
             lastNameTh: { type: string, minLength: 1, maxLength: 200 }
-            birthDate: { type: [string, 'null'], format: date, description: ช่วง 1900-01-01 ถึงวันนี้ (นอกช่วง -> 422); null = ล้างค่า }
+            birthDate: { not: {}, description: เลิกเก็บวันเกิดที่ HR กรอกแล้ว - ส่งมา = 400 }
 
     ContactPatch:
       allOf:
@@ -2351,10 +2351,7 @@ components:
       required: [pid, expectedFirstNameTh, expectedLastNameTh, employment, reason]
       properties:
         pid: { $ref: '#/components/schemas/Pid' }
-        expectedBirthDate:
-          type: string
-          format: date
-          description: วันเกิดที่ HR กรอก (รอยืนยันด้วย ThaID, ThaID เป็นหลักเสมอ) ช่วง 1900-01-01 ถึงวันนี้ (นอกช่วง -> 422)
+        expectedBirthDate: { not: {}, description: เลิกเก็บวันเกิดที่ HR กรอกแล้ว - ส่งมา = 400 }
         reason: { type: string, minLength: 1, maxLength: 500, description: เหตุผลที่สร้าง (บังคับ ห้ามมีเลข 13 หลัก) }
         expectedFirstNameTh: { type: string, minLength: 1, maxLength: 200 }
         expectedLastNameTh: { type: string, minLength: 1, maxLength: 200 }

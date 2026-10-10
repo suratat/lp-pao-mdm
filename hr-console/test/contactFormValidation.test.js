@@ -55,7 +55,6 @@ async function createPerson(agent) {
     pid: makeFakePid(),
     firstNameTh: `สมชาย${tag}`,
     lastNameTh: `ทดสอบ${tag}`,
-    birthDate: '1990-05-17',
     reason: 'เพิ่มบุคลากรใหม่ตามคำสั่งบรรจุ',
     personnelType: 'CIVIL_SERVANT',
     orgUnitId: orgId,

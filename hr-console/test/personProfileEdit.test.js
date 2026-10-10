@@ -6,7 +6,7 @@ const { MIGRATOR_DATABASE_URL } = require('../../api/test/config');
 const { makeFakePid } = require('../../api/src/security/pid');
 const { COOKIE_NAME } = require('../src/session/sessionCookie');
 
-// PR-D4: หน้าแก้ข้อมูลติดต่อ / ผู้ติดต่อฉุกเฉิน / ชื่อ-วันเกิดที่ HR กรอก - รันกับ MDM API จริง (in-process) + Postgres จริง + mock Keycloak
+// PR-D4: หน้าแก้ข้อมูลติดต่อ / ผู้ติดต่อฉุกเฉิน / ชื่อ-นามสกุลที่ HR กรอก - รันกับ MDM API จริง (in-process) + Postgres จริง + mock Keycloak
 // ข้อมูลทั้งหมดสมมติ ตรวจ: สำเร็จ, 409 ทั้งสองแบบ (version-conflict / identity-locked), 422, ไม่มี role, ค่ายาวเกิน และไม่มีเลขบัตร/ข้อมูลติดต่อรั่วใน redirect/log
 
 // หน้าผู้ติดต่อฉุกเฉินซ่อนไว้ตาม default (HR_EMERGENCY_CONTACTS_ENABLED) - เคสของหน้านี้รันเฉพาะเมื่อเปิด env; โหมดปิด/เปิดแบบระบุ flag เอง
@@ -67,7 +67,6 @@ async function createPerson(agent) {
       pid,
       firstNameTh: `สมชาย${tag}`,
       lastNameTh: `ทดสอบ${tag}`,
-      birthDate: '1990-05-17',
       reason: 'เพิ่มบุคลากรใหม่ตามคำสั่งบรรจุ',
       personnelType: 'CIVIL_SERVANT',
       orgUnitId: orgA.id,
@@ -423,7 +422,7 @@ describe('แก้ข้อมูลติดต่อ', () => {
   });
 });
 
-describe('แก้ชื่อ-นามสกุลไทยและวันเกิด (ที่ HR กรอก)', () => {
+describe('แก้ชื่อ-นามสกุลไทย (ที่ HR กรอก)', () => {
   async function postIdentity(agent, personId, fields, { version, csrf, reason = 'แก้ตามเอกสารสำเนาทะเบียนบ้าน' } = {}) {
     const form = await agent.get(`/hr/persons/${personId}/expected-identity/edit`);
     return agent
@@ -432,22 +431,23 @@ describe('แก้ชื่อ-นามสกุลไทยและวัน
       .send({ _csrf: csrf ?? csrfFrom(form.text), expectedVersion: version ?? versionFrom(form.text), reason, ...fields });
   }
 
-  test('ยังไม่ยืนยัน: แสดงฟอร์มพร้อมคำอธิบาย "ข้อมูลที่ HR กรอก รอยืนยัน ThaID"; สำเร็จ: แก้ชื่อ + ล้างวันเกิด, log ผู้กระทำ+เหตุผล', async () => {
+  test('ยังไม่ยืนยัน: แสดงฟอร์มพร้อมคำอธิบาย "ข้อมูลที่ HR กรอก รอยืนยัน ThaID"; สำเร็จ: แก้ชื่อ, ไม่มีช่องวันเกิด, log ผู้กระทำ+เหตุผล', async () => {
     const admin = await adminAgent();
     const { personId } = await createPerson(admin);
     const form = await admin.get(`/hr/persons/${personId}/expected-identity/edit`);
     expect(form.status).toBe(200);
     expect(form.text).toContain('ข้อมูลที่ HR กรอก รอยืนยัน ThaID');
     expect(form.text).toContain(`value="สมชาย${tag}"`);
-    expect(form.text).toContain('value="1990-05-17"');
+    expect(form.text).not.toContain('name="birthDate"');
+    expect(form.text).not.toContain('วันเกิด');
     expect(form.text).toMatch(/<form method="post"/);
 
-    const res = await postIdentity(admin, personId, { firstNameTh: `สมหญิง${tag}`, lastNameTh: `ทดสอบ${tag}`, birthDate: '' });
+    const res = await postIdentity(admin, personId, { firstNameTh: `สมหญิง${tag}`, lastNameTh: `ทดสอบ${tag}` });
     expect(res.status).toBe(303);
     expect(res.headers.location).toBe(`/hr/persons/${personId}?saved=identity`);
     expect(await personRow(personId)).toMatchObject({ first: `สมหญิง${tag}`, last: `ทดสอบ${tag}`, birth: null, version: 2 });
     const logs = (await logsFor(personId, 'person')).filter((l) => l.reason === 'แก้ตามเอกสารสำเนาทะเบียนบ้าน');
-    expect(logs.map((l) => l.field_name).sort()).toEqual(['person.expected_birth_date', 'person.expected_first_name_th']);
+    expect(logs.map((l) => l.field_name).sort()).toEqual(['person.expected_first_name_th']);
     for (const log of logs) expect(log).toMatchObject({ changed_by: 'HR' });
     expect((await admin.get(res.headers.location)).text).toContain('รอยืนยันด้วย ThaID');
   });
@@ -469,7 +469,7 @@ describe('แก้ชื่อ-นามสกุลไทยและวัน
     const res = await admin
       .post(`/hr/persons/${personId}/expected-identity/edit`)
       .type('form')
-      .send({ _csrf: csrfFrom(openForm.text), expectedVersion: versionFrom(openForm.text), reason: 'แก้ชื่อหลังยืนยันแล้ว', firstNameTh: 'ชื่อใหม่', lastNameTh: `ทดสอบ${tag}`, birthDate: '1990-05-17' });
+      .send({ _csrf: csrfFrom(openForm.text), expectedVersion: versionFrom(openForm.text), reason: 'แก้ชื่อหลังยืนยันแล้ว', firstNameTh: 'ชื่อใหม่', lastNameTh: `ทดสอบ${tag}` });
     expect(res.status).toBe(409);
     expect(res.text).toContain('ยืนยันตัวตนผ่าน ThaID แล้ว');
     expect(res.text).not.toContain('โหลดข้อมูลล่าสุด');
@@ -491,32 +491,31 @@ describe('แก้ชื่อ-นามสกุลไทยและวัน
     const { personId } = await createPerson(admin);
     const form = await admin.get(`/hr/persons/${personId}/expected-identity/edit`);
     await bumpVersion(personId);
-    const res = await postIdentity(admin, personId, { firstNameTh: 'ชื่อใหม่', lastNameTh: `ทดสอบ${tag}`, birthDate: '1990-05-17' }, { csrf: csrfFrom(form.text), version: versionFrom(form.text) });
+    const res = await postIdentity(admin, personId, { firstNameTh: 'ชื่อใหม่', lastNameTh: `ทดสอบ${tag}` }, { csrf: csrfFrom(form.text), version: versionFrom(form.text) });
     expect(res.status).toBe(409);
     expect(res.text).toContain('โหลดข้อมูลล่าสุด');
     expect(res.text).toContain(`href="/hr/persons/${personId}/expected-identity/edit"`);
     expect((await personRow(personId)).first).toBe(`สมชาย${tag}`);
   });
 
-  test('422: ชื่อว่าง / ชื่อมีเลข 13 หลัก / ยาวเกิน / วันเกิดในอนาคต / ไม่มีเหตุผล -> ไม่เขียน ไม่รั่วเลขบัตร; ไม่มีอะไรเปลี่ยน -> nochange', async () => {
+  test('422: ชื่อว่าง / ชื่อมีเลข 13 หลัก / ยาวเกิน / ไม่มีเหตุผล -> ไม่เขียน ไม่รั่วเลขบัตร; ไม่มีอะไรเปลี่ยน -> nochange', async () => {
     const admin = await adminAgent();
     const { personId } = await createPerson(admin);
     const pid = makeFakePid();
 
-    const bad = await postIdentity(admin, personId, { firstNameTh: '', lastNameTh: `ก${pid}`, birthDate: '2999-01-01' }, { reason: '' });
+    const bad = await postIdentity(admin, personId, { firstNameTh: '', lastNameTh: `ก${pid}` }, { reason: '' });
     expect(bad.status).toBe(422);
     expect(bad.text).toContain('กรุณากรอกชื่อ');
     expect(bad.text).toContain('นามสกุลห้ามมีเลขบัตรประชาชน');
-    expect(bad.text).toContain('วันเกิดต้องอยู่ระหว่าง');
     expect(bad.text).toContain('กรุณาระบุเหตุผล');
     expectNotIn([pid], bad.text);
 
-    const long = await postIdentity(admin, personId, { firstNameTh: 'ก'.repeat(201), lastNameTh: `ทดสอบ${tag}`, birthDate: '1990-05-17' });
+    const long = await postIdentity(admin, personId, { firstNameTh: 'ก'.repeat(201), lastNameTh: `ทดสอบ${tag}` });
     expect(long.status).toBe(422);
     expect(long.text).toContain('ชื่อยาวเกิน 200');
     expect((await personRow(personId)).first).toBe(`สมชาย${tag}`);
 
-    const same = await postIdentity(admin, personId, { firstNameTh: `สมชาย${tag}`, lastNameTh: `ทดสอบ${tag}`, birthDate: '1990-05-17' });
+    const same = await postIdentity(admin, personId, { firstNameTh: `สมชาย${tag}`, lastNameTh: `ทดสอบ${tag}` });
     expect(same.headers.location).toBe(`/hr/persons/${personId}?saved=nochange`);
     expect((await personRow(personId)).version).toBe(1);
   });
@@ -549,23 +548,16 @@ describe('แสดงวันที่/วันเวลาเป็นเว
     expect(res.text).not.toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
   });
 
-  test('หน้าแก้ชื่อ-วันเกิด: ช่องยังเป็น type=date ค่า YYYY-MM-DD แต่มีข้อความ พ.ศ. ใต้ช่อง + สคริปต์; ฟอร์มส่งค่า YYYY-MM-DD ถูกต้อง', async () => {
+  test('ยืนยันแล้ว: หน้า locked ไม่แสดงวันเกิด แม้คอลัมน์เดิมยังมีค่า (ไม่ถูกคืนจาก manage-profile)', async () => {
     const admin = await adminAgent();
     const { personId } = await createPerson(admin);
-    const form = await admin.get(`/hr/persons/${personId}/expected-identity/edit`);
-    expect(form.text).toMatch(/<input name="birthDate" type="date"[^>]*value="1990-05-17" \/><span class="be-date" data-for="birthDate">17 พ\.ค\. 2533<\/span>/);
-    expect(form.text).toContain("input[type=date]");
-    const res = await admin
-      .post(`/hr/persons/${personId}/expected-identity/edit`)
-      .type('form')
-      .send({ _csrf: csrfFrom(form.text), expectedVersion: versionFrom(form.text), reason: 'แก้วันเกิดตามเอกสาร', firstNameTh: `สมชาย${tag}`, lastNameTh: `ทดสอบ${tag}`, birthDate: '1991-02-03' });
-    expect(res.status).toBe(303);
-    expect((await personRow(personId)).birth).toBe('1991-02-03');
-    const locked = await (async () => {
-      await markVerified(personId);
-      return admin.get(`/hr/persons/${personId}/expected-identity/edit`);
-    })();
-    expect(locked.text).toContain('3 ก.พ. 2534');
+    await adminPool.query(`UPDATE mdm.person SET expected_birth_date = '1991-02-03' WHERE person_id = $1`, [personId]);
+    await markVerified(personId);
+    const locked = await admin.get(`/hr/persons/${personId}/expected-identity/edit`);
+    expect(locked.status).toBe(200);
+    expect(locked.text).toContain('แก้ไม่ได้');
+    expect(locked.text).not.toContain('วันเกิด');
+    expect(locked.text).not.toContain('3 ก.พ. 2534');
     expect(locked.text).not.toContain('1991-02-03');
   });
 
@@ -576,7 +568,7 @@ describe('แสดงวันที่/วันเวลาเป็นเว
     const today = todayBangkok();
     const add = await admin.get('/hr/persons/new');
     expect(add.text).toContain(`name="effectiveFrom" type="date" required value="${today}" /><span class="be-date" data-for="effectiveFrom">${formatThaiDate(today)}</span>`);
-    expect(add.text).toContain('name="birthDate" type="date"');
+    expect(add.text).not.toContain('name="birthDate"');
     const move = await admin.get(`/hr/persons/${personId}/employment/edit`);
     expect(move.text).toContain('min="2024-01-01"');
     expect(move.text).toContain('1 ม.ค. 2567'); // ข้อความ "มีผลตั้งแต่"

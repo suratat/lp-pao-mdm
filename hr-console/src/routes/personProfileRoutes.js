@@ -5,20 +5,17 @@ const { UUID_RE } = require('../masterData');
 const { csrfTokenMatches } = require('../session/csrf');
 const { looksLikePid } = require('../pid');
 const { renderFailure, statusFor, failureMessage, isVersionConflict, isRemoteFailure } = require('../apiErrors');
-const { isRealDate } = require('../employmentForm');
-const { todayBangkok, renderDateInput, formatThaiDate } = require('../thaiTime');
 const rules = require('../contactValidation');
 const { ruleAttrs, fieldErrorHtml, emailCheckWidgetHtml, contactFormScript } = require('../contactFormUi');
 const { createCheckEmailHandler, createRateLimiter } = require('../emailCheck');
 const { pageOpts, requireMasterDataAdmin, noStore, errorList, csrfField, reasonField, parseExpectedVersion, validateWriteReason } = require('./personEditRoutes');
 
-// PR-D4: HR แก้ข้อมูลส่วนบุคคล (ข้อมูลติดต่อ, ผู้ติดต่อฉุกเฉิน, ชื่อ-วันเกิดที่ HR กรอกของคนที่ยังไม่ยืนยัน ThaID) - เฉพาะ hr_master_data_admin
+// PR-D4: HR แก้ข้อมูลส่วนบุคคล (ข้อมูลติดต่อ, ผู้ติดต่อฉุกเฉิน, ชื่อ-นามสกุลที่ HR กรอกของคนที่ยังไม่ยืนยัน ThaID; เลิกเก็บวันเกิดที่ HR กรอกแล้ว) - เฉพาะ hr_master_data_admin
 // กติกา: อ่านจาก GET /persons/{id}/manage-profile ทุกครั้ง (หน้าแสดงค่าเต็มเฉพาะหน้าแก้ไข หน้ารายละเอียดไม่แสดงข้อมูลติดต่อเลย), เหตุผลบังคับ,
 // expectedVersion จากตอนเปิดฟอร์ม, CSRF, ไม่ cache; 409 version-conflict -> ปุ่มโหลดข้อมูลล่าสุด; 409 identity-locked / 403 / 422 -> หน้าไทย ไม่ใช่ 500
 // ข้อมูลติดต่อ/ผู้ติดต่อฉุกเฉินไม่ถูกใส่ใน URL, redirect, session หรือ log ใดๆ (redirect มีแค่รหัส ?saved=)
 
 const NAME_MAX = 200;
-const MIN_BIRTH_DATE = '1900-01-01';
 
 // ไม่เก็บที่อยู่ปัจจุบันทุกช่อง (บ้านเลขที่, ข้อความเต็ม, หมู่, ซอย, ถนน, รหัสไปรษณีย์, รหัสพื้นที่, sameAsRegistered) แล้ว (API ไม่รับ; ข้อมูลเดิมคงอยู่ในฐานข้อมูล) ป้าย emailPersonal ที่ผู้ใช้เห็นคือ "อีเมล"
 // rule = กติกาตรวจรูปแบบ (contactValidation.js) ใช้ทั้งฝั่ง browser, เซิร์ฟเวอร์นี้ และ API (ตัวตัดสิน)
@@ -36,8 +33,8 @@ const EMERGENCY_FIELDS = [
 ];
 
 const LOCKED_MESSAGES = {
-  THAID_VERIFIED: 'บุคคลนี้ยืนยันตัวตนผ่าน ThaID แล้ว ชื่อ-นามสกุลและวันเกิดมาจาก ThaID เป็นหลัก แก้ด้วยมือไม่ได้',
-  NOT_PENDING_CLAIM: 'บุคคลนี้ไม่ได้อยู่ในสถานะรอยืนยันตัวตน (PENDING_CLAIM) จึงแก้ชื่อ-นามสกุลและวันเกิดที่ HR กรอกไม่ได้',
+  THAID_VERIFIED: 'บุคคลนี้ยืนยันตัวตนผ่าน ThaID แล้ว ชื่อ-นามสกุลมาจาก ThaID เป็นหลัก แก้ด้วยมือไม่ได้',
+  NOT_PENDING_CLAIM: 'บุคคลนี้ไม่ได้อยู่ในสถานะรอยืนยันตัวตน (PENDING_CLAIM) จึงแก้ชื่อ-นามสกุลที่ HR กรอกไม่ได้',
 };
 
 const text = (v) => (typeof v === 'string' ? v.trim() : '');
@@ -344,7 +341,7 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {}, emergencyContac
     );
   }
 
-  // ------------------------------------------------------------------------------------------------- ชื่อ-นามสกุลไทย/วันเกิด (HR กรอก)
+  // ------------------------------------------------------------------------------------------------- ชื่อ-นามสกุลไทย (HR กรอก)
 
   const IDENTITY_NOTE = `<p class="hint"><strong>ข้อมูลที่ HR กรอก รอยืนยัน ThaID</strong> - ไม่ใช่ข้อมูลจาก ThaID เมื่อบุคคลนี้เข้าสู่ระบบด้วย ThaID ครั้งแรก ระบบจะใช้ข้อมูลจาก ThaID เป็นหลักเสมอ และแก้ไขที่นี่ไม่ได้อีก</p>`;
 
@@ -352,11 +349,9 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {}, emergencyContac
     const fields = `<div class="row">
         <div><label>ชื่อ (ไทย)</label><input name="firstNameTh" maxlength="${NAME_MAX}" value="${escapeHtml(values.firstNameTh)}" required /></div>
         <div><label>นามสกุล (ไทย)</label><input name="lastNameTh" maxlength="${NAME_MAX}" value="${escapeHtml(values.lastNameTh)}" required /></div>
-      </div>
-      <label>วันเกิด <span class="hint">(ไม่บังคับ เว้นว่าง = ล้างค่า)</span></label>
-      ${renderDateInput({ name: 'birthDate', value: values.birthDate || '', min: MIN_BIRTH_DATE, max: todayBangkok() })}`;
+      </div>`;
     return formShell(req, personId, {
-      heading: 'แก้ชื่อ-นามสกุลและวันเกิด (ที่ HR กรอก)',
+      heading: 'แก้ชื่อ-นามสกุล (ที่ HR กรอก)',
       intro: IDENTITY_NOTE,
       errors,
       version,
@@ -371,43 +366,38 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {}, emergencyContac
     const shown = [
       ['ชื่อ (ไทย)', identity.firstNameTh],
       ['นามสกุล (ไทย)', identity.lastNameTh],
-      ['วันเกิด', formatThaiDate(identity.birthDate)],
     ]
       .filter(([, v]) => v)
       .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`)
       .join('');
     return `<p><a href="${personUrl(personId)}">← กลับไปหน้ารายละเอียด</a></p>
-      <h1>แก้ชื่อ-นามสกุลและวันเกิด (ที่ HR กรอก)</h1>
+      <h1>แก้ชื่อ-นามสกุล (ที่ HR กรอก)</h1>
       <p class="error"><strong>แก้ไม่ได้:</strong> ${escapeHtml(LOCKED_MESSAGES[identity.lockedReason] || 'ไม่อนุญาตให้แก้ข้อมูลระบุตัวตนของบุคคลนี้')}</p>
       ${shown ? `<p class="hint">ค่าที่ HR เคยกรอกไว้ (ไม่ใช่ค่าจาก ThaID):</p><dl class="kv">${shown}</dl>` : ''}`;
   }
 
   router.get('/hr/persons/:personId/expected-identity/edit', ...guard, (req, res, next) =>
     showForm(req, res, next, {
-      title: 'แก้ชื่อ-วันเกิด',
+      title: 'แก้ชื่อ-นามสกุล',
       render: (profile) => {
         const identity = profile.expectedIdentity || {};
         if (!identity.editable) return renderIdentityLocked(profile.personId, identity);
         return renderIdentityForm(req, {
           personId: profile.personId,
           version: profile.version,
-          values: { firstNameTh: identity.firstNameTh, lastNameTh: identity.lastNameTh, birthDate: identity.birthDate },
+          values: { firstNameTh: identity.firstNameTh, lastNameTh: identity.lastNameTh },
         });
       },
     })
   );
 
   const validateIdentity = (body) => {
-    const values = { firstNameTh: text(body.firstNameTh), lastNameTh: text(body.lastNameTh), birthDate: text(body.birthDate) };
+    const values = { firstNameTh: text(body.firstNameTh), lastNameTh: text(body.lastNameTh) };
     const errors = [];
     for (const [key, label] of [['firstNameTh', 'ชื่อ'], ['lastNameTh', 'นามสกุล']]) {
       if (!values[key]) errors.push(`กรุณากรอก${label}`);
       else if (values[key].length > NAME_MAX) errors.push(`${label}ยาวเกิน ${NAME_MAX} ตัวอักษร`);
       else if (looksLikePid(values[key])) errors.push(`${label}ห้ามมีเลขบัตรประชาชน`);
-    }
-    if (values.birthDate) {
-      if (!isRealDate(values.birthDate)) errors.push('วันเกิดไม่ถูกต้อง');
-      else if (values.birthDate < MIN_BIRTH_DATE || values.birthDate > todayBangkok()) errors.push(`วันเกิดต้องอยู่ระหว่าง ${formatThaiDate(MIN_BIRTH_DATE)} ถึงวันนี้`);
     }
     return {
       values,
@@ -423,13 +413,12 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {}, emergencyContac
     const body = {};
     if ((current.firstNameTh ?? '') !== values.firstNameTh) body.firstNameTh = values.firstNameTh;
     if ((current.lastNameTh ?? '') !== values.lastNameTh) body.lastNameTh = values.lastNameTh;
-    if ((current.birthDate ?? '') !== values.birthDate) body.birthDate = values.birthDate === '' ? null : values.birthDate;
     return Object.keys(body).length > 0 ? body : null;
   };
 
   router.post('/hr/persons/:personId/expected-identity/edit', ...guard, bodyParser, (req, res, next) =>
     handleWrite(req, res, next, {
-      title: 'แก้ชื่อ-วันเกิด',
+      title: 'แก้ชื่อ-นามสกุล',
       formPath: 'expected-identity/edit',
       validate: validateIdentity,
       compute: computeIdentity,

@@ -22,7 +22,6 @@ const { todayBangkok, renderDateInput, formatThaiDate } = require('../thaiTime')
 const REASON_MIN = 5;
 const REASON_MAX = 500;
 const NAME_MAX = 200;
-const MIN_BIRTH_DATE = '1900-01-01';
 const SEPARATION_STATUSES = [
   { value: 'RESIGNED', label: 'ลาออก' },
   { value: 'RETIRED', label: 'เกษียณอายุ' },
@@ -128,7 +127,7 @@ function createPersonEditRoutes({ mdmClient }) {
   function renderCreateForm(req, lists, { values = {}, errors = [], pidNotice = false } = {}) {
     return `<h1>เพิ่มบุคคลใหม่</h1>
       <p>ระบบสร้าง record สถานะ <strong>รอยืนยันตัวตน (PENDING_CLAIM)</strong> เมื่อบุคคลนี้เข้าสู่ระบบด้วย ThaID ครั้งแรก ระบบจะเชื่อมกับ record นี้อัตโนมัติและเติมข้อมูลระบุตัวตนจาก ThaID
-      ชื่อและวันเกิดที่กรอกที่นี่เป็นข้อมูลที่ HR กรอก <strong>รอยืนยันด้วย ThaID</strong> (ThaID เป็นหลักเสมอ)</p>
+      ชื่อที่กรอกที่นี่เป็นข้อมูลที่ HR กรอก <strong>รอยืนยันด้วย ThaID</strong> (ThaID เป็นหลักเสมอ)</p>
       ${errorList(errors)}
       ${pidNotice ? '<p class="error">เพื่อความปลอดภัย ระบบไม่เติมเลขบัตรประชาชนกลับลงฟอร์ม กรุณากรอกเลขบัตรอีกครั้ง</p>' : ''}
       <form method="post" action="/hr/persons/new" autocomplete="off">
@@ -139,8 +138,6 @@ function createPersonEditRoutes({ mdmClient }) {
           <div><label>ชื่อ (ไทย)</label><input name="firstNameTh" maxlength="${NAME_MAX}" value="${escapeHtml(values.firstNameTh)}" required /></div>
           <div><label>นามสกุล (ไทย)</label><input name="lastNameTh" maxlength="${NAME_MAX}" value="${escapeHtml(values.lastNameTh)}" required /></div>
         </div>
-        <label>วันเกิด <span class="hint">(ไม่บังคับ)</span></label>
-        ${renderDateInput({ name: 'birthDate', value: values.birthDate || '', min: MIN_BIRTH_DATE, max: todayBangkok() })}
         ${renderEmploymentFields({ values: { effectiveFrom: todayBangkok(), ...values }, ...lists })}
         ${reasonField(values.reason)}
         <p><button type="submit" class="primary">เพิ่มบุคคล</button> <a href="/hr/persons">ยกเลิก</a></p>
@@ -167,7 +164,6 @@ function createPersonEditRoutes({ mdmClient }) {
     const values = {
       firstNameTh: text(req.body.firstNameTh),
       lastNameTh: text(req.body.lastNameTh),
-      birthDate: text(req.body.birthDate),
       reason: text(req.body.reason),
     };
     try {
@@ -180,10 +176,6 @@ function createPersonEditRoutes({ mdmClient }) {
         if (!values[key]) errors.push(`กรุณากรอก${label}`);
         else if (values[key].length > NAME_MAX) errors.push(`${label}ยาวเกิน ${NAME_MAX} ตัวอักษร`);
         else if (looksLikePid(values[key])) errors.push(`${label}ห้ามมีเลขบัตรประชาชน`);
-      }
-      if (values.birthDate) {
-        if (!isRealDate(values.birthDate)) errors.push('วันเกิดไม่ถูกต้อง');
-        else if (values.birthDate < MIN_BIRTH_DATE || values.birthDate > todayBangkok()) errors.push(`วันเกิดต้องอยู่ระหว่าง ${formatThaiDate(MIN_BIRTH_DATE)} ถึงวันนี้`);
       }
       const reasonCheck = validateWriteReason(values.reason);
       errors.push(...reasonCheck.errors);
@@ -201,7 +193,6 @@ function createPersonEditRoutes({ mdmClient }) {
         pid,
         expectedFirstNameTh: values.firstNameTh,
         expectedLastNameTh: values.lastNameTh,
-        expectedBirthDate: values.birthDate || undefined,
         reason: reasonCheck.reason,
         employment: { ...employmentCheck.employment, employeeNo: pid },
       });

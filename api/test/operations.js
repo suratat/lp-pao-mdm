@@ -599,7 +599,7 @@ function buildOperationDescriptors() {
       path: (ids) => `/persons/${ids.manageIdentityPersonId}/expected-identity`,
       scope: 'personnel:manage:person',
       roles: ['hr_master_data_admin'],
-      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', firstNameTh: 'สมศรี', birthDate: '1991-02-03' },
+      body: { expectedVersion: 1, reason: 'ทดสอบ contract (เหตุผลสมมติ)', firstNameTh: 'สมศรี' },
       expectStatus: 200,
     },
     {

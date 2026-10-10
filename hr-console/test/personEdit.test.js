@@ -77,7 +77,6 @@ async function createViaUi(agent, { pid = makeFakePid(), fields = {}, omit = [] 
     pid,
     firstNameTh: `สมชาย${tag}`,
     lastNameTh: `ทดสอบ${tag}`,
-    birthDate: '1990-05-17',
     reason: 'เพิ่มบุคลากรใหม่ตามคำสั่งบรรจุ',
     ...employmentFields(),
     ...fields,
@@ -187,7 +186,7 @@ describe('เพิ่มบุคคลใหม่', () => {
     expect(res.text).not.toMatch(/<input name="pid"[^>]*value=/);
   });
 
-  test('สำเร็จ: 303 ไป /hr/persons/{id}?saved=created, PENDING_CLAIM, เก็บชื่อ/วันเกิดที่ HR กรอก, employment ตรง, log มีผู้กระทำ+เหตุผล, ข้อความยืนยันชัดเจน, ไม่มีเลขบัตรรั่ว', async () => {
+  test('สำเร็จ: 303 ไป /hr/persons/{id}?saved=created, PENDING_CLAIM, เก็บชื่อที่ HR กรอก (ไม่เก็บวันเกิด), employment ตรง, log มีผู้กระทำ+เหตุผล, ข้อความยืนยันชัดเจน, ไม่มีเลขบัตรรั่ว', async () => {
     const admin = await adminAgent();
     const { res, pid, personId, positionId } = await createViaUi(admin);
     expect(res.status).toBe(303);
@@ -195,7 +194,7 @@ describe('เพิ่มบุคคลใหม่', () => {
     expectNoPid(pid, res.headers.location, res.text);
 
     const person = await personRow(personId);
-    expect(person).toMatchObject({ status: 'PENDING_CLAIM', first: `สมชาย${tag}`, last: `ทดสอบ${tag}`, birth: '1990-05-17' });
+    expect(person).toMatchObject({ status: 'PENDING_CLAIM', first: `สมชาย${tag}`, last: `ทดสอบ${tag}`, birth: null });
     const { rows } = await adminPool.query(`SELECT pid_hash, pid_enc IS NOT NULL AS has_enc FROM mdm.person WHERE person_id = $1`, [personId]);
     expect(rows[0]).toMatchObject({ pid_hash: pidHash(pid, pepper), has_enc: true });
     const emp = await employmentRows(personId);
@@ -212,7 +211,7 @@ describe('เพิ่มบุคคลใหม่', () => {
     expect(detail.text).toContain(`สมชาย${tag}`);
     expect(detail.text).toContain('ประวัติการเปลี่ยนแปลง');
     expect(detail.text).toContain('ชื่อที่ HR กรอก (รอยืนยัน ThaID)');
-    expect(detail.text).toContain('(ปกปิด)'); // วันเกิด/เลขประจำตัวถูกปกปิดในประวัติ
+    expect(detail.text).toContain('(ปกปิด)'); // เลขประจำตัวถูกปกปิดในประวัติ
     expectNoPid(pid, detail.text);
     // ข้อความ flash มาจากรหัสที่รู้จักเท่านั้น
     // (layout มี <script> ของตัวเองอยู่แล้ว: เทียบจำนวนกับหน้าที่ไม่มี ?saved เพื่อยืนยันว่าค่าจาก query ไม่ถูกสะท้อนลงหน้า)
@@ -220,17 +219,28 @@ describe('เพิ่มบุคคลใหม่', () => {
     expect(injected.split('<script>').length).toBe(detail.text.split('<script>').length);
   });
 
-  test('เลขบัตรพิมพ์คั่นด้วยขีด/ช่องว่างได้; วันเกิดไม่บังคับ; ประเภทไม่มีตำแหน่ง + ชื่อตำแหน่ง/ลักษณะงานสำเร็จ', async () => {
+  test('เลขบัตรพิมพ์คั่นด้วยขีด/ช่องว่างได้; ประเภทไม่มีตำแหน่ง + ชื่อตำแหน่ง/ลักษณะงานสำเร็จ', async () => {
     const admin = await adminAgent();
     const pid = makeFakePid();
     const { res, personId } = await createViaUi(admin, {
       pid: dashed(pid),
-      fields: { personnelType: 'GENERAL_EMPLOYEE', positionId: '', jobTitleText: 'ผู้ช่วยช่างไฟฟ้า', birthDate: '' },
+      fields: { personnelType: 'GENERAL_EMPLOYEE', positionId: '', jobTitleText: 'ผู้ช่วยช่างไฟฟ้า' },
     });
     expect(res.status).toBe(303);
     expectNoPid(pid, res.headers.location);
     expect((await personRow(personId)).birth).toBeNull();
     expect((await employmentRows(personId))[0]).toMatchObject({ employee_no: pid, position_id: null, job_title_text: 'ผู้ช่วยช่างไฟฟ้า' });
+  });
+
+  test('เลิกเก็บวันเกิดที่ HR กรอก: ฟอร์มไม่มีช่องวันเกิด และค่า birthDate ที่ถูกส่งมาเองไม่ถูกเก็บ/ไม่ถูกส่งไป API', async () => {
+    const admin = await adminAgent();
+    const form = await admin.get('/hr/persons/new');
+    expect(form.text).not.toContain('name="birthDate"');
+    expect(form.text).not.toContain('วันเกิด');
+    const { res, personId } = await createViaUi(admin, { fields: { birthDate: '1990-05-17' } });
+    expect(res.status).toBe(303);
+    expect((await personRow(personId)).birth).toBeNull();
+    expect((await logsFor(personId)).map((l) => l.field_name)).not.toContain('person.expected_birth_date');
   });
 
   test.each([
@@ -240,8 +250,6 @@ describe('เพิ่มบุคคลใหม่', () => {
     ['ไม่กรอกชื่อ', () => ({ fields: { firstNameTh: '   ' } }), 'กรุณากรอกชื่อ'],
     ['นามสกุลมีเลขบัตร', () => ({ fields: { lastNameTh: `ทดสอบ ${makeFakePid()}` } }), 'นามสกุลห้ามมีเลขบัตร'],
     ['ชื่อยาวเกิน 200', () => ({ fields: { firstNameTh: 'ก'.repeat(201) } }), 'ยาวเกิน 200'],
-    ['วันเกิดอนาคต', () => ({ fields: { birthDate: '2999-01-01' } }), 'วันเกิดต้องอยู่ระหว่าง'],
-    ['วันเกิดรูปแบบผิด', () => ({ fields: { birthDate: '31/12/1990' } }), 'วันเกิดไม่ถูกต้อง'],
     ['เหตุผลสั้นเกินไป', () => ({ fields: { reason: 'สั้น' } }), 'อย่างน้อย 5'],
     ['เหตุผลมีเลขบัตร', () => ({ fields: { reason: `ตามเลข ${makeFakePid()}` } }), 'ห้ามใส่เลขบัตร'],
     ['เหตุผลมีเลขบัตรแบบมีขีด', () => ({ fields: { reason: `ตามเลข ${dashed(makeFakePid())}` } }), 'ห้ามใส่เลขบัตร'],
