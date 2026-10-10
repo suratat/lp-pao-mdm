@@ -4,6 +4,10 @@ const { FIXTURE_PERSON_ID } = require('../../api/test/fixtures');
 
 let harness;
 
+// ส่วน consent ถูกซ่อนไว้ตาม default (PORTAL_CONSENTS_ENABLED ไม่ตั้ง) - รันเมื่อเปิดด้วย env เท่านั้น:
+//   PORTAL_CONSENTS_ENABLED=true npm test
+const consentsTest = process.env.PORTAL_CONSENTS_ENABLED === 'true' ? test : test.skip;
+
 beforeAll(async () => {
   harness = await buildIntegrationHarness();
 });
@@ -76,7 +80,7 @@ describe('MDM Portal self-service (T9 รอบแรก)', () => {
     expect(res.text).toContain('รับแจ้งแล้ว');
   });
 
-  test('consents: grant แล้วเห็นสถานะ GRANTED, withdraw แล้วเห็น WITHDRAWN', async () => {
+  consentsTest('consents: grant แล้วเห็นสถานะ GRANTED, withdraw แล้วเห็น WITHDRAWN', async () => {
     const agent = request.agent(harness.portalApp);
     await agent.post('/auth/dev-login').type('form').send({ personId: FIXTURE_PERSON_ID });
 
@@ -99,7 +103,7 @@ describe('MDM Portal self-service (T9 รอบแรก)', () => {
     expect(afterWithdraw.text).toContain('WITHDRAWN');
   });
 
-  test('consents: 400 จาก MDM API ถูกส่งต่อมาแสดงผล เมื่อ purpose ไม่ใช้ฐาน consent', async () => {
+  consentsTest('consents: 400 จาก MDM API ถูกส่งต่อมาแสดงผล เมื่อ purpose ไม่ใช้ฐาน consent', async () => {
     const agent = request.agent(harness.portalApp);
     await agent.post('/auth/dev-login').type('form').send({ personId: FIXTURE_PERSON_ID });
 

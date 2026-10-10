@@ -1,7 +1,7 @@
 # MDM Portal (T9 รอบแรก — self-service)
 
 Express app แยกจาก `api/` และ `worker/` คุยกับ MDM API ผ่าน HTTP เท่านั้น (ไม่แตะ Postgres โดยตรง)
-ให้บุคลากรดูข้อมูลของตนเอง แก้ไขข้อมูลติดต่อ/ผู้ติดต่อฉุกเฉิน แจ้งข้อมูลระบุตัวตนผิด และจัดการ consent
+ให้บุคลากรดูข้อมูลของตนเอง แก้ไขข้อมูลติดต่อ/ผู้ติดต่อฉุกเฉิน แจ้งข้อมูลระบุตัวตนผิด และจัดการ consent (หน้า consent ปิดไว้ตาม default — เปิดด้วย `PORTAL_CONSENTS_ENABLED=true` ดู `infra/.env.staging.example`)
 
 ## สถาปัตยกรรม auth (ทางเลือก B, §0.3)
 

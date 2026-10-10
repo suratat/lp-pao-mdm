@@ -10,7 +10,7 @@ function renderError(err) {
   return `<p class="error">เกิดข้อผิดพลาดที่ไม่คาดคิด</p>`;
 }
 
-function createMeRoutes({ mdmClient }) {
+function createMeRoutes({ mdmClient, consentsEnabled = false }) {
   const router = express.Router();
 
   router.get('/portal/', (req, res) => res.redirect(302, '/portal/me'));
@@ -199,55 +199,58 @@ function createMeRoutes({ mdmClient }) {
     }
   });
 
-  router.get('/portal/me/consents', async (req, res, next) => {
-    try {
-      const consents = await mdmClient.listConsents(req.personId);
-      const rows = consents
-        .map(
-          (c) => `<tr>
-            <td>${escapeHtml(c.purposeNameTh)}</td>
-            <td>${escapeHtml(c.status || 'ยังไม่เคยตอบ')}</td>
-            <td>
-              <form method="post" action="/portal/me/consents/${encodeURIComponent(c.purposeCode)}" style="display:inline">
-                <input type="hidden" name="policyVersion" value="v1" />
-                <input type="hidden" name="status" value="GRANTED" />
-                <button type="submit">ยินยอม</button>
-              </form>
-              <form method="post" action="/portal/me/consents/${encodeURIComponent(c.purposeCode)}" style="display:inline">
-                <input type="hidden" name="policyVersion" value="v1" />
-                <input type="hidden" name="status" value="WITHDRAWN" />
-                <button type="submit">ถอนความยินยอม</button>
-              </form>
-            </td>
-          </tr>`
-        )
-        .join('\n');
-      res.send(
-        layout(
-          'ความยินยอม',
-          `<h1>ความยินยอมการใช้ข้อมูล</h1>
-           <table><tr><th>วัตถุประสงค์</th><th>สถานะ</th><th>การดำเนินการ</th></tr>${rows}</table>`
-        )
-      );
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.post('/portal/me/consents/:purposeCode', express.urlencoded({ extended: false }), async (req, res, next) => {
-    try {
-      await mdmClient.setConsent(req.personId, req.params.purposeCode, {
-        status: req.body.status,
-        policyVersion: req.body.policyVersion,
-      });
-      res.redirect(302, '/portal/me/consents');
-    } catch (err) {
-      if (err instanceof MdmApiError) {
-        return res.status(err.status).send(layout('ความยินยอม', renderError(err)));
+  // เก็บ handler ไว้ครบเพื่อเปิดกลับด้วย PORTAL_CONSENTS_ENABLED=true; ปิดอยู่ = ไม่ mount จึงเป็น 404
+  if (consentsEnabled) {
+    router.get('/portal/me/consents', async (req, res, next) => {
+      try {
+        const consents = await mdmClient.listConsents(req.personId);
+        const rows = consents
+          .map(
+            (c) => `<tr>
+              <td>${escapeHtml(c.purposeNameTh)}</td>
+              <td>${escapeHtml(c.status || 'ยังไม่เคยตอบ')}</td>
+              <td>
+                <form method="post" action="/portal/me/consents/${encodeURIComponent(c.purposeCode)}" style="display:inline">
+                  <input type="hidden" name="policyVersion" value="v1" />
+                  <input type="hidden" name="status" value="GRANTED" />
+                  <button type="submit">ยินยอม</button>
+                </form>
+                <form method="post" action="/portal/me/consents/${encodeURIComponent(c.purposeCode)}" style="display:inline">
+                  <input type="hidden" name="policyVersion" value="v1" />
+                  <input type="hidden" name="status" value="WITHDRAWN" />
+                  <button type="submit">ถอนความยินยอม</button>
+                </form>
+              </td>
+            </tr>`
+          )
+          .join('\n');
+        res.send(
+          layout(
+            'ความยินยอม',
+            `<h1>ความยินยอมการใช้ข้อมูล</h1>
+             <table><tr><th>วัตถุประสงค์</th><th>สถานะ</th><th>การดำเนินการ</th></tr>${rows}</table>`
+          )
+        );
+      } catch (err) {
+        next(err);
       }
-      next(err);
-    }
-  });
+    });
+
+    router.post('/portal/me/consents/:purposeCode', express.urlencoded({ extended: false }), async (req, res, next) => {
+      try {
+        await mdmClient.setConsent(req.personId, req.params.purposeCode, {
+          status: req.body.status,
+          policyVersion: req.body.policyVersion,
+        });
+        res.redirect(302, '/portal/me/consents');
+      } catch (err) {
+        if (err instanceof MdmApiError) {
+          return res.status(err.status).send(layout('ความยินยอม', renderError(err)));
+        }
+        next(err);
+      }
+    });
+  }
 
   return router;
 }
