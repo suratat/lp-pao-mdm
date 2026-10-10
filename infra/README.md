@@ -69,6 +69,15 @@ docker compose -f docker-compose.staging.yml -f docker-compose.smoketest.yml \
 
 _ดูสรุปท้ายข้อความของ session ที่รันงานนี้ (T6) — สคริปต์ข้างบนรันจริงแล้วผ่านทั้ง 4 ขั้น: healthcheck, ขอ token จาก check-broker, `GET /health`, `POST /sync/thaid` → `202 UNMATCHED`_
 
+## log ของ nginx (ไม่เก็บ query string)
+
+- `infra/nginx/nginx.conf` ใช้ `log_format mdm` ที่บันทึก path ด้วย `$uri` (ไม่มี `?q=...` ซึ่งอาจเป็นชื่อบุคคลที่ HR ค้นหา) พร้อม status, `rt=` (request_time), `urt=`/`us=` (upstream) ส่งออก stdout (`docker logs`)
+- `error_log /dev/stderr crit` เพราะ error log ของ nginx ใส่ request line และ URL ของ upstream (มี query) ตอน upstream ล้มที่ระดับ error และปรับ format ไม่ได้ - อาการ 502/timeout ให้ดูจาก access log (`status`, `us=`, `urt=`) แทน
+- service nginx จำกัด log ด้วย `json-file` `max-size: 10m` `max-file: 5` (service อื่นยังไม่ตั้ง)
+- ทดสอบอัตโนมัติ: `sh infra/nginx/test-log-no-query.sh` (ต้องมี docker + curl; ใช้ nginx.conf จริงกับ stub upstream ใน network ชั่วคราว ยิงคำขอที่มี sentinel query ทั้งตอนปกติและตอน upstream ล่ม แล้วตรวจว่าไม่พบใน log)
+- **ล้าง log เก่าที่ยังมี query** (บน VPN-MDM หลัง deploy config ใหม่): ไฟล์ log เก่าอยู่กับ container เดิม วิธีที่ล้างหมด คือ recreate เฉพาะ nginx
+  `docker compose --env-file infra/.env.staging -f infra/docker-compose.staging.yml up -d --force-recreate nginx` (ห้ามใส่ `--remove-orphans`) ผลกระทบ: คำขอที่ผ่าน nginx หลุดช่วงสั้น ๆ (portal/hr-console/dpo-console/migrate-cli ได้ error ชั่วคราว) ไม่กระทบ api/DB/Keycloak ทางเลือกคือ `sudo truncate -s 0 /var/lib/docker/containers/<id>/<id>-json.log` โดยไม่ recreate; ตรวจด้วยว่าไม่มีการ ship/backup log ไปที่อื่นที่ยังมีสำเนาเก่า
+
 ## ข้อจำกัด / สิ่งที่ยังไม่ครอบคลุม
 
 - **Vault token ใช้ร่วมกันระหว่าง api และ worker ใน staging** (`mdm-staging-shared-policy`) — **TODO(production):** ต้องแยก Vault AppRole ต่อ service จริง (`mdm-api-policy.hcl` / `mdm-worker-policy.hcl` มีแยกไว้แล้ว ยังไม่ได้ต่อ AppRole login flow) ไม่ใช่แจก token เดียวที่ทั้งคู่ใช้ร่วมกันตลอดอายุ deployment ตามหลัก least privilege

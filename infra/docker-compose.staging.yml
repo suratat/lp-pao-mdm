@@ -179,6 +179,12 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "8080:80" # production: ไม่ตั้ง ingress ผ่าน Cloudflare Tunnel สำหรับ /api ดูภาคผนวก ค
+    # จำกัดขนาด/จำนวนไฟล์ log ของ nginx (ไม่ตั้งไว้ json-file จะโตไม่จำกัด); service อื่นยังไม่แตะ
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     depends_on:
       - api1
       - api2
