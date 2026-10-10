@@ -83,7 +83,7 @@
     },
     { "name": "personnel:read:basic", "description": "ชื่อ-สกุล, employeeNo, ตำแหน่ง, สังกัด, สถานะ - scope ขั้นต่ำของทุก consumer", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "personnel:read:contact", "description": "มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, ผู้ติดต่อฉุกเฉิน", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
-    { "name": "personnel:read:identity", "description": "วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน, IAL, syncedAt (จาก ThaID)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
+    { "name": "personnel:read:identity", "description": "เพศ, ที่อยู่ตามทะเบียนบ้าน, IAL, syncedAt (จาก ThaID)", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "personnel:read:employment", "description": "วันบรรจุ, ประวัติการดำรงตำแหน่ง, เหตุ/วันพ้นสภาพ", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "personnel:read:photo", "description": "รูปถ่าย", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },
     { "name": "personnel:read:inactive", "description": "เห็น record ที่ INACTIVE ด้วย", "protocol": "openid-connect", "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" } },

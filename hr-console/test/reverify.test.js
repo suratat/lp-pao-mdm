@@ -31,8 +31,8 @@ async function makeReverifyCandidate(verificationStatus, { firstNameTh = 'ค้
     [personId, crypto.randomBytes(32).toString('hex'), verificationStatus]
   );
   await adminPool.query(
-    `INSERT INTO mdm.person_identity (person_id, title_th, first_name_th, last_name_th, birth_date, gender, synced_at)
-     VALUES ($1, 'นาง', $2, $3, '1980-01-01', 'F', now() - interval '400 days')`,
+    `INSERT INTO mdm.person_identity (person_id, title_th, first_name_th, last_name_th, gender, synced_at)
+     VALUES ($1, 'นาง', $2, $3, 'F', now() - interval '400 days')`,
     [personId, firstNameTh, lastNameTh]
   );
   await adminPool.query(

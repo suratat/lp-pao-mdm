@@ -73,7 +73,7 @@ describe('canonicalizeIdentityClaims + snapshotHash (§3.3 change detection)', (
   });
 
   test('snapshot เท่าเดิมเมื่อ claims เหมือนเดิมทุกประการ', () => {
-    const claims = { firstNameTh: 'สมชาย', lastNameTh: 'ใจดี', birthDate: '1990-01-01' };
+    const claims = { firstNameTh: 'สมชาย', lastNameTh: 'ใจดี', gender: 'M' };
     const a = snapshotHash(canonicalizeIdentityClaims(claims));
     const b = snapshotHash(canonicalizeIdentityClaims({ ...claims }));
     expect(a).toBe(b);

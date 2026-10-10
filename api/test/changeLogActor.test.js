@@ -186,7 +186,6 @@ describe('actor_sub / actor_client ของทุก write path', () => {
         titleTh: 'นาย',
         firstNameTh: 'ทดสอบ',
         lastNameTh: 'ซิงก์',
-        birthDate: '1990-01-01',
         gender: 'M',
         registeredAddress: {
           houseNo: '1',

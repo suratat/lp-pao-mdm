@@ -13,7 +13,7 @@ async function loadPersonAggregate(pool, personId) {
        p.expected_first_name_th, p.expected_last_name_th, p.deleted_at,
        pi.title_th, pi.first_name_th, pi.middle_name_th, pi.last_name_th,
        pi.title_en, pi.first_name_en, pi.last_name_en,
-       pi.birth_date, pi.gender,
+       pi.gender,
        pi.reg_house_no, pi.reg_moo, pi.reg_soi, pi.reg_road,
        pi.reg_subdistrict_code, pi.reg_district_code, pi.reg_province_code, pi.reg_address_text,
        pi.id_card_issue_date, pi.id_card_expire_date, pi.ial, pi.synced_at,
@@ -183,7 +183,6 @@ function presentPerson(aggregate) {
   if (identity) {
     result.identity = {
       middleNameTh: identity.middle_name_th,
-      birthDate: identity.birth_date,
       gender: identity.gender,
       registeredAddress: {
         houseNo: identity.reg_house_no ?? undefined,

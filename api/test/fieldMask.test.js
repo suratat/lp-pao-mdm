@@ -12,11 +12,11 @@ describe('maskBySchema (หน่วย, ไม่พึ่ง DB/Express)', () 
         identity: {
           type: 'object',
           'x-required-scope': 'personnel:read:identity',
-          properties: { birthDate: { type: 'string' } },
+          properties: { gender: { type: 'string' } },
         },
       },
     };
-    const data = { personId: 'x', identity: { birthDate: '1990-01-01' } };
+    const data = { personId: 'x', identity: { gender: 'M' } };
 
     const result = maskBySchema(schema, data, []);
 
@@ -31,15 +31,15 @@ describe('maskBySchema (หน่วย, ไม่พึ่ง DB/Express)', () 
         identity: {
           type: 'object',
           'x-required-scope': 'personnel:read:identity',
-          properties: { birthDate: { type: 'string' } },
+          properties: { gender: { type: 'string' } },
         },
       },
     };
-    const data = { identity: { birthDate: '1990-01-01' } };
+    const data = { identity: { gender: 'M' } };
 
     const result = maskBySchema(schema, data, ['personnel:read:identity']);
 
-    expect(result.identity.birthDate).toBe('1990-01-01');
+    expect(result.identity.gender).toBe('M');
   });
 
   test('เดินเข้า array items ได้ถูกต้อง', () => {
@@ -92,7 +92,9 @@ describe('GET /persons/{personId} - field mask ตาม scope จริงผ�
 
     expect(res.status).toBe(200);
     expect(res.body.identity).toBeDefined();
-    expect(res.body.identity.birthDate).toBe('1990-01-01');
+    expect(res.body.identity.gender).toBe('M');
+    // เลิกคืนวันเกิดจาก ThaID แล้ว: fixture ยังมี birth_date ค่าเดิมในคอลัมน์ (ดู fixtures.js) แต่ต้องไม่ถูกคืน แม้มี scope identity
+    expect(res.body.identity).not.toHaveProperty('birthDate');
     expect(res.body.contact).toBeUndefined();
     expect(res.body.employment).toBeUndefined();
   });

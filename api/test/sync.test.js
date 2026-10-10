@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const request = require('supertest');
 const { buildTestApp } = require('./testApp');
-const { makeFakePid, pidHash } = require('../src/security/pid');
+const { makeFakePid, pidHash, canonicalizeIdentityClaims, snapshotHash } = require('../src/security/pid');
 const { insertFixtureOrgUnit } = require('./fixtures');
 
 let ctx;
@@ -97,7 +97,6 @@ function baseClaims(pid, overrides = {}) {
     titleTh: 'นาย',
     firstNameTh: 'ทดสอบ',
     lastNameTh: 'ระบบ',
-    birthDate: '1990-01-01',
     gender: 'M',
     registeredAddress: {
       houseNo: '99/1',
@@ -573,5 +572,94 @@ describe('POST /sync/thaid - ปิด claim_request ที่ค้าง', () 
     expect(text).not.toContain(pid);
     expect(text).not.toContain(hash);
     expect(text).not.toMatch(/\d{13}/);
+  });
+});
+
+describe('POST /sync/thaid - เลิกเก็บวันเกิดจาก ThaID (รับแล้วทิ้งเงียบ ๆ)', () => {
+  const LEGACY_BIRTH = '1990-01-01';
+
+  async function claimed() {
+    const { pid, personId } = await insertPerson({ expectedFirstNameTh: 'ทดสอบ', expectedLastNameTh: 'ระบบ' });
+    await insertEmployment(personId, `EMP-NOBIRTH-${crypto.randomUUID().slice(0, 8)}`);
+    const claims = baseClaims(pid);
+    expect((await syncThaid({ claims, context: baseContext() })).body.result).toBe('CLAIMED');
+    return { pid, personId, claims };
+  }
+  const counts = async (personId) => ({
+    logs: Number((await ctx.pool.query(`SELECT count(*) FROM audit.data_change_log WHERE person_id = $1`, [personId])).rows[0].count),
+    outbox: Number((await ctx.pool.query(`SELECT count(*) FROM integration.outbox_event WHERE person_id = $1`, [personId])).rows[0].count),
+    version: (await ctx.pool.query(`SELECT version FROM mdm.person WHERE person_id = $1`, [personId])).rows[0].version,
+  });
+  const birthOf = async (personId) => (await ctx.pool.query(`SELECT birth_date::text AS birth FROM mdm.person_identity WHERE person_id = $1`, [personId])).rows[0].birth;
+
+  test('payload มี birthDate: claim สำเร็จ (ไม่ใช่ 400), ไม่เก็บค่า, ไม่มี change_log และ changedFields ของ identity.birth_date', async () => {
+    const { pid, personId } = await insertPerson({ expectedFirstNameTh: 'ทดสอบ', expectedLastNameTh: 'ระบบ' });
+    await insertEmployment(personId, `EMP-NOBIRTH-${crypto.randomUUID().slice(0, 8)}`);
+    const res = await syncThaid({ claims: baseClaims(pid, { birthDate: LEGACY_BIRTH }), context: baseContext() });
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBe('CLAIMED');
+    expect(res.body.changedFields).not.toContain('identity.birth_date');
+    expect(await birthOf(personId)).toBeNull();
+    const logs = await ctx.pool.query(`SELECT field_name FROM audit.data_change_log WHERE person_id = $1`, [personId]);
+    expect(logs.rows.map((r) => r.field_name)).not.toContain('identity.birth_date');
+    const event = await ctx.pool.query(`SELECT changed_fields FROM audit.thaid_sync_event WHERE person_id = $1`, [personId]);
+    expect(JSON.stringify(event.rows)).not.toContain('birth');
+  });
+
+  test('payload ที่มี birthDate ต่างค่ากันในแต่ละครั้ง: NO_CHANGE ไม่เกิดการเปลี่ยนแปลง (birthDate ไม่เข้า snapshotHash)', async () => {
+    const { pid, personId } = await claimed();
+    const before = await counts(personId);
+    const res = await syncThaid({ claims: baseClaims(pid, { birthDate: '1985-06-15' }), context: baseContext() });
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBe('NO_CHANGE');
+    expect(await counts(personId)).toEqual(before);
+    expect(await birthOf(personId)).toBeNull();
+  });
+
+  test('แถวเดิมที่มี birth_date: sync แล้วค่าเดิมยังอยู่ ไม่ถูกแก้/ไม่ถูกเขียนเป็น NULL', async () => {
+    const { pid, personId, claims } = await claimed();
+    await ctx.pool.query(`UPDATE mdm.person_identity SET birth_date = $2 WHERE person_id = $1`, [personId, LEGACY_BIRTH]);
+    // เปลี่ยนชื่อจริงเพื่อให้เกิด UPDATED จริง (เขียน identity) แล้วดูว่าวันเกิดเดิมไม่ถูกแตะ
+    const res = await syncThaid({ claims: { ...claims, lastNameTh: 'ระบบใหม่', birthDate: '1999-09-09' }, context: baseContext() });
+    expect(res.body.result).toBe('UPDATED');
+    expect(res.body.changedFields).toEqual(['identity.last_name_th']);
+    expect(await birthOf(personId)).toBe(LEGACY_BIRTH);
+    // และ sync ที่ไม่มีอะไรเปลี่ยนก็ไม่แตะเช่นกัน
+    expect((await syncThaid({ claims: { ...claims, lastNameTh: 'ระบบใหม่' }, context: baseContext() })).body.result).toBe('NO_CHANGE');
+    expect(await birthOf(personId)).toBe(LEGACY_BIRTH);
+    expect(pid).toBeTruthy();
+  });
+
+  test('แถวเดิมที่ snapshot hash เก่า (รวม birthDate): login ครั้งแรก UPDATED ว่าง (changedFields [], ไม่มี change_log/outbox, ค่า birth_date เดิมอยู่), ครั้งที่สอง NO_CHANGE', async () => {
+    const { personId, claims } = await claimed();
+    // จำลองแถวที่ sync ไว้ก่อนเลิกเก็บ: hash คำนวณรวม birthDate และคอลัมน์ birth_date มีค่า
+    const legacyHash = snapshotHash({ ...canonicalizeIdentityClaims(claims), birthDate: LEGACY_BIRTH });
+    await ctx.pool.query(`UPDATE mdm.person_identity SET birth_date = $2, source_snapshot_hash = $3 WHERE person_id = $1`, [personId, LEGACY_BIRTH, legacyHash]);
+    const before = await counts(personId);
+
+    const first = await syncThaid({ claims: { ...claims, birthDate: LEGACY_BIRTH }, context: baseContext() });
+    expect(first.status).toBe(200);
+    expect(first.body.result).toBe('UPDATED');
+    expect(first.body.changedFields).toEqual([]);
+    const afterFirst = await counts(personId);
+    expect(afterFirst.logs).toBe(before.logs); // ไม่มี data_change_log
+    expect(afterFirst.outbox).toBe(before.outbox); // ไม่มี outbox event
+    expect(afterFirst.version).toBe(before.version + 1);
+    expect(await birthOf(personId)).toBe(LEGACY_BIRTH);
+
+    const second = await syncThaid({ claims: { ...claims, birthDate: LEGACY_BIRTH }, context: baseContext() });
+    expect(second.body.result).toBe('NO_CHANGE');
+    expect(await counts(personId)).toEqual(afterFirst);
+  });
+
+  test('GET /persons/{id} ไม่คืน identity.birthDate แม้คอลัมน์เดิมมีค่า และ claim ที่ส่ง birthDate ไม่ทำให้ response validation ล้ม', async () => {
+    const { personId } = await claimed();
+    await ctx.pool.query(`UPDATE mdm.person_identity SET birth_date = $2 WHERE person_id = $1`, [personId, LEGACY_BIRTH]);
+    const token = await ctx.auth.signToken({ scope: 'personnel:read:basic personnel:read:identity' });
+    const res = await request(ctx.app).get(`/api/v1/persons/${personId}`).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.identity).toBeDefined();
+    expect(res.body.identity).not.toHaveProperty('birthDate');
+    expect(JSON.stringify(res.body)).not.toContain(LEGACY_BIRTH);
   });
 });

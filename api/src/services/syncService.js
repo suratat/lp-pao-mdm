@@ -17,7 +17,6 @@ const IDENTITY_FIELD_COLUMNS = {
   titleEn: { column: 'title_en', fieldKey: 'identity.title_en' },
   firstNameEn: { column: 'first_name_en', fieldKey: 'identity.first_name_en' },
   lastNameEn: { column: 'last_name_en', fieldKey: 'identity.last_name_en' },
-  birthDate: { column: 'birth_date', fieldKey: 'identity.birth_date' },
   gender: { column: 'gender', fieldKey: 'identity.gender' },
   idCardIssueDate: { column: 'id_card_issue_date', fieldKey: 'identity.id_card_issue_date' },
   idCardExpireDate: { column: 'id_card_expire_date', fieldKey: 'identity.id_card_expire_date' },

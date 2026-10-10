@@ -40,7 +40,6 @@ function baseClaims(pid, overrides = {}) {
     titleTh: 'นาย',
     firstNameTh: 'ทดสอบ',
     lastNameTh: 'ระบบ',
-    birthDate: '1990-01-01',
     gender: 'M',
     registeredAddress: {
       houseNo: '99/1',

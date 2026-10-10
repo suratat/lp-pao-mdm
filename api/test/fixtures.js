@@ -37,6 +37,7 @@ async function insertFixturePerson(pool) {
   );
 
   await pool.query(
+    // birth_date คือค่าเดิมที่เก็บไว้ก่อนเลิกเก็บวันเกิดจาก ThaID: คอลัมน์ยังอยู่ แต่ API ต้องไม่คืนค่านี้ (ดู fieldMask.test.js)
     `INSERT INTO mdm.person_identity (person_id, title_th, first_name_th, last_name_th, birth_date, gender, synced_at)
      VALUES ($1, 'นาย', 'ทดสอบ', 'ระบบ', '1990-01-01', 'M', now())
      ON CONFLICT (person_id) DO NOTHING`,

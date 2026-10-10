@@ -25,7 +25,7 @@ sequenceDiagram
     SSO->>SSO: ตรวจลายเซ็น id_token ด้วย JWKS (jose), สร้าง handoff token ใช้ครั้งเดียว อายุ 60 วินาที
     SSO-->>CHK: redirect /sso-callback?token=handoff
     CHK->>SSO: GET /api/verify?token=handoff (server-to-server)
-    SSO-->>CHK: profile (pid, title, given_name, family_name, ชื่ออังกฤษ, birthdate, gender, address)
+    SSO-->>CHK: profile (pid, title, given_name, family_name, ชื่ออังกฤษ, birthdate [MDM ไม่เก็บ], gender, address)
 
     Note over CHK,MDM: จุดเชื่อม MDM (ใหม่) - ทำก่อนออก token ให้ app, ผ่านเครือข่ายภายใน NT Cloud ไม่ผ่าน Cloudflare
     CHK->>KC: client_credentials (client=check-broker, scope sync:thaid) - cache token ไว้
