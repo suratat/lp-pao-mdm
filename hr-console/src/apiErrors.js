@@ -47,6 +47,10 @@ function messageFor(err) {
   if (type === 'insufficient-scope' && String(err.problem?.detail || '').includes('personnel:read:inactive')) {
     return 'บัญชีนี้ไม่มีสิทธิ์ดูข้อมูลบุคคลที่พ้นสภาพ (INACTIVE) กรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์';
   }
+  // ข้อมูลติดต่อไม่ผ่านการตรวจรูปแบบที่ API: errors[{field, message}] เป็นข้อความไทยพร้อมใช้ (ไม่มีค่าที่กรอก)
+  if (type === 'invalid-contact' && Array.isArray(err.problem?.errors) && err.problem.errors.length > 0) {
+    return err.problem.errors.map((e) => e.message).join(' / ');
+  }
   if (MESSAGES[type]) return MESSAGES[type];
   if (err.status === 401) return 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่';
   const detail = err.problem?.detail;

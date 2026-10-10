@@ -191,11 +191,11 @@ describe('แก้ข้อมูลติดต่อ', () => {
     expect(versionFrom(form.text)).toBe('1');
     expect(form.text).toMatch(/<textarea name="reason"[^>]*required>/);
 
-    const first = await postContact(admin, personId, { mobilePhone: PHONE, phoneAlt: '', emailPersonal: EMAIL, lineId: LINE, houseNo: '12', moo: '3', soi: '', road: 'ถนนสมมติ', postcode: '52000', fullText: '' });
+    const first = await postContact(admin, personId, { mobilePhone: PHONE, phoneAlt: '', emailPersonal: EMAIL, lineId: LINE, moo: '3', soi: '', road: 'ถนนสมมติ', postcode: '52000' });
     expect(first.status).toBe(303);
     expect(first.headers.location).toBe(`/hr/persons/${personId}?saved=contact`);
     expectNotIn([PHONE, EMAIL, LINE], first.headers.location, first.text);
-    expect(await contactRow(personId)).toMatchObject({ mobile_phone: PHONE, email_personal: EMAIL, line_id: LINE, cur_house_no: '12', cur_moo: '3', cur_road: 'ถนนสมมติ', cur_postcode: '52000', phone_alt: null, updated_by: 'HR' });
+    expect(await contactRow(personId)).toMatchObject({ mobile_phone: PHONE, email_personal: EMAIL, line_id: LINE, cur_moo: '3', cur_road: 'ถนนสมมติ', cur_postcode: '52000', phone_alt: null, updated_by: 'HR' });
     expect((await personRow(personId)).version).toBe(2);
 
     const detail = await admin.get(first.headers.location);
@@ -204,7 +204,7 @@ describe('แก้ข้อมูลติดต่อ', () => {
 
     // รอบสอง: เปลี่ยนมือถือ + ล้าง LINE (ช่องว่าง = ล้าง) ช่องอื่นคงเดิม -> log เฉพาะสองฟิลด์
     const logsBefore = (await logsFor(personId, 'person_contact')).length;
-    const second = await postContact(admin, personId, { mobilePhone: PHONE_NEW, phoneAlt: '', emailPersonal: EMAIL, lineId: '', houseNo: '12', moo: '3', soi: '', road: 'ถนนสมมติ', postcode: '52000', fullText: '' }, { reason: 'เจ้าตัวแจ้งเปลี่ยนเบอร์และเลิกใช้ LINE' });
+    const second = await postContact(admin, personId, { mobilePhone: PHONE_NEW, phoneAlt: '', emailPersonal: EMAIL, lineId: '', moo: '3', soi: '', road: 'ถนนสมมติ', postcode: '52000' }, { reason: 'เจ้าตัวแจ้งเปลี่ยนเบอร์และเลิกใช้ LINE' });
     expect(second.status).toBe(303);
     expect(second.headers.location).toBe(`/hr/persons/${personId}?saved=contact`);
     const row = await contactRow(personId);
@@ -269,10 +269,14 @@ describe('แก้ข้อมูลติดต่อ', () => {
 
     const bad = await postContact(admin, personId, { mobilePhone: '12345', emailPersonal: 'not-an-email', lineId: `id ${pid}` });
     expect(bad.status).toBe(422);
-    expect(bad.text).toContain('เบอร์โทรศัพท์มือถือต้องเป็นตัวเลข');
-    expect(bad.text).toContain('รูปแบบอีเมลไม่ถูกต้อง');
     expect(bad.text).toContain('LINE ID');
     expectNotIn([pid], bad.text);
+
+    // รูปแบบเบอร์/อีเมลตรวจหลังเทียบกับค่าปัจจุบัน (ดู contactFormValidation.test.js ที่ทดสอบกติกาโดยละเอียด)
+    const badFormat = await postContact(admin, personId, { mobilePhone: '12345', emailPersonal: 'not-an-email' });
+    expect(badFormat.status).toBe(422);
+    expect(badFormat.text).toContain('เบอร์มือถือไม่ถูกต้อง');
+    expect(badFormat.text).toContain('รูปแบบอีเมลไม่ถูกต้อง');
 
     expect(await contactRow(personId)).toBeUndefined();
     expect((await personRow(personId)).version).toBe(1);
@@ -282,18 +286,16 @@ describe('แก้ข้อมูลติดต่อ', () => {
     const admin = await adminAgent();
     const { personId } = await createPerson(admin);
     const res = await postContact(admin, personId, {
-      phoneAlt: '1'.repeat(21),
+      phoneAlt: '1'.repeat(31),
       lineId: 'ก'.repeat(101),
-      houseNo: '1'.repeat(51),
       moo: '1'.repeat(21),
       soi: 'ก'.repeat(101),
       road: 'ก'.repeat(101),
       postcode: '1'.repeat(11),
-      fullText: 'ก'.repeat(2001),
-      emailPersonal: `${'a'.repeat(250)}@example.test`,
+      emailPersonal: `${'a'.repeat(301)}`,
     });
     expect(res.status).toBe(422);
-    for (const label of ['เบอร์โทรสำรอง', 'LINE ID', 'บ้านเลขที่', 'หมู่ที่', 'ซอย', 'ถนน', 'รหัสไปรษณีย์', 'ที่อยู่ปัจจุบัน (ข้อความเต็ม)', 'อีเมลส่วนตัว']) {
+    for (const label of ['เบอร์โทรสำรอง', 'LINE ID', 'หมู่ที่', 'ซอย', 'ถนน', 'รหัสไปรษณีย์', 'อีเมล']) {
       expect(res.text).toContain(`${label}ยาวเกิน`);
     }
     expect(await contactRow(personId)).toBeUndefined();

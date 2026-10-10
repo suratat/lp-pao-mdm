@@ -7,6 +7,9 @@ const { looksLikePid } = require('../pid');
 const { renderFailure, statusFor, failureMessage, isVersionConflict, isRemoteFailure } = require('../apiErrors');
 const { isRealDate } = require('../employmentForm');
 const { todayBangkok, renderDateInput, formatThaiDate } = require('../thaiTime');
+const rules = require('../contactValidation');
+const { ruleAttrs, fieldErrorHtml, emailCheckWidgetHtml, contactFormScript } = require('../contactFormUi');
+const { createCheckEmailHandler, createRateLimiter } = require('../emailCheck');
 const { pageOpts, requireMasterDataAdmin, noStore, errorList, csrfField, reasonField, parseExpectedVersion, validateWriteReason } = require('./personEditRoutes');
 
 // PR-D4: HR แก้ข้อมูลส่วนบุคคล (ข้อมูลติดต่อ, ผู้ติดต่อฉุกเฉิน, ชื่อ-วันเกิดที่ HR กรอกของคนที่ยังไม่ยืนยัน ThaID) - เฉพาะ hr_master_data_admin
@@ -17,17 +20,17 @@ const { pageOpts, requireMasterDataAdmin, noStore, errorList, csrfField, reasonF
 const NAME_MAX = 200;
 const MIN_BIRTH_DATE = '1900-01-01';
 
+// ไม่เก็บ "บ้านเลขที่" / "ที่อยู่ปัจจุบัน (ข้อความเต็ม)" แล้ว (API ไม่รับ; ข้อมูลเดิมคงอยู่ในฐานข้อมูล) ป้าย emailPersonal ที่ผู้ใช้เห็นคือ "อีเมล"
+// rule = กติกาตรวจรูปแบบ (contactValidation.js) ใช้ทั้งฝั่ง browser, เซิร์ฟเวอร์นี้ และ API (ตัวตัดสิน)
 const CONTACT_FIELDS = [
-  { key: 'mobilePhone', label: 'เบอร์โทรศัพท์มือถือ', max: 20, hint: 'ตัวเลข 9-10 หลักขึ้นต้นด้วย 0 เช่น 0812345678', group: 'contact' },
-  { key: 'phoneAlt', label: 'เบอร์โทรสำรอง', max: 20, group: 'contact' },
-  { key: 'emailPersonal', label: 'อีเมลส่วนตัว', max: 255, type: 'email', group: 'contact' },
+  { key: 'mobilePhone', label: 'เบอร์โทรศัพท์มือถือ', max: 30, hint: 'ตัวเลข 10 หลักขึ้นต้น 06, 08 หรือ 09 เช่น 0812345678', group: 'contact', rule: 'mobile', validate: rules.validateMobile },
+  { key: 'phoneAlt', label: 'เบอร์โทรสำรอง', max: 30, hint: 'มือถือ หรือโทรศัพท์บ้าน/สำนักงาน 9 หลักขึ้นต้น 02, 03, 04, 05 หรือ 07', group: 'contact', rule: 'phoneAlt', validate: rules.validatePhoneAlt },
+  { key: 'emailPersonal', label: 'อีเมล', max: 300, group: 'contact', rule: 'email', validate: rules.validateEmail },
   { key: 'lineId', label: 'LINE ID', max: 100, group: 'contact' },
-  { key: 'houseNo', label: 'บ้านเลขที่', max: 50, group: 'address' },
   { key: 'moo', label: 'หมู่ที่', max: 20, group: 'address' },
   { key: 'soi', label: 'ซอย', max: 100, group: 'address' },
   { key: 'road', label: 'ถนน', max: 100, group: 'address' },
   { key: 'postcode', label: 'รหัสไปรษณีย์', max: 10, group: 'address' },
-  { key: 'fullText', label: 'ที่อยู่ปัจจุบัน (ข้อความเต็ม)', max: 2000, textarea: true, group: 'address' },
 ];
 const EMERGENCY_SLOTS = [1, 2, 3];
 const EMERGENCY_FIELDS = [
@@ -52,9 +55,18 @@ const scrub = (value) => {
   return value;
 };
 
+// compute() โยนเมื่อค่าที่แก้ไม่ผ่านการตรวจรูปแบบ (ข้อความไทยพร้อมแสดง ไม่มีค่าที่กรอก)
+class FormErrors extends Error {
+  constructor(errors, original) {
+    super('form-errors');
+    this.errors = errors;
+    this.original = original; // ค่าปัจจุบัน (ให้ฟอร์มที่วาดซ้ำรู้ว่าช่องไหนผู้ใช้แก้)
+  }
+}
+
 const syntheticProblem = (status, type) => new MdmApiError(status, { type: `https://mdm.lp-pao.go.th/problems/${type}` });
 
-function createPersonProfileRoutes({ mdmClient }) {
+function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
   const router = express.Router();
   const guard = [noStore, requireMasterDataAdmin];
   const send = (req, res, status, title, body) => res.status(status).send(layout(title, body, pageOpts(req)));
@@ -66,18 +78,19 @@ function createPersonProfileRoutes({ mdmClient }) {
   const csrfFailure = (req, res, backUrl) =>
     send(req, res, 403, 'คำขอไม่ถูกต้อง', `<p class="error">คำขอไม่ถูกต้องหรือหมดอายุ (CSRF) กรุณากลับไปเปิดหน้านี้ใหม่แล้วลองอีกครั้ง</p><p><a href="${escapeHtml(backUrl)}">← กลับ</a></p>`);
 
-  const formShell = (req, personId, { heading, intro, errors, version, action, fields, submitLabel, reason }) =>
+  const formShell = (req, personId, { heading, intro, errors, version, action, fields, submitLabel, reason, formAttrs = '', afterForm = '' }) =>
     `<p><a href="${personUrl(personId)}">← กลับไปหน้ารายละเอียด</a></p>
       <h1>${escapeHtml(heading)}</h1>
       ${intro}
       ${errorList(errors)}
-      <form method="post" action="${escapeHtml(action)}" autocomplete="off">
+      <form method="post" action="${escapeHtml(action)}" autocomplete="off" ${formAttrs}>
         ${csrfField(req)}
         <input type="hidden" name="expectedVersion" value="${escapeHtml(version)}" />
         ${fields}
         ${reasonField(reason)}
         <p><button type="submit" class="primary">${escapeHtml(submitLabel)}</button> <a href="${personUrl(personId)}">ยกเลิก</a></p>
-      </form>`;
+      </form>
+      ${afterForm}`;
 
   // อ่านโปรไฟล์ -> วาดฟอร์ม; render(profile) คืน { status, title, body }
   async function showForm(req, res, next, { title, render }) {
@@ -107,7 +120,8 @@ function createPersonProfileRoutes({ mdmClient }) {
     }
     const reasonCheck = validateWriteReason(req.body.reason);
     const parsed = validate(req.body);
-    const redisplay = (errors, status) => send(req, res, status, title, parsed.render(req, { personId, version: expectedVersion, values: scrub(parsed.values), reason: scrub(reasonCheck.reason), errors }));
+    const redisplay = (errors, status, original) =>
+      send(req, res, status, title, parsed.render(req, { personId, version: expectedVersion, values: scrub(parsed.values), ...(original ? { original } : {}), reason: scrub(reasonCheck.reason), errors }));
     const errors = [...parsed.errors, ...reasonCheck.errors];
     if (errors.length > 0) return redisplay(errors, 422);
 
@@ -117,7 +131,14 @@ function createPersonProfileRoutes({ mdmClient }) {
       const blocked = parsed.preflight ? parsed.preflight(profile) : null;
       if (blocked) throw blocked;
       if (profile.version !== expectedVersion) throw syntheticProblem(409, 'version-conflict');
-      const payload = compute(profile, parsed);
+      let payload;
+      try {
+        payload = compute(profile, parsed);
+      } catch (err) {
+        // ค่าที่ผู้ใช้แก้ไม่ผ่านกติกาตรวจรูปแบบ (ตรวจกับค่าปัจจุบันจึงทำได้เฉพาะตรงนี้) -> กลับฟอร์มพร้อมข้อความไทย คงค่าที่พิมพ์
+        if (err instanceof FormErrors) return redisplay(err.errors, 422, err.original);
+        throw err;
+      }
       if (!payload) return res.redirect(303, `${personUrl(personId)}?saved=nochange`);
 
       let result;
@@ -148,22 +169,20 @@ function createPersonProfileRoutes({ mdmClient }) {
       phoneAlt: c.phoneAlt,
       emailPersonal: c.emailPersonal,
       lineId: c.lineId,
-      houseNo: a.houseNo,
       moo: a.moo,
       soi: a.soi,
       road: a.road,
       postcode: a.postcode,
-      fullText: a.fullText,
     };
   };
 
-  function renderContactForm(req, { personId, version, values, reason = '', errors = [], areaNote = '' }) {
+  function renderContactForm(req, { personId, version, values, original = values, reason = '', errors = [], areaNote = '' }) {
     const field = (f) => {
       const value = escapeHtml(values[f.key] ?? '');
-      const input = f.textarea
-        ? `<textarea name="${f.key}" rows="3" maxlength="${f.max}">${value}</textarea>`
-        : `<input name="${f.key}" ${f.type ? `type="${f.type}" ` : ''}maxlength="${f.max}" value="${value}" />`;
-      return `<label>${escapeHtml(f.label)}${f.hint ? ` <span class="hint">(${escapeHtml(f.hint)})</span>` : ''}</label>${input}`;
+      const attrs = f.rule ? `${ruleAttrs(f.rule, original[f.key] ?? '')} inputmode="${f.rule === 'email' ? 'email' : 'tel'}"` : '';
+      const input = `<input id="${f.key}" name="${f.key}" maxlength="${f.max}" value="${value}" ${attrs} />${f.rule ? fieldErrorHtml(f.key) : ''}`;
+      const widget = f.rule === 'email' ? emailCheckWidgetHtml() : '';
+      return `<label for="${f.key}">${escapeHtml(f.label)}${f.hint ? ` <span class="hint">(${escapeHtml(f.hint)})</span>` : ''}</label>${input}${widget}`;
     };
     const fields = `<h2>ช่องทางติดต่อ</h2>${CONTACT_FIELDS.filter((f) => f.group === 'contact').map(field).join('')}
       <h2>ที่อยู่ปัจจุบัน</h2>${CONTACT_FIELDS.filter((f) => f.group === 'address').map(field).join('')}${areaNote}`;
@@ -176,6 +195,8 @@ function createPersonProfileRoutes({ mdmClient }) {
       fields,
       submitLabel: 'บันทึกข้อมูลติดต่อ',
       reason,
+      formAttrs: 'data-contact-form',
+      afterForm: contactFormScript({ checkUrl: `${personUrl(personId)}/contact/check-email`, csrfToken: req.hrAuth.csrfToken }),
     });
   }
 
@@ -189,7 +210,7 @@ function createPersonProfileRoutes({ mdmClient }) {
     showForm(req, res, next, {
       title: 'แก้ข้อมูลติดต่อ',
       render: (profile) =>
-        renderContactForm(req, { personId: profile.personId, version: profile.version, values: contactValuesFrom(profile), areaNote: areaNoteOf(profile) }),
+        renderContactForm(req, { personId: profile.personId, version: profile.version, values: contactValuesFrom(profile), original: contactValuesFrom(profile), areaNote: areaNoteOf(profile) }),
     })
   );
 
@@ -198,26 +219,34 @@ function createPersonProfileRoutes({ mdmClient }) {
     const errors = [];
     for (const f of CONTACT_FIELDS) {
       if (values[f.key].length > f.max) errors.push(`${f.label}ยาวเกิน ${f.max} ตัวอักษร`);
-      else if (f.key !== 'mobilePhone' && looksLikePid(values[f.key])) errors.push(`${f.label}ห้ามมีตัวเลข 13 หลักติดกัน (ห้ามใส่เลขบัตรประชาชน)`);
+      else if (!f.rule && looksLikePid(values[f.key])) errors.push(`${f.label}ห้ามมีตัวเลข 13 หลักติดกัน (ห้ามใส่เลขบัตรประชาชน)`);
     }
-    // เบอร์มือถือ: ตัดช่องว่าง/ขีดที่พิมพ์คั่น แล้วต้องเป็นเลข 9-10 หลักขึ้นต้นด้วย 0 (ตรงกับ pattern ของ API)
-    values.mobilePhone = values.mobilePhone.replace(/[\s-]/g, '');
-    if (values.mobilePhone && !/^0\d{8,9}$/.test(values.mobilePhone)) errors.push('เบอร์โทรศัพท์มือถือต้องเป็นตัวเลข 9-10 หลักขึ้นต้นด้วย 0');
-    if (values.emailPersonal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.emailPersonal)) errors.push('รูปแบบอีเมลไม่ถูกต้อง');
+    // รูปแบบอีเมล/เบอร์โทรตรวจใน computeContact (ต้องเทียบกับค่าปัจจุบัน: ค่าเดิมที่ไม่ได้แก้ไม่ถูกบังคับแก้ย้อนหลัง)
     return { values, errors, render: (req2, ctx) => renderContactForm(req2, ctx) };
   };
 
-  // ส่งเฉพาะฟิลด์ที่ต่างจากค่าปัจจุบัน; ช่องว่าง = ล้างค่า (null)
+  // ส่งเฉพาะฟิลด์ที่ต่างจากค่าปัจจุบัน; ช่องว่าง = ล้างค่า (null); เบอร์/อีเมลตรวจรูปแบบเฉพาะที่แก้ (API ตรวจซ้ำและเป็นผู้ตัดสิน)
   const computeContact = (profile, { values }) => {
     const current = contactValuesFrom(profile);
     const body = {};
     const address = {};
+    const errors = [];
     for (const f of CONTACT_FIELDS) {
       if ((current[f.key] ?? '') === values[f.key]) continue;
-      const next = values[f.key] === '' ? null : values[f.key];
+      let next = values[f.key] === '' ? null : values[f.key];
+      if (f.validate) {
+        const result = f.validate(values[f.key]);
+        if (!result.ok) {
+          errors.push(result.message);
+          continue;
+        }
+        next = result.value;
+        if ((current[f.key] ?? null) === next) continue; // normalize แล้วเท่าค่าเดิม
+      }
       if (f.group === 'address') address[f.key] = next;
       else body[f.key] = next;
     }
+    if (errors.length > 0) throw new FormErrors(errors, current);
     if (Object.keys(address).length > 0) body.currentAddress = address;
     return Object.keys(body).length > 0 ? { ...body } : null;
   };
@@ -231,6 +260,27 @@ function createPersonProfileRoutes({ mdmClient }) {
       call: (token, personId, body) => mdmClient.patchContact(token, personId, body),
       savedCode: 'contact',
     })
+  );
+
+  // ปุ่ม "ตรวจสอบอีเมล" ของหน้าแก้ข้อมูลติดต่อ: ต้องล็อกอิน + hr_master_data_admin + CSRF (header) เหมือนหน้าแก้ไข จำกัด 10 ครั้ง/นาทีต่อ session
+  // ตอบ JSON ข้อความไทย ผลเป็นข้อมูลประกอบเท่านั้น (ไม่บล็อกการบันทึก) ไม่ log ค่าอีเมล
+  const emailLimiter = emailCheck.limiter || createRateLimiter({ max: 10, windowMs: 60 * 1000 });
+  const checkEmail = createCheckEmailHandler({
+    keyOf: (req) => req.hrAuth.csrfToken, // token ต่อ session (ไม่ใช่ข้อมูลส่วนบุคคล) ใช้เป็นตัวแทน session ในตัวนับ
+    limiter: emailLimiter,
+    ...(emailCheck.checkDomain ? { checkDomain: emailCheck.checkDomain } : {}),
+  });
+  router.post(
+    '/hr/persons/:personId/contact/check-email',
+    noStore,
+    express.json({ limit: '2kb' }),
+    (req, res, next) => {
+      if (!req.hrAuth?.isMasterDataAdmin) return res.status(403).json({ status: 'forbidden', message: 'ไม่มีสิทธิ์ใช้งานส่วนนี้' });
+      if (!UUID_RE.test(req.params.personId)) return res.status(404).json({ status: 'not_found', message: 'ไม่พบบุคคล' });
+      if (!csrfTokenMatches(req.hrAuth.csrfToken, req.get('x-csrf-token'))) return res.status(403).json({ status: 'forbidden', message: 'คำขอไม่ถูกต้องหรือหมดอายุ กรุณาโหลดหน้านี้ใหม่' });
+      return next();
+    },
+    checkEmail
   );
 
   // ----------------------------------------------------------------------------------------------------------------- ผู้ติดต่อฉุกเฉิน

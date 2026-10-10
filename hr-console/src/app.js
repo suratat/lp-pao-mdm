@@ -12,20 +12,21 @@ const { layout } = require('./views/html');
 
 // config: { keycloakAuthClient, verifyIdToken, mdmClient, sessionStore, isProduction }
 // sessionStore: ดู session/sessionStore.js (ไม่ส่ง = สร้างใหม่ในหน่วยความจำ)
-function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore = createSessionStore(), isProduction = false }) {
+// emailCheck (ฉีดในเทสต์เท่านั้น): { checkDomain, limiter } ของปุ่มตรวจสอบอีเมล - ไม่ระบุ = ค้น DNS จริง 10 ครั้ง/นาทีต่อ session
+function createApp({ keycloakAuthClient, verifyIdToken, mdmClient, sessionStore = createSessionStore(), isProduction = false, emailCheck = {} }) {
   const app = express();
   app.disable('x-powered-by');
 
   app.use(createAuthRoutes({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction }));
 
   // ใช้เงื่อนไข path เองแทนการพึ่ง Express path routing กับ prefix (แนวทางเดียวกับ portal/src/app.js)
-  const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction });
+  const authGate = createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction, jsonPathRe: /^\/hr\/persons\/[^/]+\/contact\/check-email$/ });
   app.use((req, res, next) => (req.path === '/hr' || req.path.startsWith('/hr/') ? authGate(req, res, next) : next()));
   app.use(createClaimRequestRoutes({ mdmClient }));
   app.use(createReverifyRoutes({ mdmClient }));
   app.use(createMasterDataRoutes({ mdmClient }));
   app.use(createPersonEditRoutes({ mdmClient })); // ต้องมาก่อน createPersonRoutes: /hr/persons/new ต้องไม่ถูกตีเป็น :personId
-  app.use(createPersonProfileRoutes({ mdmClient }));
+  app.use(createPersonProfileRoutes({ mdmClient, emailCheck }));
   app.use(createPersonRoutes({ mdmClient }));
 
   app.get('/', (req, res) => res.redirect(302, '/hr/claim-requests'));

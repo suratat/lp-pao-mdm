@@ -90,7 +90,7 @@ function defaultScenarios() {
 
 // รัน instance จริงของ MDM API (api/src/app.js) บน loopback port จริง + mock Keycloak token endpoint
 // (ไม่ mock MDM API เลย - HR Console คุยผ่าน HTTP จริงทุกประการเหมือนโปรดักชัน)
-async function buildIntegrationHarness({ scenarios } = {}) {
+async function buildIntegrationHarness({ scenarios, emailCheck } = {}) {
   const apiCtx = await buildTestApp();
   const apiServer = await new Promise((resolve) => {
     const server = apiCtx.app.listen(0, () => resolve(server));
@@ -131,6 +131,7 @@ async function buildIntegrationHarness({ scenarios } = {}) {
     mdmClient,
     sessionStore,
     isProduction: false,
+    emailCheck,
   });
 
   // นับ request ที่ "ถึงเซิร์ฟเวอร์แล้ว" (ก่อนเข้า authGate แบบ synchronous) - ให้เทสต์ single-flight รอจนครบทุกตัวโดยไม่ใช้เวลา
