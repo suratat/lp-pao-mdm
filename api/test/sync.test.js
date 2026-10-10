@@ -478,3 +478,100 @@ describe('POST /sync/thaid - การตรวจสอบ pid', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('POST /sync/thaid - ปิด claim_request ที่ค้าง', () => {
+  async function insertClaimRequest(hash, status = 'PENDING_HR') {
+    const { rows } = await ctx.pool.query(
+      `INSERT INTO mdm.claim_request (pid_hash, display_name, status) VALUES ($1, 'นาย ทดสอบ ระบบ', $2) RETURNING claim_request_id`,
+      [hash, status]
+    );
+    return rows[0].claim_request_id;
+  }
+  const fetchClaim = async (id) =>
+    (await ctx.pool.query(`SELECT * FROM mdm.claim_request WHERE claim_request_id = $1`, [id])).rows[0];
+  const fetchClaimLogs = (personId) =>
+    ctx.pool.query(`SELECT * FROM audit.data_change_log WHERE person_id = $1 AND table_name = 'claim_request'`, [personId]);
+
+  test('PENDING_CLAIM + claim_request PENDING_HR -> CLAIMED และ claim_request เป็น LINKED โดย system:thaid-sync', async () => {
+    const { pid, hash, personId } = await insertPerson();
+    await insertEmployment(personId, 'EMP-CLOSECLAIM-001');
+    const claimId = await insertClaimRequest(hash);
+
+    const res = await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+    expect(res.body.result).toBe('CLAIMED');
+
+    const claim = await fetchClaim(claimId);
+    expect(claim.status).toBe('LINKED');
+    expect(claim.resolved_person_id).toBe(personId);
+    expect(claim.resolved_by).toBe('system:thaid-sync');
+    expect(claim.resolved_at).not.toBeNull();
+
+    const logs = await fetchClaimLogs(personId);
+    expect(logs.rows).toHaveLength(1);
+    expect(logs.rows[0].actor_sub).toBe('system:thaid-sync');
+    expect(logs.rows[0].changed_by).toBe('THAID_SYNC');
+  });
+
+  test('ACTIVE ที่มี claim_request PENDING_HR ค้าง -> ปิดเป็น LINKED เช่นกัน', async () => {
+    const { pid, hash, personId } = await insertPerson({ status: 'ACTIVE', verificationStatus: 'VERIFIED' });
+    await insertEmployment(personId, 'EMP-CLOSECLAIM-002');
+    const claimId = await insertClaimRequest(hash);
+
+    const res = await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+    expect(res.status).toBe(200);
+
+    expect((await fetchClaim(claimId)).status).toBe('LINKED');
+  });
+
+  test('claim_request ที่ REJECTED แล้วไม่ถูกเขียนทับ และไม่มี change_log', async () => {
+    const { pid, hash, personId } = await insertPerson();
+    await insertEmployment(personId, 'EMP-CLOSECLAIM-003');
+    const claimId = await insertClaimRequest(hash, 'REJECTED');
+
+    await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+
+    const claim = await fetchClaim(claimId);
+    expect(claim.status).toBe('REJECTED');
+    expect(claim.resolved_person_id).toBeNull();
+    expect((await fetchClaimLogs(personId)).rows).toHaveLength(0);
+  });
+
+  test('ไม่มี claim_request -> ไม่เกิด change_log ของ claim_request', async () => {
+    const { pid, personId } = await insertPerson();
+    await insertEmployment(personId, 'EMP-CLOSECLAIM-004');
+
+    await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+
+    expect((await fetchClaimLogs(personId)).rows).toHaveLength(0);
+  });
+
+  test('handleClaim ล้มเหลว -> rollback ทั้งหมด claim_request ยังเป็น PENDING_HR', async () => {
+    const { pid, hash, personId } = await insertPerson();
+    await insertEmployment(personId, 'EMP-CLOSECLAIM-005');
+    const claimId = await insertClaimRequest(hash);
+
+    const spy = jest.spyOn(ctx.vault, 'encrypt').mockRejectedValueOnce(new Error('vault down'));
+    const res = await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+    spy.mockRestore();
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect((await fetchClaim(claimId)).status).toBe('PENDING_HR');
+    expect((await fetchPersonState(personId)).status).toBe('PENDING_CLAIM');
+    expect((await fetchClaimLogs(personId)).rows).toHaveLength(0);
+  });
+
+  test('change_log ของ claim_request ไม่มี pid หรือ pid_hash', async () => {
+    const { pid, hash, personId } = await insertPerson();
+    await insertEmployment(personId, 'EMP-CLOSECLAIM-006');
+    await insertClaimRequest(hash);
+
+    await syncThaid({ claims: baseClaims(pid), context: baseContext() });
+
+    const logs = await fetchClaimLogs(personId);
+    expect(logs.rows).toHaveLength(1);
+    const text = JSON.stringify(logs.rows);
+    expect(text).not.toContain(pid);
+    expect(text).not.toContain(hash);
+    expect(text).not.toMatch(/\d{13}/);
+  });
+});

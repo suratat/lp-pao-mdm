@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const { isValidPid, pidHash, canonicalizeIdentityClaims, snapshotHash, sha256Hex } = require('../security/pid');
 const { withTransaction } = require('../db/transaction');
 const { HttpProblem } = require('../security/httpProblem');
-const { writeChangeLogs, SYSTEM_ACTORS, systemActor } = require('./changeLogWriter');
+const { writeChangeLog, writeChangeLogs, SYSTEM_ACTORS, systemActor } = require('./changeLogWriter');
 
 const PID_KEY_NAME = 'mdm-pid';
 const PHOTO_KEY_NAME = 'mdm-photo';
@@ -447,6 +447,28 @@ async function handleRejectedInactive(client, { person, context, trigger }) {
   return { httpStatus: 403, body: { result: 'REJECTED_INACTIVE', personId: person.person_id, status: 'INACTIVE' } };
 }
 
+// ปิด claim_request ที่ค้าง PENDING_HR เมื่อพบ person ที่ pid_hash เดียวกันแล้ว (เช่น ล็อกอินก่อน HR นำเข้า จึงเกิดคำขอไว้)
+// ปิดเฉพาะ PENDING_HR (REJECTED/LINKED ไม่แตะ) ใน transaction เดียวกับ sync; change_log ไม่ใส่ pid/pid_hash
+async function closeStaleClaimRequest(client, { hash, personId, actor }) {
+  const { rowCount } = await client.query(
+    `UPDATE mdm.claim_request
+     SET status = 'LINKED', resolved_person_id = $2, resolved_by = $3, resolved_at = now()
+     WHERE pid_hash = $1 AND status = 'PENDING_HR'`,
+    [hash, personId, actor.sub]
+  );
+  if (rowCount === 0) return;
+  await writeChangeLog(client, {
+    personId,
+    tableName: 'claim_request',
+    fieldName: 'status',
+    oldValue: 'PENDING_HR',
+    newValue: 'LINKED',
+    changedBy: 'THAID_SYNC',
+    actor,
+    reason: 'ปิดอัตโนมัติ: พบ person ที่ pid_hash ตรงกันขณะ sync-on-login',
+  });
+}
+
 // actorClient = azp ของ token ที่เรียก (check-broker) - ผู้กระทำจริงของการเปลี่ยนข้อมูลคือระบบ sync ไม่ใช่ผู้ใช้คนใด
 async function syncFromThaid({ pool, vault, pepper }, requestBody, { actorClient = null } = {}) {
   const actor = systemActor(SYSTEM_ACTORS.THAID_SYNC, actorClient);
@@ -477,11 +499,15 @@ async function syncFromThaid({ pool, vault, pepper }, requestBody, { actorClient
     const person = personResult.rows[0];
 
     if (person.status === 'PENDING_CLAIM') {
-      return handleClaim(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor });
+      const result = await handleClaim(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor });
+      await closeStaleClaimRequest(client, { hash, personId: person.person_id, actor });
+      return result;
     }
 
     if (person.status === 'ACTIVE') {
-      return handleActiveSync(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor });
+      const result = await handleActiveSync(client, vault, { person, claims, context, trigger, canonical, newSnapshotHash, photo, actor });
+      await closeStaleClaimRequest(client, { hash, personId: person.person_id, actor });
+      return result;
     }
 
     return handleRejectedInactive(client, { person, context, trigger });
