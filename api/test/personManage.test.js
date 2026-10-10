@@ -52,7 +52,6 @@ async function provision(extra = {}) {
     pid,
     expectedFirstNameTh: 'สมชาย',
     expectedLastNameTh: 'ทดสอบ',
-    expectedBirthDate: '1990-05-17',
     reason: 'เพิ่มบุคลากรใหม่ตามคำสั่งบรรจุ',
     employment: { employeeNo: pid, personnelType: 'CIVIL_SERVANT', positionId: await makePosition(), orgUnitId, effectiveFrom: '2024-01-01' },
     ...extra,
@@ -107,23 +106,20 @@ describe.each(ENDPOINTS)('%s: สิทธิ์', (_name, method, pathOf, bodyO
   });
 });
 
-describe('POST /persons: expectedBirthDate', () => {
-  test('เก็บวันเกิดที่ HR กรอก (ไม่แตะ person_identity) พร้อม log ผู้กระทำ/เหตุผล และ manage-profile แสดงว่าแก้ได้', async () => {
-    const { personId } = await provision({ expectedBirthDate: '1985-12-31' });
-    expect(await expectedOf(personId)).toEqual({ first: 'สมชาย', last: 'ทดสอบ', birth: '1985-12-31' });
+describe('POST /persons: เลิกเก็บวันเกิดที่ HR กรอก', () => {
+  test('เก็บเฉพาะชื่อ (ไม่แตะ person_identity) พร้อม log ผู้กระทำ/เหตุผล; ไม่เขียน expected_birth_date และไม่มี log ของฟิลด์นี้; manage-profile ไม่มี birthDate', async () => {
+    const { personId } = await provision();
+    expect(await expectedOf(personId)).toEqual({ first: 'สมชาย', last: 'ทดสอบ', birth: null });
     expect((await adminPool.query(`SELECT 1 FROM mdm.person_identity WHERE person_id = $1`, [personId])).rows).toEqual([]);
 
     const logs = (await logsFor(personId)).filter((l) => l.field_name.startsWith('person.expected_'));
-    expect(logs.map((l) => l.field_name).sort()).toEqual(['person.expected_birth_date', 'person.expected_first_name_th', 'person.expected_last_name_th']);
+    expect(logs.map((l) => l.field_name).sort()).toEqual(['person.expected_first_name_th', 'person.expected_last_name_th']);
     expect(logs.every((l) => l.changed_by === 'HR' && l.actor_client === 'hr-console' && l.reason === 'เพิ่มบุคลากรใหม่ตามคำสั่งบรรจุ')).toBe(true);
 
-    expect((await profile(personId)).expectedIdentity).toEqual({ firstNameTh: 'สมชาย', lastNameTh: 'ทดสอบ', birthDate: '1985-12-31', editable: true, lockedReason: null });
+    expect((await profile(personId)).expectedIdentity).toEqual({ firstNameTh: 'สมชาย', lastNameTh: 'ทดสอบ', editable: true, lockedReason: null });
   });
 
-  test('ไม่ส่งวันเกิดก็ได้; นอกช่วง 1900-01-01..วันนี้ -> 422; รูปแบบวันที่ผิด/ชื่อยาวเกิน 200 -> 400 (ไม่ใช่ 500) และไม่สร้างบุคคล', async () => {
-    const { personId } = await provision({ expectedBirthDate: undefined });
-    expect((await profile(personId)).expectedIdentity.birthDate).toBeUndefined();
-
+  test('ส่ง expectedBirthDate มา -> 400 (ทุกค่า) และไม่สร้างบุคคล; ชื่อยาวเกิน 200 -> 400 (ไม่ใช่ 500)', async () => {
     const attempt = async (extra) => {
       const pid = makeFakePid();
       const res = await call('post', '/persons', { scope: 'personnel:provision personnel:read:basic', sub: uniqueSub('hr'), azp: 'hr-console', roles: [ROLE] }, {
@@ -131,9 +127,12 @@ describe('POST /persons: expectedBirthDate', () => {
       });
       return res.status;
     };
-    expect(await attempt({ expectedBirthDate: '2999-01-01' })).toBe(422);
-    expect(await attempt({ expectedBirthDate: '1899-12-31' })).toBe(422);
-    expect(await attempt({ expectedBirthDate: '17/05/1990' })).toBe(400);
+    const before = Number((await adminPool.query(`SELECT count(*) FROM mdm.person`)).rows[0].count);
+    for (const value of ['1990-05-17', '2999-01-01', '17/05/1990', null]) {
+      // eslint-disable-next-line no-await-in-loop
+      expect([value, await attempt({ expectedBirthDate: value })]).toEqual([value, 400]);
+    }
+    expect(Number((await adminPool.query(`SELECT count(*) FROM mdm.person`)).rows[0].count)).toBe(before);
     expect(await attempt({ expectedFirstNameTh: 'ก'.repeat(201) })).toBe(400);
     expect(await attempt({ expectedLastNameTh: 'ข'.repeat(201) })).toBe(400);
     expect(await attempt({ expectedFirstNameTh: 'ก'.repeat(200) })).toBe(201);
@@ -159,7 +158,7 @@ describe('GET /persons/{id}/manage-profile', () => {
     );
     expect(rows).toHaveLength(before + 1);
     expect(rows[0]).toMatchObject({ endpoint: `/api/v1/persons/${personId}/manage-profile`, http_method: 'GET', subject_person_id: personId, keycloak_client_id: 'hr-console', response_status: 200 });
-    expect(rows[0].fields_returned).toEqual(expect.arrayContaining(['contact.mobilePhone', 'contact.emailPersonal', 'expectedIdentity.birthDate']));
+    expect(rows[0].fields_returned).toEqual(expect.arrayContaining(['contact.mobilePhone', 'contact.emailPersonal', 'expectedIdentity.firstNameTh']));
   });
 
   test('การแก้ที่คืนโปรไฟล์ใหม่ (PATCH contact) ก็เขียน access_log; ถูกปฏิเสธ (403/409) ไม่เขียน', async () => {
@@ -218,40 +217,51 @@ describe('hr_officer ที่ไม่มี hr_master_data_admin ต้อง�
 });
 
 describe('PATCH /persons/{id}/expected-identity', () => {
-  test('แก้ชื่อ+วันเกิด: version +1, log ต่อฟิลด์ (ค่าเก่า/ใหม่, ผู้กระทำ, เหตุผล), ฟิลด์ที่ไม่ส่งไม่ถูกแตะ, ค่าเดิมซ้ำไม่เปลี่ยนอะไร', async () => {
+  test('แก้ชื่อ: version +1, log ต่อฟิลด์ (ค่าเก่า/ใหม่, ผู้กระทำ, เหตุผล), ฟิลด์ที่ไม่ส่งไม่ถูกแตะ, ค่าเดิมซ้ำไม่เปลี่ยนอะไร', async () => {
     const { personId, version } = await provision();
     const auth = mgr();
-    const res = await call('patch', `/persons/${personId}/expected-identity`, auth, { expectedVersion: version, reason: '  แก้ตามสำเนาทะเบียนบ้าน  ', firstNameTh: ' สมศรี ', birthDate: '1991-02-03' });
+    const res = await call('patch', `/persons/${personId}/expected-identity`, auth, { expectedVersion: version, reason: '  แก้ตามสำเนาทะเบียนบ้าน  ', firstNameTh: ' สมศรี ' });
     expect(res.status).toBe(200);
     expect(res.body.version).toBe(version + 1);
-    expect(res.body.expectedIdentity).toMatchObject({ firstNameTh: 'สมศรี', lastNameTh: 'ทดสอบ', birthDate: '1991-02-03', editable: true });
-    expect(await expectedOf(personId)).toEqual({ first: 'สมศรี', last: 'ทดสอบ', birth: '1991-02-03' });
+    expect(res.body.expectedIdentity).toMatchObject({ firstNameTh: 'สมศรี', lastNameTh: 'ทดสอบ', editable: true });
+    expect(res.body.expectedIdentity).not.toHaveProperty('birthDate');
+    expect(await expectedOf(personId)).toEqual({ first: 'สมศรี', last: 'ทดสอบ', birth: null });
 
     const logs = (await logsFor(personId)).filter((l) => l.reason === 'แก้ตามสำเนาทะเบียนบ้าน');
-    expect(logs.map((l) => [l.field_name, l.old_value, l.new_value]).sort()).toEqual(
-      [
-        ['person.expected_birth_date', '1990-05-17', '1991-02-03'],
-        ['person.expected_first_name_th', 'สมชาย', 'สมศรี'],
-      ].sort()
-    );
+    expect(logs.map((l) => [l.field_name, l.old_value, l.new_value])).toEqual([['person.expected_first_name_th', 'สมชาย', 'สมศรี']]);
     expect(logs.every((l) => l.changed_by === 'HR' && l.actor_sub === auth.sub && l.actor_client === 'hr-console' && l.table_name === 'person')).toBe(true);
     expect((await outboxFor(personId)).filter((e) => e.event_type !== 'PERSON_CLAIMED')).toEqual([]); // PENDING_CLAIM ไม่ส่ง outbox
 
-    const same = await call('patch', `/persons/${personId}/expected-identity`, auth, { expectedVersion: version + 1, reason: 'ส่งค่าเดิมซ้ำ', firstNameTh: 'สมศรี', birthDate: '1991-02-03' });
+    const same = await call('patch', `/persons/${personId}/expected-identity`, auth, { expectedVersion: version + 1, reason: 'ส่งค่าเดิมซ้ำ', firstNameTh: 'สมศรี' });
     expect(same.status).toBe(200);
     expect(await versionOf(personId)).toBe(version + 1);
     expect((await logsFor(personId)).filter((l) => l.reason === 'ส่งค่าเดิมซ้ำ')).toEqual([]);
   });
 
-  test('birthDate = null ล้างค่า', async () => {
+  test('ส่ง birthDate (ค่าใดก็ตาม รวม null) -> 400 และไม่เขียนอะไร; ส่งชื่อมาด้วยก็ปฏิเสธทั้งคำขอ; ค่าเดิมในคอลัมน์ไม่ถูกแตะ', async () => {
     const { personId, version } = await provision();
-    const res = await call('patch', `/persons/${personId}/expected-identity`, mgr(), { expectedVersion: version, reason: 'ล้างวันเกิดที่กรอกผิด', birthDate: null });
-    expect(res.status).toBe(200);
-    expect((await expectedOf(personId)).birth).toBeNull();
-    expect(res.body.expectedIdentity).not.toHaveProperty('birthDate');
+    // แถวเก่าที่มีวันเกิดอยู่ก่อนเลิกเก็บ: ต้องไม่ถูกลบ/แก้ และไม่ถูกคืนใน manage-profile
+    await adminPool.query(`UPDATE mdm.person SET expected_birth_date = '1990-05-17' WHERE person_id = $1`, [personId]);
+    const send = (body) => call('patch', `/persons/${personId}/expected-identity`, mgr(), { expectedVersion: version, reason: 'ทดสอบเลิกเก็บวันเกิด', ...body });
+    for (const body of [{ birthDate: '1991-02-03' }, { birthDate: null }, { birthDate: '2999-01-01' }, { firstNameTh: 'สมศรี', birthDate: '1991-02-03' }]) {
+      // eslint-disable-next-line no-await-in-loop
+      expect([body, (await send(body)).status]).toEqual([body, 400]);
+    }
+    expect(await versionOf(personId)).toBe(version);
+    expect(await expectedOf(personId)).toEqual({ first: 'สมชาย', last: 'ทดสอบ', birth: '1990-05-17' });
+    expect((await profile(personId)).expectedIdentity).not.toHaveProperty('birthDate');
   });
 
-  test('ตรวจข้อมูลเข้า: ไม่ส่งฟิลด์ -> 422; ชื่อว่าง -> 400/422; ชื่อมีเลข 13 หลัก -> 422; วันเกิดนอกช่วง -> 422; รูปแบบผิด/ยาวเกิน 200 -> 400; ไม่เขียนอะไร', async () => {
+  test('ส่งชื่ออย่างเดียวสำเร็จตามเดิม และไม่แตะค่าวันเกิดเดิมในคอลัมน์', async () => {
+    const { personId, version } = await provision();
+    await adminPool.query(`UPDATE mdm.person SET expected_birth_date = '1990-05-17' WHERE person_id = $1`, [personId]);
+    const res = await call('patch', `/persons/${personId}/expected-identity`, mgr(), { expectedVersion: version, reason: 'แก้เฉพาะชื่อ', lastNameTh: 'นามสกุลใหม่' });
+    expect(res.status).toBe(200);
+    expect(await expectedOf(personId)).toEqual({ first: 'สมชาย', last: 'นามสกุลใหม่', birth: '1990-05-17' });
+    expect((await logsFor(personId)).filter((l) => l.reason === 'แก้เฉพาะชื่อ').map((l) => l.field_name)).toEqual(['person.expected_last_name_th']);
+  });
+
+  test('ตรวจข้อมูลเข้า: ไม่ส่งฟิลด์ -> 422; ชื่อว่าง -> 400/422; ชื่อมีเลข 13 หลัก -> 422; รูปแบบผิด/ยาวเกิน 200 -> 400; ไม่เขียนอะไร', async () => {
     const { personId, version } = await provision();
     const patch = (body) => call('patch', `/persons/${personId}/expected-identity`, mgr(), { expectedVersion: version, reason: 'ทดสอบตรวจข้อมูล', ...body });
     const pid = makeFakePid();
@@ -262,13 +272,10 @@ describe('PATCH /persons/{id}/expected-identity', () => {
     const named = await patch({ lastNameTh: `นามสกุล ${pid}` });
     expect(named.status).toBe(422);
     expect(JSON.stringify(named.body)).not.toContain(pid);
-    expect((await patch({ birthDate: '2999-01-01' })).status).toBe(422);
-    expect((await patch({ birthDate: '1899-12-31' })).status).toBe(422);
-    expect((await patch({ birthDate: '1990-13-45' })).status).toBe(400);
     expect((await patch({ firstNameTh: 'ก'.repeat(201) })).status).toBe(400);
     expect((await patch({ lastNameTh: 'ข'.repeat(201) })).status).toBe(400);
     expect((await patch({ firstNameTh: 'ก'.repeat(200) })).status).toBe(200);
-    expect(await expectedOf(personId)).toMatchObject({ first: 'ก'.repeat(200), last: 'ทดสอบ', birth: '1990-05-17' });
+    expect(await expectedOf(personId)).toMatchObject({ first: 'ก'.repeat(200), last: 'ทดสอบ', birth: null });
   });
 
   test('reason/expectedVersion บังคับ: ไม่ส่ง -> 400; ว่าง -> 422; มีเลข 13 หลัก (ติดกัน/ขีด) -> 422 ไม่สะท้อนเลข; version ไม่ตรง -> 409 ไม่เขียน', async () => {
@@ -328,7 +335,7 @@ describe('คนที่เคยยืนยัน ThaID แล้วแก้
     expect((await claimViaThaid(pid)).status).toBe(200);
 
     const after = await profile(personId);
-    expect(after.expectedIdentity).toEqual({ firstNameTh: 'สมชาย', lastNameTh: 'ทดสอบ', birthDate: '1990-05-17', editable: false, lockedReason: 'THAID_VERIFIED' });
+    expect(after.expectedIdentity).toEqual({ firstNameTh: 'สมชาย', lastNameTh: 'ทดสอบ', editable: false, lockedReason: 'THAID_VERIFIED' });
     const identity = (await adminPool.query(`SELECT first_name_th, birth_date::text AS birth FROM mdm.person_identity WHERE person_id = $1`, [personId])).rows[0];
     expect(identity).toEqual({ first_name_th: 'จาก', birth: '1980-01-01' }); // ThaID เป็นหลัก ไม่ถูกแตะ/เทียบกับค่าของ HR
 
@@ -609,7 +616,9 @@ describe('GET /persons/{id}/history', () => {
   test('เรียงใหม่ -> เก่า, มีผู้กระทำ/เหตุผล, ชื่อแสดงค่า แต่วันเกิด/ข้อมูลติดต่อ/ผู้ติดต่อฉุกเฉินปกปิดค่า (valuesHidden), ไม่มีเลข 13 หลัก, cursor ไม่ซ้ำ', async () => {
     const { personId, pid, version } = await provision();
     const auth = mgr();
-    const a = await call('patch', `/persons/${personId}/expected-identity`, auth, { expectedVersion: version, reason: 'แก้ชื่อ', firstNameTh: 'ชื่อใหม่', birthDate: '1992-01-01' });
+    const a = await call('patch', `/persons/${personId}/expected-identity`, auth, { expectedVersion: version, reason: 'แก้ชื่อ', firstNameTh: 'ชื่อใหม่' });
+    // แถวเก่าของ expected_birth_date (เขียนก่อนเลิกเก็บ) ต้องยังอ่านประวัติได้แต่ปกปิดค่า
+    await adminPool.query(`INSERT INTO audit.data_change_log (person_id, table_name, field_name, old_value, new_value, changed_by) VALUES ($1, 'person', 'person.expected_birth_date', to_jsonb('1990-05-17'::text), to_jsonb('1992-01-01'::text), 'HR')`, [personId]);
     const b = await call('patch', `/persons/${personId}/contact`, auth, { expectedVersion: a.body.version, reason: 'แก้เบอร์', mobilePhone: '0811119999' });
     await call('put', `/persons/${personId}/emergency-contacts`, auth, { expectedVersion: b.body.version, reason: 'ผู้ติดต่อ', contacts: [{ fullName: 'ผู้ติดต่อลับ', relationship: 'เพื่อน', phone: '0822228888' }] });
     // แถวเก่าที่เลข 13 หลักหลุดมาใน reason (ก่อนมีการปฏิเสธ) ต้องถูกปกปิดตอนแสดง

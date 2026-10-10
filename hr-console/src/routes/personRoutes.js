@@ -27,7 +27,7 @@ const SAVED_MESSAGES = {
   deactivated: 'บันทึกการพ้นสภาพเรียบร้อยแล้ว ระบบระงับการเข้าถึงของบุคคลนี้แล้ว',
   contact: 'บันทึกข้อมูลติดต่อเรียบร้อยแล้ว',
   emergency: 'บันทึกผู้ติดต่อฉุกเฉินเรียบร้อยแล้ว',
-  identity: 'บันทึกชื่อ-นามสกุล/วันเกิดที่ HR กรอกเรียบร้อยแล้ว (ข้อมูลนี้รอยืนยันด้วย ThaID)',
+  identity: 'บันทึกชื่อ-นามสกุลที่ HR กรอกเรียบร้อยแล้ว (ข้อมูลนี้รอยืนยันด้วย ThaID)',
   reactivated: 'คืนสภาพเรียบร้อยแล้ว บุคคลนี้ต้องยืนยันตัวตนผ่าน ThaID ใหม่ในการเข้าสู่ระบบครั้งถัดไป',
 };
 const REASON_MIN = 10;
@@ -286,7 +286,7 @@ function createPersonRoutes({ mdmClient, emergencyContactsEnabled = false }) {
               ? `<a class="button" href="/hr/persons/${id}/reactivate">คืนสภาพ</a>`
               : `<a class="button" href="/hr/persons/${id}/employment/edit">ย้ายหน่วยงาน / ตำแหน่ง / ประเภท</a><a class="button" href="/hr/persons/${id}/deactivate">พ้นสภาพ</a>`
           }</p>
-          <p class="actions"><a class="button" href="/hr/persons/${id}/contact/edit">แก้ข้อมูลติดต่อ</a>${emergencyButton}<a class="button" href="/hr/persons/${id}/expected-identity/edit">ชื่อ-วันเกิดที่ HR กรอก</a></p>`
+          <p class="actions"><a class="button" href="/hr/persons/${id}/contact/edit">แก้ข้อมูลติดต่อ</a>${emergencyButton}<a class="button" href="/hr/persons/${id}/expected-identity/edit">ชื่อที่ HR กรอก</a></p>`
         : '';
 
       // ประวัติการเปลี่ยนแปลง (เฉพาะ hr_master_data_admin): ความล้มเหลวของส่วนนี้ต้องไม่ทำให้ทั้งหน้าล้ม

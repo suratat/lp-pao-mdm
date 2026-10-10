@@ -15,7 +15,6 @@ const { presentChangeValues } = require('./auditService');
 // (actor_sub/actor_client จาก token) ใน transaction เดียวกับการเปลี่ยนข้อมูล; บุคคลที่ยัง PENDING_CLAIM ไม่ส่ง outbox (เหมือน provision)
 
 const SQLSTATE_IDENTITY_LOCKED = 'MD001'; // trigger mdm.guard_expected_identity (migration 051)
-const MIN_BIRTH_DATE = '1900-01-01';
 
 function identityLockedProblem() {
   return new HttpProblem(
@@ -44,7 +43,7 @@ function assertVersion(person, expectedVersion) {
 async function lockPerson(client, personId, expectedVersion, { checkVersion = true } = {}) {
   const { rows } = await client.query(
     `SELECT person_id, status, version, thaid_verified_at, claimed_at,
-            expected_first_name_th, expected_last_name_th, expected_birth_date::text AS expected_birth_date
+            expected_first_name_th, expected_last_name_th
      FROM mdm.person WHERE person_id = $1 FOR UPDATE`,
     [personId]
   );
@@ -56,7 +55,7 @@ async function lockPerson(client, personId, expectedVersion, { checkVersion = tr
 async function loadProfile(client, personId) {
   const { rows } = await client.query(
     `SELECT p.person_id, p.status, p.version, p.updated_at, p.thaid_verified_at, p.claimed_at,
-            p.expected_first_name_th, p.expected_last_name_th, p.expected_birth_date::text AS expected_birth_date,
+            p.expected_first_name_th, p.expected_last_name_th,
             pc.mobile_phone, pc.phone_alt, pc.email_personal, pc.line_id, pc.same_as_registered,
             pc.cur_house_no, pc.cur_moo, pc.cur_soi, pc.cur_road, pc.cur_address_text,
             pc.cur_subdistrict_code, pc.cur_district_code, pc.cur_province_code, pc.cur_postcode,
@@ -81,7 +80,6 @@ async function loadProfile(client, personId) {
     expectedIdentity: {
       firstNameTh: row.expected_first_name_th ?? undefined,
       lastNameTh: row.expected_last_name_th ?? undefined,
-      birthDate: row.expected_birth_date ?? undefined,
       editable: lockedReason === null,
       lockedReason,
     },
@@ -99,24 +97,15 @@ async function getManageProfile(pool, personId) {
   return profile;
 }
 
-function assertBirthDateInRange(value) {
-  if (value === null || value === undefined) return;
-  const today = new Date().toISOString().slice(0, 10);
-  if (value < MIN_BIRTH_DATE || value > today) {
-    throw new HttpProblem(422, 'birth-date-out-of-range', 'วันเกิดไม่ถูกต้อง', `วันเกิดต้องอยู่ระหว่าง ${MIN_BIRTH_DATE} ถึงวันนี้`);
-  }
-}
-
-// PATCH /persons/{id}/expected-identity - ส่งเฉพาะฟิลด์ที่แก้ (firstNameTh, lastNameTh, birthDate; birthDate=null ล้างค่า)
+// PATCH /persons/{id}/expected-identity - ส่งเฉพาะฟิลด์ที่แก้ (firstNameTh, lastNameTh) เลิกเก็บวันเกิดที่ HR กรอกแล้ว (birthDate = 400 จาก OpenAPI validator)
 async function patchExpectedIdentity(pool, personId, body, auth) {
   const actor = actorFromAuth(auth);
   const reason = assertReason(body.reason);
   const fields = {};
   if ('firstNameTh' in body) fields.expected_first_name_th = body.firstNameTh?.trim();
   if ('lastNameTh' in body) fields.expected_last_name_th = body.lastNameTh?.trim();
-  if ('birthDate' in body) fields.expected_birth_date = body.birthDate ?? null;
   if (Object.keys(fields).length === 0) {
-    throw new HttpProblem(422, 'no-changes-requested', 'ไม่ได้ระบุฟิลด์ที่จะแก้', 'ต้องส่ง firstNameTh, lastNameTh หรือ birthDate อย่างน้อยหนึ่งฟิลด์');
+    throw new HttpProblem(422, 'no-changes-requested', 'ไม่ได้ระบุฟิลด์ที่จะแก้', 'ต้องส่ง firstNameTh หรือ lastNameTh อย่างน้อยหนึ่งฟิลด์');
   }
   for (const key of ['expected_first_name_th', 'expected_last_name_th']) {
     if (key in fields && !fields[key]) throw new HttpProblem(422, 'name-required', 'ชื่อ/นามสกุลห้ามว่าง', 'firstNameTh/lastNameTh ต้องไม่ว่างหลังตัดช่องว่าง');
@@ -124,7 +113,6 @@ async function patchExpectedIdentity(pool, personId, body, auth) {
       throw new HttpProblem(422, 'name-contains-pid', 'ชื่อ/นามสกุลมีเลข 13 หลัก', 'firstNameTh/lastNameTh ห้ามมีเลข 13 หลัก');
     }
   }
-  assertBirthDateInRange(fields.expected_birth_date);
 
   try {
     await withTransaction(pool, async (client) => {
@@ -291,7 +279,6 @@ async function getPersonHistory(pool, personId, { cursor, limit }) {
 }
 
 module.exports = {
-  assertBirthDateInRange,
   getManageProfile,
   patchExpectedIdentity,
   patchContact,
