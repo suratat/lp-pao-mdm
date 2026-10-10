@@ -252,53 +252,64 @@ describe.each([
   });
 });
 
-describe('เลิกเก็บ houseNo / fullText ของที่อยู่ปัจจุบัน', () => {
+describe('เลิกเก็บที่อยู่ปัจจุบันทุกช่อง', () => {
   test.each([
-    ['houseNo', { houseNo: '99/1' }],
-    ['fullText', { fullText: 'ที่อยู่ทดสอบ' }],
-  ])('PATCH และ PUT ไม่รับ currentAddress.%s (400) และไม่เขียน', async (_field, address) => {
+    ['houseNo', { currentAddress: { houseNo: '99/1' } }],
+    ['fullText', { currentAddress: { fullText: 'ที่อยู่ทดสอบ' } }],
+    ['moo', { currentAddress: { moo: '3' } }],
+    ['soi', { currentAddress: { soi: 'ซอย 5' } }],
+    ['road', { currentAddress: { road: 'ถนนทดสอบ' } }],
+    ['postcode', { currentAddress: { postcode: '52000' } }],
+    ['subdistrict', { currentAddress: { subdistrict: { code: '520101' } } }],
+    ['district', { currentAddress: { district: { code: '5201' } } }],
+    ['province', { currentAddress: { province: { code: '52' } } }],
+    ['currentAddress ว่าง', { currentAddress: {} }],
+    ['sameAsRegistered', { sameAsRegistered: false }],
+  ])('PATCH และ PUT ไม่รับ %s (400) และไม่เขียน', async (_field, extra) => {
     const { personId, version } = await provision();
-    const viaPatch = await patch(personId, version, { currentAddress: address });
+    const viaPatch = await patch(personId, version, extra);
     expect(viaPatch.status).toBe(400);
-    const viaPut = await put(personId, { mobilePhone: '0812345678', currentAddress: address });
+    const viaPut = await put(personId, { mobilePhone: '0812345678', ...extra });
     expect(viaPut.status).toBe(400);
     expect(await contactRow(personId)).toBeUndefined();
     expect(await versionOf(personId)).toBe(version);
   });
 
-  test('ช่องที่อยู่อื่น (moo/soi/road/postcode/รหัสพื้นที่) และ sameAsRegistered ยังรับตามเดิม', async () => {
-    const { personId, version } = await provision();
-    const res = await patch(personId, version, {
-      sameAsRegistered: false,
-      currentAddress: { moo: '3', soi: 'ซอย 5', road: 'ถนนทดสอบ', postcode: '52000', subdistrict: { code: '520101' } },
-    });
-    expect(res.status).toBe(200);
-  });
+  const SEED_ADDRESS = `INSERT INTO mdm.person_contact
+      (person_id, same_as_registered, cur_house_no, cur_moo, cur_soi, cur_road, cur_subdistrict_code, cur_district_code, cur_province_code, cur_postcode, cur_address_text, updated_by, updated_at)
+    VALUES ($1, true, '99/1', '3', 'ซอย 5', 'ถนนเดิม', '520101', '5201', '52', '52000', 'ที่อยู่เดิมที่เก็บไว้', 'HR', now())`;
+  const ADDRESS_COLUMNS = ['same_as_registered', 'cur_house_no', 'cur_moo', 'cur_soi', 'cur_road', 'cur_subdistrict_code', 'cur_district_code', 'cur_province_code', 'cur_postcode', 'cur_address_text'];
+  const addressOf = (row) => Object.fromEntries(ADDRESS_COLUMNS.map((c) => [c, row[c]]));
 
-  test('PUT /me/contact ไม่ล้างค่าเดิมของ houseNo/fullText ที่เก็บไว้ และไม่บันทึกว่าเปลี่ยน', async () => {
+  test('PUT /me/contact (บันทึกเบอร์/อีเมล) ไม่ล้างที่อยู่เดิมทุกคอลัมน์ และไม่บันทึกว่าเปลี่ยน', async () => {
     const { personId } = await provision();
-    await adminPool.query(
-      `INSERT INTO mdm.person_contact (person_id, cur_house_no, cur_address_text, updated_by, updated_at) VALUES ($1, '99/1', 'ที่อยู่เดิมที่เก็บไว้', 'HR', now())`,
-      [personId]
-    );
-    const res = await put(personId, { mobilePhone: '0812345678' });
+    await adminPool.query(SEED_ADDRESS, [personId]);
+    const before = addressOf(await contactRow(personId));
+    const res = await put(personId, { mobilePhone: '0812345678', emailPersonal: 'a@example.com' });
     expect(res.status).toBe(200);
 
     const row = await contactRow(personId);
-    expect([row.cur_house_no, row.cur_address_text]).toEqual(['99/1', 'ที่อยู่เดิมที่เก็บไว้']);
+    expect(addressOf(row)).toEqual(before);
     expect(row.mobile_phone).toBe('0812345678');
-    expect(await contactLogs(personId)).toEqual(['contact.mobile_phone']);
+    expect((await contactLogs(personId)).sort()).toEqual(['contact.email_personal', 'contact.mobile_phone']);
   });
 
-  test('PATCH ของ HR ไม่แตะ houseNo/fullText ที่เก็บไว้', async () => {
+  test('PATCH ของ HR (บันทึกเบอร์/อีเมล) ไม่แตะที่อยู่เดิมทุกคอลัมน์', async () => {
     const { personId, version } = await provision();
-    await adminPool.query(
-      `INSERT INTO mdm.person_contact (person_id, cur_house_no, cur_address_text, updated_by, updated_at) VALUES ($1, '12/3', 'ที่อยู่เดิม', 'HR', now())`,
-      [personId]
-    );
-    const res = await patch(personId, version, { lineId: 'hr.line', currentAddress: { road: 'ถนนใหม่' } });
+    await adminPool.query(SEED_ADDRESS, [personId]);
+    const before = addressOf(await contactRow(personId));
+    const res = await patch(personId, version, { lineId: 'hr.line', emailPersonal: 'b@example.com' });
     expect(res.status).toBe(200);
     const row = await contactRow(personId);
-    expect([row.cur_house_no, row.cur_address_text, row.cur_road]).toEqual(['12/3', 'ที่อยู่เดิม', 'ถนนใหม่']);
+    expect(addressOf(row)).toEqual(before);
+    expect([row.line_id, row.email_personal]).toEqual(['hr.line', 'b@example.com']);
+  });
+
+  test('GET manage-profile ยังคืนที่อยู่เดิมที่เก็บไว้ (ไม่ถูกลบ)', async () => {
+    const { personId } = await provision();
+    await adminPool.query(SEED_ADDRESS, [personId]);
+    const res = await call('get', `/persons/${personId}/manage-profile`, mgr());
+    expect(res.status).toBe(200);
+    expect(res.body.contact.currentAddress).toMatchObject({ moo: '3', road: 'ถนนเดิม', postcode: '52000' });
   });
 });

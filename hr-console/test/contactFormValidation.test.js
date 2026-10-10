@@ -78,7 +78,7 @@ async function postContact(agent, personId, fields, reason = 'ปรับปร
 }
 
 describe('หน้าแก้ข้อมูลติดต่อ (HR)', () => {
-  test('ไม่มีช่องบ้านเลขที่/ที่อยู่ข้อความเต็ม, ป้ายเป็น "อีเมล", มีปุ่มตรวจสอบอีเมล (ซ่อนจนกว่า JS ทำงาน) และฟอร์มบันทึกได้เมื่อ JS ปิด', async () => {
+  test('ไม่มีช่องที่อยู่ปัจจุบันเลย, ป้ายเป็น "อีเมล", มีปุ่มตรวจสอบอีเมล (ซ่อนจนกว่า JS ทำงาน) และฟอร์มบันทึกได้เมื่อ JS ปิด', async () => {
     const admin = await adminAgent();
     const personId = await createPerson(admin);
     const res = await admin.get(`/hr/persons/${personId}/contact/edit`);
@@ -92,7 +92,8 @@ describe('หน้าแก้ข้อมูลติดต่อ (HR)', () =>
     expect(res.text).toMatch(/<label for="emailPersonal">อีเมล/);
     expect(res.text).toContain('data-contact-form');
     expect(res.text).toMatch(/data-email-check-box hidden/);
-    expect(res.text).toContain('หมู่ที่');
+    for (const name of ['moo', 'soi', 'road', 'postcode', 'sameAsRegistered']) expect(res.text).not.toContain(`name="${name}"`);
+    expect(res.text).not.toContain('ที่อยู่ปัจจุบัน');
     expect(res.text).toContain(`/hr/persons/${personId}/contact/check-email`);
     expect(res.headers['cache-control']).toBe('no-store');
   });

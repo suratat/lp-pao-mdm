@@ -2004,27 +2004,14 @@ components:
         - `phoneAlt`: มือถือ (กฎเดียวกัน) หรือโทรศัพท์บ้าน/สำนักงาน 9 หลักขึ้นต้น 02, 03, 04, 05 หรือ 07; เก็บเป็นตัวเลขล้วน
         - `emailPersonal` (ป้ายที่ผู้ใช้เห็นคือ "อีเมล"): trim, ไม่มีช่องว่าง, มี `@` หนึ่งตัว, โดเมนมีจุดและไม่ขึ้นต้น/ลงท้ายด้วยจุดหรือ `-`, ยาวไม่เกิน 254, ไม่ใช่ IP
         - สตริงว่าง = ล้างค่า (null)
-        ไม่รับ `currentAddress.houseNo` และ `currentAddress.fullText` อีกต่อไป (400) ข้อมูลที่เก็บไว้เดิมคงอยู่ ไม่ถูกลบหรือแก้โดย endpoint นี้
+        ไม่รับ `currentAddress` (ทุกช่อง: houseNo, fullText, moo, soi, road, postcode, รหัสพื้นที่) และ `sameAsRegistered` อีกต่อไป (400) ข้อมูลที่อยู่ที่เก็บไว้เดิมคงอยู่ ไม่ถูกลบหรือแก้โดย endpoint นี้ (บันทึกอีเมล/เบอร์ไม่ล้างที่อยู่เดิม)
       properties:
         mobilePhone: { type: [string, 'null'], maxLength: 30 }
         phoneAlt: { type: [string, 'null'], maxLength: 30 }
         emailPersonal: { type: [string, 'null'], maxLength: 300 }
         lineId: { type: [string, 'null'] }
-        sameAsRegistered: { type: boolean }
-        currentAddress: { $ref: '#/components/schemas/CurrentAddressUpdate' }
-
-    CurrentAddressUpdate:
-      type: object
-      description: ที่อยู่ปัจจุบันในคำขอแก้ไข - ไม่มี `houseNo` และ `fullText` (เลิกเก็บแล้ว) ส่งฟิลด์เหล่านี้มา = 400
-      additionalProperties: false
-      properties:
-        moo: { type: string }
-        soi: { type: string }
-        road: { type: string }
-        subdistrict: { $ref: '#/components/schemas/AreaCode' }
-        district: { $ref: '#/components/schemas/AreaCode' }
-        province: { $ref: '#/components/schemas/AreaCode' }
-        postcode: { type: string }
+        sameAsRegistered: { not: {}, description: เลิกรับแล้ว - ส่งมา = 400 }
+        currentAddress: { not: {}, description: เลิกรับที่อยู่ปัจจุบันทุกช่อง - ส่งมา = 400 }
 
     ManageProfile:
       type: object
@@ -2087,29 +2074,14 @@ components:
           description: |
             ส่งอย่างน้อยหนึ่งฟิลด์; ฟิลด์ที่ไม่ส่ง = ไม่แตะ, null/สตริงว่าง = ล้างค่า
             ตรวจรูปแบบที่ API เฉพาะฟิลด์ที่ส่งมาและต่างจากค่าเดิม (422 `invalid-contact` พร้อม `errors[{field, message}]` ภาษาไทย) กติกา `mobilePhone`/`phoneAlt`/`emailPersonal`
-            เหมือน `ContactUpdate` (เก็บเบอร์เป็นตัวเลขล้วนหลัง normalize) ไม่รับ `currentAddress.houseNo` / `currentAddress.fullText` (400) ค่าเดิมที่เก็บไว้คงอยู่
+            เหมือน `ContactUpdate` (เก็บเบอร์เป็นตัวเลขล้วนหลัง normalize) ไม่รับ `currentAddress` (ทุกช่อง) และ `sameAsRegistered` (400) ค่าที่อยู่เดิมที่เก็บไว้คงอยู่
           properties:
             mobilePhone: { type: [string, 'null'], maxLength: 30 }
             phoneAlt: { type: [string, 'null'], maxLength: 30 }
             emailPersonal: { type: [string, 'null'], maxLength: 300 }
             lineId: { type: [string, 'null'], maxLength: 100 }
-            sameAsRegistered: { type: boolean }
-            currentAddress:
-              type: object
-              additionalProperties: false
-              properties:
-                moo: { type: [string, 'null'], maxLength: 20 }
-                soi: { type: [string, 'null'], maxLength: 100 }
-                road: { type: [string, 'null'], maxLength: 100 }
-                postcode: { type: [string, 'null'], maxLength: 10 }
-                subdistrict: { $ref: '#/components/schemas/AreaCodePatch' }
-                district: { $ref: '#/components/schemas/AreaCodePatch' }
-                province: { $ref: '#/components/schemas/AreaCodePatch' }
-
-    AreaCodePatch:
-      type: [object, 'null']
-      properties:
-        code: { type: string, maxLength: 10 }
+            sameAsRegistered: { not: {}, description: เลิกรับแล้ว - ส่งมา = 400 }
+            currentAddress: { not: {}, description: เลิกรับที่อยู่ปัจจุบันทุกช่อง - ส่งมา = 400 }
 
     EmergencyContactsReplace:
       allOf:
