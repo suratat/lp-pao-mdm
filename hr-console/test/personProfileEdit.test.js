@@ -9,6 +9,11 @@ const { COOKIE_NAME } = require('../src/session/sessionCookie');
 // PR-D4: หน้าแก้ข้อมูลติดต่อ / ผู้ติดต่อฉุกเฉิน / ชื่อ-วันเกิดที่ HR กรอก - รันกับ MDM API จริง (in-process) + Postgres จริง + mock Keycloak
 // ข้อมูลทั้งหมดสมมติ ตรวจ: สำเร็จ, 409 ทั้งสองแบบ (version-conflict / identity-locked), 422, ไม่มี role, ค่ายาวเกิน และไม่มีเลขบัตร/ข้อมูลติดต่อรั่วใน redirect/log
 
+// หน้าผู้ติดต่อฉุกเฉินซ่อนไว้ตาม default (HR_EMERGENCY_CONTACTS_ENABLED) - เคสของหน้านี้รันเฉพาะเมื่อเปิด env; โหมดปิด/เปิดแบบระบุ flag เอง
+// ครอบคลุมใน hrEmergencyContactsHidden.test.js (รันเสมอ)
+const EMERGENCY_ON = process.env.HR_EMERGENCY_CONTACTS_ENABLED === 'true';
+const EDIT_SUBS = EMERGENCY_ON ? ['contact/edit', 'emergency-contacts/edit', 'expected-identity/edit'] : ['contact/edit', 'expected-identity/edit'];
+
 let harness;
 let adminPool;
 let orgA;
@@ -119,7 +124,7 @@ describe('สิทธิ์และหน้ารายละเอียด'
 
     const officer = await loginAsHrOfficer(harness.hrConsoleApp, 'persons-officer-manage-scope-code');
     const before = await personRow(personId);
-    for (const sub of ['contact/edit', 'emergency-contacts/edit', 'expected-identity/edit']) {
+    for (const sub of EDIT_SUBS) {
       // eslint-disable-next-line no-await-in-loop
       const get = await officer.get(`/hr/persons/${personId}/${sub}`);
       expect(get.status).toBe(403);
@@ -133,11 +138,11 @@ describe('สิทธิ์และหน้ารายละเอียด'
 
     const detailOfficer = await officer.get(`/hr/persons/${personId}`);
     expect(detailOfficer.status).toBe(200);
-    for (const part of ['contact/edit', 'emergency-contacts/edit', 'expected-identity/edit']) expect(detailOfficer.text).not.toContain(part);
+    for (const part of EDIT_SUBS) expect(detailOfficer.text).not.toContain(part);
     expectNotIn([PHONE, EMAIL, LINE], detailOfficer.text);
 
     const detailAdmin = await admin.get(`/hr/persons/${personId}`);
-    for (const part of ['contact/edit', 'emergency-contacts/edit', 'expected-identity/edit']) expect(detailAdmin.text).toContain(`/hr/persons/${personId}/${part}`);
+    for (const part of EDIT_SUBS) expect(detailAdmin.text).toContain(`/hr/persons/${personId}/${part}`);
     expectNotIn([PHONE, EMAIL, LINE], detailAdmin.text);
   });
 
@@ -148,7 +153,7 @@ describe('สิทธิ์และหน้ารายละเอียด'
     const sid = officer.jar.getCookies(require('cookiejar').CookieAccessInfo.All).find((c) => c.name === COOKIE_NAME).value;
     harness.sessionStore.update(sid, { isMasterDataAdmin: true });
 
-    for (const sub of ['contact/edit', 'emergency-contacts/edit', 'expected-identity/edit']) {
+    for (const sub of EDIT_SUBS) {
       // eslint-disable-next-line no-await-in-loop
       const get = await officer.get(`/hr/persons/${personId}/${sub}`);
       expect(get.status).toBe(403);
@@ -169,7 +174,7 @@ describe('สิทธิ์และหน้ารายละเอียด'
   test('CSRF ไม่ถูกต้อง -> 403 ไม่เขียนอะไร; personId ไม่ใช่ UUID -> 404', async () => {
     const admin = await adminAgent();
     const { personId } = await createPerson(admin);
-    for (const sub of ['contact/edit', 'emergency-contacts/edit', 'expected-identity/edit']) {
+    for (const sub of EDIT_SUBS) {
       // eslint-disable-next-line no-await-in-loop
       const res = await admin.post(`/hr/persons/${personId}/${sub}`).type('form').send({ _csrf: 'wrong', expectedVersion: '1', reason: 'ลองแก้ด้วย token ผิด', mobilePhone: PHONE });
       expect(res.status).toBe(403);
@@ -314,7 +319,7 @@ describe('แก้ข้อมูลติดต่อ', () => {
   });
 });
 
-describe('แก้ผู้ติดต่อฉุกเฉิน', () => {
+(EMERGENCY_ON ? describe : describe.skip)('แก้ผู้ติดต่อฉุกเฉิน (เปิดด้วย HR_EMERGENCY_CONTACTS_ENABLED=true)', () => {
   async function postEmergency(agent, personId, fields, { version, csrf, reason = 'เจ้าตัวแจ้งผู้ติดต่อฉุกเฉินใหม่' } = {}) {
     const form = await agent.get(`/hr/persons/${personId}/emergency-contacts/edit`);
     return agent

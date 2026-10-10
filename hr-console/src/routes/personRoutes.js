@@ -209,7 +209,7 @@ function validateReason(raw) {
   return { reason, errors };
 }
 
-function createPersonRoutes({ mdmClient }) {
+function createPersonRoutes({ mdmClient, emergencyContactsEnabled = false }) {
   const router = express.Router();
 
   // ทุกหน้าในกลุ่มนี้มีข้อมูลบุคคล/CSRF token - ห้าม cache ที่เบราว์เซอร์หรือ proxy
@@ -278,13 +278,15 @@ function createPersonRoutes({ mdmClient }) {
 
       // ปุ่มแก้ไข: เฉพาะผู้มี role hr_master_data_admin (ซ่อนเพื่อ UX เท่านั้น - MDM API ตรวจ role ซ้ำทุกคำขอ)
       const id = encodeURIComponent(personId);
+      // ปุ่มผู้ติดต่อฉุกเฉินแสดงเมื่อเปิดด้วย env HR_EMERGENCY_CONTACTS_ENABLED=true เท่านั้น (ดู app.js)
+      const emergencyButton = emergencyContactsEnabled ? `<a class="button" href="/hr/persons/${id}/emergency-contacts/edit">แก้ผู้ติดต่อฉุกเฉิน</a>` : '';
       const actionButtons = isAdmin
         ? `<p class="actions">${
             person.status === 'INACTIVE'
               ? `<a class="button" href="/hr/persons/${id}/reactivate">คืนสภาพ</a>`
               : `<a class="button" href="/hr/persons/${id}/employment/edit">ย้ายหน่วยงาน / ตำแหน่ง / ประเภท</a><a class="button" href="/hr/persons/${id}/deactivate">พ้นสภาพ</a>`
           }</p>
-          <p class="actions"><a class="button" href="/hr/persons/${id}/contact/edit">แก้ข้อมูลติดต่อ</a><a class="button" href="/hr/persons/${id}/emergency-contacts/edit">แก้ผู้ติดต่อฉุกเฉิน</a><a class="button" href="/hr/persons/${id}/expected-identity/edit">ชื่อ-วันเกิดที่ HR กรอก</a></p>`
+          <p class="actions"><a class="button" href="/hr/persons/${id}/contact/edit">แก้ข้อมูลติดต่อ</a>${emergencyButton}<a class="button" href="/hr/persons/${id}/expected-identity/edit">ชื่อ-วันเกิดที่ HR กรอก</a></p>`
         : '';
 
       // ประวัติการเปลี่ยนแปลง (เฉพาะ hr_master_data_admin): ความล้มเหลวของส่วนนี้ต้องไม่ทำให้ทั้งหน้าล้ม

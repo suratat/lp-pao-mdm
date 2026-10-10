@@ -44,6 +44,7 @@ async function main() {
     mdmClient,
     sessionStore,
     isProduction,
+    emergencyContactsEnabled: String(process.env.HR_EMERGENCY_CONTACTS_ENABLED || '').trim().toLowerCase() === 'true',
   });
 
   app.listen(PORT, () => {
