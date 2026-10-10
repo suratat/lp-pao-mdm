@@ -1,5 +1,5 @@
 // กติกาตรวจอีเมล/เบอร์โทรของข้อมูลติดต่อ - ไฟล์นี้มีสำเนา "ที่ต้องเหมือนกันทุกตัว" ใน 3 workspace:
-//   api/src/security/contactValidation.js, portal/src/contactValidation.js, hr-console/src/contactValidation.js
+//   api/src/security/contactValidation.js, portal/src/contactValidation.js, hr-console/src/contactValidation.js (และ emailCheck.js, contactFormUi.js ใน portal/hr-console)
 // (Dockerfile ของแต่ละ workspace COPY เฉพาะโฟลเดอร์ตัวเอง จึงใช้ไฟล์ร่วมกันไม่ได้) แก้ที่หนึ่งต้องแก้ครบทั้งสาม
 // มีเทสต์ api/test/contactValidationCopies.test.js เทียบเนื้อไฟล์ให้ ถ้าไม่ตรงกันเทสต์จะล้ม
 // ตัวตัดสินสุดท้ายคือ API; portal/hr-console ใช้ตรวจซ้ำเพื่อให้ข้อความเร็วขึ้น และ portal/hr-console ฝังไฟล์นี้ลงหน้าเว็บให้ browser

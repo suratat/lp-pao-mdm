@@ -14,10 +14,14 @@ const { validateEmail, validateMobile, validatePhoneAlt } = require('../src/secu
 describe('สำเนาของ contactValidation.js ในแต่ละ workspace ต้องเหมือนกัน', () => {
   const root = path.join(__dirname, '..', '..');
   const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
-  test('api = portal = hr-console', () => {
+  test('contactValidation.js: api = portal = hr-console', () => {
     const apiCopy = read('api/src/security/contactValidation.js');
     expect(read('portal/src/contactValidation.js')).toBe(apiCopy);
     expect(read('hr-console/src/contactValidation.js')).toBe(apiCopy);
+  });
+
+  test.each(['emailCheck.js', 'contactFormUi.js'])('%s: portal = hr-console', (file) => {
+    expect(read(`hr-console/src/${file}`)).toBe(read(`portal/src/${file}`));
   });
 });
 
