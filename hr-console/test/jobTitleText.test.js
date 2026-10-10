@@ -316,8 +316,8 @@ describe('การแสดงผล: XSS และข้อความยา�
       [personId, crypto.randomBytes(32).toString('hex')]
     );
     await adminPool.query(
-      `INSERT INTO mdm.person_identity (person_id, title_th, first_name_th, last_name_th, birth_date, gender, synced_at)
-       VALUES ($1, 'นาย', 'แสดงข้อความ', $2, '1980-01-01', 'M', now())`,
+      `INSERT INTO mdm.person_identity (person_id, title_th, first_name_th, last_name_th, gender, synced_at)
+       VALUES ($1, 'นาย', 'แสดงข้อความ', $2, 'M', now())`,
       [personId, `ตำแหน่ง${suffix}`]
     );
     // INSERT ตรง (ข้ามกฎของ API) เพื่อจำลองข้อมูลอันตราย/ยาวผิดปกติที่หลุดมาอยู่ใน DB

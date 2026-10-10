@@ -106,7 +106,7 @@ flowchart LR
 
 | กลุ่มข้อมูล | ฟิลด์หลัก | แหล่ง (system of record) | ผู้แก้ไข | ชั้นความลับ | scope ที่ต้องใช้อ่าน |
 |---|---|---|---|---|---|
-| ระบุตัวตน (`person_identity`) | คำนำหน้า ชื่อ สกุล (ไทย/อังกฤษ), วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน, วันออก/หมดอายุบัตร, IAL | ThaID (ผ่าน thaid.lp-pao.go.th → check) | ไม่มี (อัปเดตอัตโนมัติจาก ThaID เท่านั้น) | CONFIDENTIAL (ชื่อ = INTERNAL) | ชื่อ: `personnel:read:basic`; ที่เหลือ: `personnel:read:identity` |
+| ระบุตัวตน (`person_identity`) | คำนำหน้า ชื่อ สกุล (ไทย/อังกฤษ), เพศ, ที่อยู่ตามทะเบียนบ้าน, วันออก/หมดอายุบัตร, IAL (เลิกเก็บวันเกิดแล้ว ค่าเดิมคงไว้ในฐานข้อมูลแต่ไม่ถูกเขียนใหม่/ไม่คืนจาก API) | ThaID (ผ่าน thaid.lp-pao.go.th → check) | ไม่มี (อัปเดตอัตโนมัติจาก ThaID เท่านั้น) | CONFIDENTIAL (ชื่อ = INTERNAL) | ชื่อ: `personnel:read:basic`; ที่เหลือ: `personnel:read:identity` |
 | รูปถ่าย (`person_photo`) | รูปจากบัตร | ThaID (ต้องขอ scope จาก DOPA เพิ่ม; ถ้าไม่ได้ ใช้รูปจาก HR โดยตั้ง `source = HR`) | ไม่มี | CONFIDENTIAL | `personnel:read:photo` |
 | เลขบัตรประชาชน (`person.pid_*`) | pid (hash + encrypted) | ThaID (HR ป้อนตอน provision เพื่อรอ claim) | ไม่มี | RESTRICTED | `personnel:read:pid` (endpoint แยก) |
 | ติดต่อ (`person_contact`, `emergency_contact`) | มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, ผู้ติดต่อฉุกเฉิน | เจ้าของข้อมูล | เจ้าตัว (HR แก้แทนได้พร้อมบันทึกเหตุผล) | CONFIDENTIAL | `personnel:read:contact` |
@@ -197,7 +197,7 @@ erDiagram
         varchar title_en
         varchar first_name_en
         varchar last_name_en
-        date birth_date
+        date birth_date "deprecated: ไม่เขียน/ไม่คืนจาก API แล้ว ค่าเดิมคงไว้"
         varchar gender
         varchar reg_house_no "registered address (ที่อยู่ตามทะเบียนบ้าน)"
         varchar reg_moo
@@ -498,7 +498,7 @@ erDiagram
 | ตาราง | หน้าที่ | คอลัมน์สำคัญ / กฎ |
 |---|---|---|
 | `person` | ตัวตนภายในของบุคลากรหนึ่งคน เป็น anchor ของทุกความสัมพันธ์ | `person_id` UUID ที่ทุกระบบใช้; `pid_hash` UNIQUE (HMAC-SHA256 ด้วย pepper ใน Vault) ใช้ค้นหา/กันซ้ำ; `pid_enc` (Vault Transit AES-256-GCM, `key_id` บอกเวอร์ชันคีย์); `status` PENDING_CLAIM → ACTIVE → INACTIVE; `verification_status`; `thaid_verified_at`; `deleted_at` (soft delete); `version` เพิ่มทุกครั้งที่ข้อมูลกลุ่มใดเปลี่ยน ใช้เป็น ETag และใส่ในเหตุการณ์ |
-| `person_identity` | ข้อมูลระบุตัวตนจาก ThaID **อ่านอย่างเดียว** 1:1 กับ person | ชื่อ-สกุลไทย/อังกฤษ, วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน (แยกองค์ประกอบ + ข้อความเต็มตามที่ได้รับ), วันออก/หมดอายุบัตร, `ial`, `source_snapshot_hash` (SHA-256 ของ payload แบบ canonical ใช้ตรวจการเปลี่ยนแปลงแบบ O(1)), `last_sync_event_id` |
+| `person_identity` | ข้อมูลระบุตัวตนจาก ThaID **อ่านอย่างเดียว** 1:1 กับ person | ชื่อ-สกุลไทย/อังกฤษ, เพศ, ที่อยู่ตามทะเบียนบ้าน (แยกองค์ประกอบ + ข้อความเต็มตามที่ได้รับ), วันออก/หมดอายุบัตร, `ial`, `source_snapshot_hash` (SHA-256 ของ payload แบบ canonical ใช้ตรวจการเปลี่ยนแปลงแบบ O(1)), `last_sync_event_id` |
 | `person_photo` | รูปถ่ายจาก ThaID (เก็บหลายเวอร์ชัน, `is_current` เพียงหนึ่ง) | `image_enc` เข้ารหัส (หรือ object key ใน MinIO), `sha256` ใช้ตรวจว่ารูปเปลี่ยน |
 | `person_contact` | ข้อมูลติดต่อที่เจ้าตัวแก้ไขเอง 1:1 | มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, `same_as_registered`; `updated_by` SELF/HR |
 | `emergency_contact` | ผู้ติดต่อฉุกเฉิน 1:N (สูงสุด 3) | ชื่อ, ความสัมพันธ์, โทร, ลำดับ (ข้อมูลของบุคคลที่สาม — เก็บเท่าที่จำเป็น) |
@@ -587,7 +587,7 @@ erDiagram
 |---|---|---|
 | `personnel:read:basic` | personId, ชื่อ-สกุล (ไทย/อังกฤษ), ประเภทบุคลากร, ตำแหน่ง/เลขที่ตำแหน่ง, ระดับ, สังกัด, อีเมลหน่วยงาน, status, verificationStatus, version | scope ขั้นต่ำของทุก consumer (ไม่รวม employeeNo อีกต่อไป - ดูแถว personnel:read:pid) |
 | `personnel:read:contact` | มือถือ, อีเมลส่วนตัว, LINE, ที่อยู่ปัจจุบัน, ผู้ติดต่อฉุกเฉิน | เช่น ระบบสารบรรณที่ต้องส่ง SMS |
-| `personnel:read:identity` | วันเกิด, เพศ, ที่อยู่ตามทะเบียนบ้าน, วันออก/หมดอายุบัตร, IAL, syncedAt | เช่น ระบบสวัสดิการ |
+| `personnel:read:identity` | เพศ, ที่อยู่ตามทะเบียนบ้าน, วันออก/หมดอายุบัตร, IAL, syncedAt | เช่น ระบบสวัสดิการ |
 | `personnel:read:employment` | วันบรรจุ, ประวัติการดำรงตำแหน่ง, เหตุ/วันพ้นสภาพ | เช่น ระบบประเมินผล, ระบบเงินเดือน |
 | `personnel:read:photo` | รูปถ่าย | เช่น ระบบบัตรพนักงาน |
 | `personnel:read:inactive` | เห็น record INACTIVE | ระบบเงินเดือน/บำเหน็จ |
@@ -677,7 +677,7 @@ sequenceDiagram
     SSO->>SSO: ตรวจลายเซ็น id_token ด้วย JWKS (jose), สร้าง handoff token ใช้ครั้งเดียว อายุ 60 วินาที
     SSO-->>CHK: redirect /sso-callback?token=handoff
     CHK->>SSO: GET /api/verify?token=handoff (server-to-server)
-    SSO-->>CHK: profile (pid, title, given_name, family_name, ชื่ออังกฤษ, birthdate, gender, address)
+    SSO-->>CHK: profile (pid, title, given_name, family_name, ชื่ออังกฤษ, birthdate [MDM ไม่เก็บ], gender, address)
 
     Note over CHK,MDM: จุดเชื่อม MDM (ใหม่) - ทำก่อนออก token ให้ app, ผ่านเครือข่ายภายใน NT Cloud ไม่ผ่าน Cloudflare
     CHK->>KC: client_credentials (client=check-broker, scope sync:thaid) - cache token ไว้
@@ -976,7 +976,7 @@ pid: ไม่มีวันเปลี่ยน — pid_hash ต่างก�
 |---|---|---|
 | เลขประจำตัวประชาชน | `person.pid_hash`, `person.pid_enc` | ผ่าน checksum ก่อน; ใช้เป็นคีย์จับคู่หลัก; ไม่เก็บ plaintext ใน `stg_hr` เกิน 30 วัน |
 | คำนำหน้า/ชื่อ/สกุล | `person.expected_first_name_th`, `expected_last_name_th` (คอลัมน์ใน person สำหรับตรวจ claim) | **ไม่** นำเข้า `person_identity` — รอ ThaID |
-| ที่อยู่ตามทะเบียนบ้าน, วันเกิด, เพศ จาก HR | ไม่นำเข้า | เก็บใน staging เพื่อเปรียบเทียบเท่านั้น; แหล่งจริงคือ ThaID |
+| ที่อยู่ตามทะเบียนบ้าน, เพศ จาก HR | ไม่นำเข้า | เก็บใน staging เพื่อเปรียบเทียบเท่านั้น; แหล่งจริงคือ ThaID (วันเกิดไม่เก็บเลย ทั้งจาก HR และ ThaID) |
 | (ไม่มีในระบบเดิม - ไม่มีเลขประจำตัวข้าราชการแยกต่างหาก) | `employment.employee_no` | = เลขประจำตัวประชาชน (pid) เสมอ, derive จาก `pid_plaintext` ไม่อ่านจากคอลัมน์แยก, UNIQUE ใน current, classification/scope เทียบเท่า pid (RESTRICTED, `personnel:read:pid`) |
 | ประเภทบุคลากร | `employment.personnel_type` | map เป็น enum (ข้าราชการ อบจ., ครู, ลูกจ้างประจำ, พนักงานจ้าง 3 ประเภท, ถ่ายโอน) |
 | ตำแหน่ง/เลขที่ตำแหน่ง/ประเภทตำแหน่ง | `position` (seed) + `employment.position_id` | เลขที่ตำแหน่งเป็นคีย์ |

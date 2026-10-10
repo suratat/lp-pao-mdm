@@ -545,7 +545,7 @@ paths:
       summary: Edit the names HR expects of a person who never verified with ThaID
       description: |
         แก้ชื่อ-นามสกุลไทยที่ HR กรอกไว้ (คอลัมน์ `expected_*` บน `mdm.person` ไม่แตะ `person_identity`) ส่งเฉพาะฟิลด์ที่แก้ ไม่ส่งฟิลด์ใดเลย -> 422 `no-changes-requested`
-        **เลิกเก็บวันเกิดที่ HR กรอกแล้ว:** ส่ง `birthDate` มา = 400 (ค่าเดิมในคอลัมน์ `expected_birth_date` คงอยู่ ไม่ถูกลบ/แก้ และไม่ถูกคืนใน `manage-profile`; วันเกิดจาก ThaID คือ `identity.birthDate` ไม่เกี่ยว)
+        **เลิกเก็บวันเกิดที่ HR กรอกแล้ว:** ส่ง `birthDate` มา = 400 (ค่าเดิมในคอลัมน์ `expected_birth_date` คงอยู่ ไม่ถูกลบ/แก้ และไม่ถูกคืนใน `manage-profile`; วันเกิดจาก ThaID เลิกเก็บและเลิกคืนแล้วเช่นกัน ดู `POST /sync/thaid`)
         ThaID เป็นหลักเสมอ: ตอน claim ค่าจาก ThaID เขียนลง `person_identity` โดยไม่ดูค่าเหล่านี้ (ไม่ตรงกันก็เก็บเฉยๆ ไม่แจ้งเตือน)
         **คนที่เคยยืนยันแล้ว** (`thaid_verified_at` หรือ `claimed_at` ไม่เป็น NULL หรือสถานะไม่ใช่ `PENDING_CLAIM`) -> 409 `identity-locked` ที่ API และ trigger ใน DB
         กันซ้ำอีกชั้น (การแข่งกับ `/sync/thaid` ถูกกันด้วยการล็อกแถว person `FOR UPDATE` ทั้งสองฝั่ง)
@@ -1963,7 +1963,6 @@ components:
           description: มาจาก ThaID เท่านั้น อ่านอย่างเดียว
           properties:
             middleNameTh: { type: [string, 'null'] }
-            birthDate: { type: string, format: date }
             gender: { type: string, enum: [M, F, X] }
             registeredAddress: { $ref: '#/components/schemas/Address' }
             idCardIssueDate: { type: [string, 'null'], format: date }
@@ -2382,8 +2381,9 @@ components:
           type: object
           description: |
             profile จาก `thaid.lp-pao.go.th/api/verify` หลัง check แปลงเป็นรูปแบบกลางแล้ว (ชื่อ claim จริงของ DOPA ขึ้นกับ scope ที่ได้รับอนุมัติ
-            ปัจจุบัน: pid, title, given_name, family_name, ชื่ออังกฤษ, gender, birthdate, address; รูปถ่ายต้องขอ scope เพิ่มจาก DOPA)
+            ปัจจุบัน: pid, title, given_name, family_name, ชื่ออังกฤษ, gender, address; รูปถ่ายต้องขอ scope เพิ่มจาก DOPA)
             ฟิลด์ที่ไม่ได้ส่งมา (undefined) จะไม่ถูกเขียนทับ ฟิลด์ที่ส่งมาเป็น null ถือว่า "ไม่มีข้อมูล"
+            **เลิกเก็บวันเกิดแล้ว:** ถ้าผู้ส่งยังส่ง `birthDate` มา API รับไว้แล้วทิ้งเงียบ ๆ (ไม่ใช่ 400 เพราะ endpoint นี้คือเส้นทาง login ของทุกคน) ไม่เก็บ ไม่เข้า snapshot hash ไม่เขียน change log; ค่าเดิมที่เก็บไว้ก่อนหน้าคงอยู่ในฐานข้อมูลแต่ไม่ถูกคืนจาก API
           required: [pid, firstNameTh, lastNameTh]
           properties:
             pid: { $ref: '#/components/schemas/Pid' }
@@ -2394,7 +2394,6 @@ components:
             titleEn: { type: string }
             firstNameEn: { type: string }
             lastNameEn: { type: string }
-            birthDate: { type: string, format: date }
             gender: { type: string, enum: [M, F, X] }
             registeredAddress: { $ref: '#/components/schemas/Address' }
             idCardIssueDate: { type: string, format: date }

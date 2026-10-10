@@ -16,7 +16,8 @@ function pidHash(pid, pepper) {
 // การ hash เพื่อตรวจการเปลี่ยนแปลง), normalize string ตาม §3.3: Unicode NFC, trim, ยุบช่องว่างซ้ำ, "" -> null
 // address ถูกทำให้เป็น object คีย์คงที่ (เก็บเฉพาะรหัสพื้นที่ ไม่เก็บชื่อ - nameTh เป็นข้อมูลอ้างอิงที่ไม่กระทบตัวตน)
 const IDENTITY_STRING_FIELDS = ['titleTh', 'firstNameTh', 'middleNameTh', 'lastNameTh', 'titleEn', 'firstNameEn', 'lastNameEn', 'ial'];
-const IDENTITY_PASSTHROUGH_FIELDS = ['gender', 'birthDate', 'idCardIssueDate', 'idCardExpireDate'];
+// ไม่มี birthDate: เลิกเก็บวันเกิดจาก ThaID แล้ว (ถ้าผู้ส่งยังส่ง claims.birthDate มา จะถูกเมินเงียบ ๆ ไม่เข้า canonical/snapshotHash)
+const IDENTITY_PASSTHROUGH_FIELDS = ['gender', 'idCardIssueDate', 'idCardExpireDate'];
 
 function normalizeString(value) {
   if (value === null || value === undefined) return value;

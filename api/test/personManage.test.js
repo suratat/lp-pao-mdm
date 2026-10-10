@@ -337,7 +337,8 @@ describe('คนที่เคยยืนยัน ThaID แล้วแก้
     const after = await profile(personId);
     expect(after.expectedIdentity).toEqual({ firstNameTh: 'สมชาย', lastNameTh: 'ทดสอบ', editable: false, lockedReason: 'THAID_VERIFIED' });
     const identity = (await adminPool.query(`SELECT first_name_th, birth_date::text AS birth FROM mdm.person_identity WHERE person_id = $1`, [personId])).rows[0];
-    expect(identity).toEqual({ first_name_th: 'จาก', birth: '1980-01-01' }); // ThaID เป็นหลัก ไม่ถูกแตะ/เทียบกับค่าของ HR
+    // ThaID เป็นหลัก ไม่ถูกแตะ/เทียบกับค่าของ HR; payload ยังส่ง birthDate มา แต่เลิกเก็บแล้ว -> birth_date เป็น NULL
+    expect(identity).toEqual({ first_name_th: 'จาก', birth: null });
 
     const res = await patchName(personId, after.version);
     expect(res.status).toBe(409);
