@@ -10,6 +10,11 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// เมนู "ความยินยอม" ขึ้นกับ PORTAL_CONSENTS_ENABLED: layout() ไม่รู้ config จึงวาง placeholder ไว้ แล้ว
+// middleware ใน app.js แทนด้วยลิงก์ (เปิด) หรือค่าว่าง (ปิด) ก่อนส่ง response
+const NAV_CONSENTS_PLACEHOLDER = '<!--nav-consents-->';
+const NAV_CONSENTS_LINK = '<a href="/portal/me/consents">ความยินยอม</a>';
+
 function layout(title, bodyHtml) {
   return `<!doctype html>
 <html lang="th">
@@ -32,7 +37,7 @@ function layout(title, bodyHtml) {
     <a href="/portal/me">ข้อมูลของฉัน</a>
     <a href="/portal/me/contact">ข้อมูลติดต่อ</a>
     <a href="/portal/me/emergency-contacts">ผู้ติดต่อฉุกเฉิน</a>
-    <a href="/portal/me/consents">ความยินยอม</a>
+    ${NAV_CONSENTS_PLACEHOLDER}
     <a href="/portal/me/report-identity-issue">แจ้งข้อมูลผิด</a>
     <a href="/auth/logout">ออกจากระบบ</a>
   </nav>
@@ -42,4 +47,4 @@ function layout(title, bodyHtml) {
 </html>`;
 }
 
-module.exports = { escapeHtml, layout };
+module.exports = { escapeHtml, layout, NAV_CONSENTS_PLACEHOLDER, NAV_CONSENTS_LINK };

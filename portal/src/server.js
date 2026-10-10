@@ -62,6 +62,7 @@ async function main() {
     sessionSecret: requireEnv('PORTAL_SESSION_SECRET'),
     isProduction,
     checkAuthClient,
+    consentsEnabled: String(process.env.PORTAL_CONSENTS_ENABLED || '').trim().toLowerCase() === 'true',
   });
 
   app.listen(PORT, () => {
