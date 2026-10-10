@@ -14,6 +14,7 @@ async function buildIntegrationHarness({
   checkAuthClient,
   consentsEnabled = process.env.PORTAL_CONSENTS_ENABLED === 'true',
   emergencyContactsEnabled = process.env.PORTAL_EMERGENCY_CONTACTS_ENABLED === 'true',
+  emailCheck,
 } = {}) {
   const apiCtx = await buildTestApp({ actingAssertion: { secret: ACTING_SECRET, allowedAzp: ['mdm-portal'] } });
   const apiServer = await new Promise((resolve) => {
@@ -39,6 +40,7 @@ async function buildIntegrationHarness({
     checkAuthClient: checkAuthClient || null,
     consentsEnabled,
     emergencyContactsEnabled,
+    emailCheck,
   });
 
   return {

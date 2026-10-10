@@ -38,19 +38,18 @@ describe('MDM Portal self-service (T9 รอบแรก)', () => {
 
     const contactForm = await agent.get('/portal/me/contact');
     expect(contactForm.status).toBe(200);
-    expect(contactForm.text).toContain('0812345678');
+    expect(contactForm.text).toContain('value="0812345678"');
 
     const update = await agent.post('/portal/me/contact').type('form').send({
       mobilePhone: '0899999999',
       emailPersonal: 'updated@example.com',
-      fullText: 'ที่อยู่ใหม่สำหรับทดสอบ',
     });
     expect(update.status).toBe(302);
 
     const contactFormAfter = await agent.get('/portal/me/contact');
     expect(contactFormAfter.text).toContain('0899999999');
     expect(contactFormAfter.text).toContain('updated@example.com');
-    expect(contactFormAfter.text).not.toContain('0812345678');
+    expect(contactFormAfter.text).not.toContain('value="0812345678"'); // (ข้อความตัวอย่างในสคริปต์ตรวจรูปแบบมีเบอร์ 0812345678 อยู่แล้ว จึงเช็กที่ค่าในช่อง)
   });
 
   emergencyTest('emergency contacts: แทนที่ทั้งชุดแล้วอ่านกลับตรง', async () => {

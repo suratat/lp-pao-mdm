@@ -12,7 +12,8 @@ const REFRESH_BUFFER_MS = 15_000;
 // single-flight: realm ตั้ง revokeRefreshToken=true (refresh token ใช้ได้ครั้งเดียว) ถ้าสอง request ของ session เดียวกัน
 // เห็น token ใกล้หมดอายุพร้อมกันแล้วต่างคนต่าง refresh ด้วย refresh token ตัวเดิม ตัวที่สองจะได้ invalid_grant และ
 // ถูกเด้งไป login ทั้งที่ session ยังดี - จึงรวมให้เหลือ refresh ครั้งเดียวต่อ session และให้ request ที่เหลือรอผลเดียวกัน
-function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction }) {
+// jsonPathRe: path ที่เรียกด้วย fetch (ตอบ JSON) เช่นปุ่มตรวจสอบอีเมล - ไม่มี session/หมดอายุให้ 401 JSON แทนการ redirect ไปหน้า login
+function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isProduction, jsonPathRe = null }) {
   const refreshInFlight = new Map(); // sid -> Promise<boolean>
 
   // คืน true ถ้า refresh สำเร็จ (อัปเดต store แล้ว), false ถ้าต้อง login ใหม่ (session ใช้ต่อไม่ได้)
@@ -58,18 +59,22 @@ function createAuthGate({ keycloakAuthClient, verifyIdToken, sessionStore, isPro
     try {
       const secure = req.protocol === 'https' || isProduction;
       const sid = parseCookies(req.headers.cookie)[COOKIE_NAME];
+      const toLogin = () =>
+        jsonPathRe && jsonPathRe.test(req.path)
+          ? res.status(401).set('Cache-Control', 'no-store').json({ status: 'unauthorized', message: 'กรุณาเข้าสู่ระบบใหม่' })
+          : res.redirect(302, '/auth/login');
       let session = sessionStore.get(sid);
-      if (!session) return res.redirect(302, '/auth/login');
+      if (!session) return toLogin();
 
       if (Date.now() > session.accessTokenExpiresAt - REFRESH_BUFFER_MS) {
         const refreshed = await refreshOnce(sid);
         if (!refreshed) {
           sessionStore.delete(sid);
           clearSessionCookie(res, { secure });
-          return res.redirect(302, '/auth/login');
+          return toLogin();
         }
         session = sessionStore.get(sid);
-        if (!session) return res.redirect(302, '/auth/login'); // logout/หมดอายุระหว่างรอ refresh
+        if (!session) return toLogin(); // logout/หมดอายุระหว่างรอ refresh
       }
 
       // session ที่สร้างก่อนมี CSRF token (ค้างอยู่ตอน deploy) -> ออก token ให้ตอนนี้

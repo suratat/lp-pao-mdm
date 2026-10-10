@@ -113,7 +113,9 @@ describe('historyView', () => {
     expect(html).toContain('ไม่ทราบผู้กระทำ');
     expect(html).not.toContain('<img');
     expect(html).toContain('historyCursor=77');
-    expect(fieldLabel('contact.mobile_phone')).toContain('ข้อมูลติดต่อ');
+    expect(fieldLabel('contact.mobile_phone')).toBe('มือถือ');
+    expect(fieldLabel('contact.email_personal')).toBe('อีเมล');
+    expect(fieldLabel('contact.cur_road')).toContain('ข้อมูลติดต่อ');
   });
 
   test('ค่า/เหตุผลที่ดูเหมือนเลขบัตรไม่แสดง แม้ API ปกปิดพลาด', () => {

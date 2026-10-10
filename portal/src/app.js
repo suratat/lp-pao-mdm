@@ -25,6 +25,7 @@ function createApp({
   checkAuthClient = null,
   consentsEnabled = false,
   emergencyContactsEnabled = false,
+  emailCheck = {},
 }) {
   const app = express();
   app.disable('x-powered-by');
@@ -46,9 +47,9 @@ function createApp({
 
   // ใช้เงื่อนไข path เองแทนการพึ่ง Express path routing กับ prefix (กันปัญหาความเข้ากันได้ของ
   // path-to-regexp ข้าม version) - ผ่านเฉพาะ path ที่ขึ้นต้นด้วย /portal เท่านั้น
-  const authGate = createAuthGate({ sessionSecret });
+  const authGate = createAuthGate({ sessionSecret, jsonPaths: ['/portal/me/contact/check-email'] });
   app.use((req, res, next) => (req.path === '/portal' || req.path.startsWith('/portal/') ? authGate(req, res, next) : next()));
-  app.use(createMeRoutes({ mdmClient, consentsEnabled, emergencyContactsEnabled }));
+  app.use(createMeRoutes({ mdmClient, consentsEnabled, emergencyContactsEnabled, emailCheck }));
 
   app.get('/', (req, res) => res.redirect(302, '/portal/me'));
 

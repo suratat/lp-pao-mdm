@@ -4,6 +4,7 @@ const { redactPidText } = require('../security/redact');
 const { presentContact, presentEmergencyContacts } = require('./personPresenter');
 const { writeChangeLog, actorFromAuth } = require('./changeLogWriter');
 const { assertReason } = require('./reason');
+const { validateContactFields } = require('../security/contactFields');
 const { applyEmergencyContacts, CONTACT_FIELD_KEYS } = require('./meService');
 const { presentChangeValues } = require('./auditService');
 
@@ -165,12 +166,10 @@ const CONTACT_COLUMN_OF = {
   sameAsRegistered: 'same_as_registered',
 };
 const ADDRESS_COLUMN_OF = {
-  houseNo: 'cur_house_no',
   moo: 'cur_moo',
   soi: 'cur_soi',
   road: 'cur_road',
   postcode: 'cur_postcode',
-  fullText: 'cur_address_text',
 };
 const AREA_COLUMN_OF = { subdistrict: 'cur_subdistrict_code', district: 'cur_district_code', province: 'cur_province_code' };
 const CONTACT_COLUMNS = [...Object.values(CONTACT_COLUMN_OF), ...Object.values(ADDRESS_COLUMN_OF), ...Object.values(AREA_COLUMN_OF)];
@@ -201,6 +200,12 @@ async function patchContact(pool, personId, body, auth) {
     const person = await lockPerson(client, personId, body.expectedVersion);
     const { rows } = await client.query(`SELECT * FROM mdm.person_contact WHERE person_id = $1`, [personId]);
     const existing = rows[0] || null;
+
+    // ตรวจรูปแบบเบอร์/อีเมลเฉพาะฟิลด์ที่ส่งมาและต่างจากค่าเดิม แล้วใช้ค่าที่ normalize แล้ว (เบอร์ = ตัวเลขล้วน) แทนค่าที่พิมพ์มา
+    const checked = validateContactFields(body, existing);
+    for (const [key, column] of [['mobilePhone', 'mobile_phone'], ['phoneAlt', 'phone_alt'], ['emailPersonal', 'email_personal']]) {
+      if (key in checked) patch[column] = checked[key];
+    }
 
     const changes = Object.entries(patch)
       .map(([column, next]) => ({ column, old: existing ? (existing[column] ?? null) : column === 'same_as_registered' ? true : null, next }))

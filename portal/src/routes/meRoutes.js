@@ -2,6 +2,9 @@ const express = require('express');
 const { escapeHtml, layout } = require('../views/html');
 const { MdmApiError } = require('../mdmClient');
 const { formatThaiDate } = require('../thaiTime');
+const rules = require('../contactValidation');
+const { ruleAttrs, fieldErrorHtml, emailCheckWidgetHtml, contactFormScript } = require('../contactFormUi');
+const { createCheckEmailHandler, createRateLimiter } = require('../emailCheck');
 
 function renderError(err) {
   if (err instanceof MdmApiError) {
@@ -10,7 +13,8 @@ function renderError(err) {
   return `<p class="error">เกิดข้อผิดพลาดที่ไม่คาดคิด</p>`;
 }
 
-function createMeRoutes({ mdmClient, consentsEnabled = false, emergencyContactsEnabled = false }) {
+// emailCheck (ฉีดในเทสต์เท่านั้น): { checkDomain, limiter } - ไม่ระบุ = ค้น DNS จริง และ 10 ครั้ง/นาทีต่อ session
+function createMeRoutes({ mdmClient, consentsEnabled = false, emergencyContactsEnabled = false, emailCheck = {} }) {
   const router = express.Router();
 
   router.get('/portal/', (req, res) => res.redirect(302, '/portal/me'));
@@ -42,26 +46,39 @@ function createMeRoutes({ mdmClient, consentsEnabled = false, emergencyContactsE
     }
   });
 
+  // ฟอร์มแก้ไขข้อมูลติดต่อ: ไม่เก็บ "บ้านเลขที่" / "ที่อยู่แบบเต็ม" แล้ว (API ไม่รับ) ป้าย emailPersonal ที่ผู้ใช้เห็นคือ "อีเมล"
+  // ตรวจรูปแบบ 3 ชั้น: browser (contactFormUi) -> เซิร์ฟเวอร์ portal (ที่นี่) -> API (ตัวตัดสิน) ตรวจเฉพาะค่าที่ผู้ใช้แก้จากค่าเดิม
+  const CONTACT_CHECKS = [
+    { key: 'mobilePhone', rule: 'mobile', validate: rules.validateMobile },
+    { key: 'phoneAlt', rule: 'phoneAlt', validate: rules.validatePhoneAlt },
+    { key: 'emailPersonal', rule: 'email', validate: rules.validateEmail },
+  ];
+
+  function renderContactForm({ values, original, errors = [] }) {
+    const input = (name, label, rule, extra = '') =>
+      `<label for="${name}">${label}</label><input id="${name}" name="${name}" value="${escapeHtml(values[name])}" ${ruleAttrs(rule, original[name])} ${extra} />${fieldErrorHtml(name)}`;
+    return layout(
+      'แก้ไขข้อมูลติดต่อ',
+      `<h1>แก้ไขข้อมูลติดต่อ</h1>
+       ${errors.map((e) => `<p class="error">${escapeHtml(e)}</p>`).join('')}
+       <form method="post" action="/portal/me/contact" data-contact-form>
+         ${input('mobilePhone', 'มือถือ', 'mobile', 'inputmode="tel" maxlength="30"')}
+         ${input('phoneAlt', 'โทรศัพท์สำรอง', 'phoneAlt', 'inputmode="tel" maxlength="30"')}
+         ${input('emailPersonal', 'อีเมล', 'email', 'inputmode="email" maxlength="300" autocomplete="email"')}
+         ${emailCheckWidgetHtml()}
+         <label for="lineId">LINE ID</label><input id="lineId" name="lineId" value="${escapeHtml(values.lineId)}" />
+         <button type="submit">บันทึก</button>
+       </form>
+       ${contactFormScript({ checkUrl: '/portal/me/contact/check-email' })}`
+    );
+  }
+
   router.get('/portal/me/contact', async (req, res, next) => {
     try {
       const me = await mdmClient.getMe(req.personId);
       const c = me.contact || {};
-      const addr = c.currentAddress || {};
-      res.send(
-        layout(
-          'แก้ไขข้อมูลติดต่อ',
-          `<h1>แก้ไขข้อมูลติดต่อ</h1>
-           <form method="post" action="/portal/me/contact">
-             <label>มือถือ</label><input name="mobilePhone" value="${escapeHtml(c.mobilePhone)}" />
-             <label>โทรศัพท์สำรอง</label><input name="phoneAlt" value="${escapeHtml(c.phoneAlt)}" />
-             <label>อีเมลส่วนตัว</label><input name="emailPersonal" type="email" value="${escapeHtml(c.emailPersonal)}" />
-             <label>LINE ID</label><input name="lineId" value="${escapeHtml(c.lineId)}" />
-             <label>บ้านเลขที่</label><input name="houseNo" value="${escapeHtml(addr.houseNo)}" />
-             <label>ที่อยู่แบบเต็ม</label><textarea name="fullText">${escapeHtml(addr.fullText)}</textarea>
-             <button type="submit">บันทึก</button>
-           </form>`
-        )
-      );
+      const current = { mobilePhone: c.mobilePhone, phoneAlt: c.phoneAlt, emailPersonal: c.emailPersonal, lineId: c.lineId };
+      res.set('Cache-Control', 'no-store').send(renderContactForm({ values: current, original: current }));
     } catch (err) {
       next(err);
     }
@@ -69,14 +86,34 @@ function createMeRoutes({ mdmClient, consentsEnabled = false, emergencyContactsE
 
   router.post('/portal/me/contact', express.urlencoded({ extended: false }), async (req, res, next) => {
     try {
-      const { mobilePhone, phoneAlt, emailPersonal, lineId, houseNo, fullText } = req.body;
-      await mdmClient.updateContact(req.personId, {
-        mobilePhone: mobilePhone || null,
-        phoneAlt: phoneAlt || null,
-        emailPersonal: emailPersonal || null,
-        lineId: lineId || null,
-        currentAddress: { houseNo: houseNo || undefined, fullText: fullText || undefined },
-      });
+      const typed = {};
+      for (const key of ['mobilePhone', 'phoneAlt', 'emailPersonal', 'lineId']) typed[key] = typeof req.body[key] === 'string' ? req.body[key].trim() : '';
+      const me = await mdmClient.getMe(req.personId);
+      const c = me.contact || {};
+      const original = { mobilePhone: c.mobilePhone, phoneAlt: c.phoneAlt, emailPersonal: c.emailPersonal, lineId: c.lineId };
+
+      const errors = [];
+      for (const { key, validate } of CONTACT_CHECKS) {
+        if (typed[key] === (original[key] ?? '')) continue; // ไม่ได้แก้ - ไม่ตรง (ค่าเดิมที่ไม่ผ่านกติกาใหม่ไม่ถูกบังคับแก้)
+        const result = validate(typed[key]);
+        if (!result.ok) errors.push(result.message);
+      }
+      if (errors.length > 0) return res.status(422).send(renderContactForm({ values: typed, original, errors }));
+
+      try {
+        await mdmClient.updateContact(req.personId, {
+          mobilePhone: typed.mobilePhone || null,
+          phoneAlt: typed.phoneAlt || null,
+          emailPersonal: typed.emailPersonal || null,
+          lineId: typed.lineId || null,
+        });
+      } catch (err) {
+        // API เป็นตัวตัดสินสุดท้าย: 422 invalid-contact -> กลับฟอร์มพร้อมข้อความไทยของแต่ละฟิลด์ ค่าที่พิมพ์ไม่หาย
+        if (err instanceof MdmApiError && err.status === 422 && Array.isArray(err.problem?.errors)) {
+          return res.status(422).send(renderContactForm({ values: typed, original, errors: err.problem.errors.map((e) => e.message) }));
+        }
+        throw err;
+      }
       res.redirect(302, '/portal/me');
     } catch (err) {
       if (err instanceof MdmApiError) {
@@ -85,6 +122,17 @@ function createMeRoutes({ mdmClient, consentsEnabled = false, emergencyContactsE
       next(err);
     }
   });
+
+  // ปุ่ม "ตรวจสอบอีเมล": ต้องล็อกอิน (authGate) จำกัด 10 ครั้ง/นาทีต่อ session ผลเป็นข้อมูลประกอบ ไม่ได้บล็อกการบันทึก
+  router.post(
+    '/portal/me/contact/check-email',
+    express.json({ limit: '2kb' }),
+    createCheckEmailHandler({
+      keyOf: (req) => req.personId,
+      limiter: emailCheck.limiter || createRateLimiter({ max: 10, windowMs: 60 * 1000 }),
+      ...(emailCheck.checkDomain ? { checkDomain: emailCheck.checkDomain } : {}),
+    })
+  );
 
   // ปิดอยู่ (PORTAL_EMERGENCY_CONTACTS_ENABLED ไม่เป็น true) = ไม่ mount จึงเป็น 404; เปิดกลับได้ด้วย env เดียว
   if (emergencyContactsEnabled) {
