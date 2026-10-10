@@ -429,20 +429,16 @@ describe('PATCH /persons/{id}/contact', () => {
     const { personId, version } = await provision();
     const auth = mgr();
     const first = await patch(personId, version, {
-      mobilePhone: '0812345678', phoneAlt: '021112222', emailPersonal: 'a@example.com', lineId: 'line.a', sameAsRegistered: false,
-      currentAddress: { moo: '3', soi: 'ซอย 5', road: 'ถนนทดสอบ', postcode: '52000', subdistrict: { code: '520101' }, district: { code: '5201' }, province: { code: '52' } },
+      mobilePhone: '0812345678', phoneAlt: '021112222', emailPersonal: 'a@example.com', lineId: 'line.a',
     }, auth);
     expect(first.status).toBe(200);
     expect(first.body.version).toBe(version + 1);
-    expect(first.body.contact).toMatchObject({ mobilePhone: '0812345678', phoneAlt: '021112222', emailPersonal: 'a@example.com', lineId: 'line.a', sameAsRegistered: false, updatedBy: 'HR' });
-    expect(first.body.contact.currentAddress).toMatchObject({ moo: '3', postcode: '52000', subdistrict: { code: '520101' }, province: { code: '52' } });
+    expect(first.body.contact).toMatchObject({ mobilePhone: '0812345678', phoneAlt: '021112222', emailPersonal: 'a@example.com', lineId: 'line.a', updatedBy: 'HR' });
 
-    // แก้เฉพาะเบอร์มือถือ + ล้าง lineId (null) + ล้าง phoneAlt (สตริงว่าง) + แก้ที่อยู่เฉพาะ road (ส่วนอื่นของที่อยู่ต้องอยู่เหมือนเดิม)
-    const second = await patch(personId, first.body.version, { mobilePhone: '0899999999', lineId: null, phoneAlt: '   ', currentAddress: { road: 'ถนนใหม่', district: null } }, auth);
+    // แก้เฉพาะเบอร์มือถือ + ล้าง lineId (null) + ล้าง phoneAlt (สตริงว่าง)
+    const second = await patch(personId, first.body.version, { mobilePhone: '0899999999', lineId: null, phoneAlt: '   ' }, auth);
     expect(second.status).toBe(200);
-    expect(second.body.contact).toMatchObject({ mobilePhone: '0899999999', lineId: null, phoneAlt: null, emailPersonal: 'a@example.com', sameAsRegistered: false });
-    expect(second.body.contact.currentAddress).toMatchObject({ road: 'ถนนใหม่', postcode: '52000', subdistrict: { code: '520101' } });
-    expect(second.body.contact.currentAddress.district).toBeUndefined();
+    expect(second.body.contact).toMatchObject({ mobilePhone: '0899999999', lineId: null, phoneAlt: null, emailPersonal: 'a@example.com' });
 
     const logs = (await logsFor(personId)).filter((l) => l.table_name === 'person_contact');
     const secondLogs = logs.filter((l) => l.field_name === 'contact.mobile_phone');
@@ -481,9 +477,7 @@ describe('PATCH /persons/{id}/contact', () => {
     const { personId, version } = await provision();
     const bad = [
       { mobilePhone: '0'.repeat(31) }, { phoneAlt: '0'.repeat(31) }, { emailPersonal: 'e'.repeat(301) },
-      { lineId: 'l'.repeat(101) }, { currentAddress: { moo: 'm'.repeat(21) } }, { currentAddress: { soi: 's'.repeat(101) } },
-      { currentAddress: { road: 'r'.repeat(101) } }, { currentAddress: { postcode: '1'.repeat(11) } },
-      { currentAddress: { subdistrict: { code: '1'.repeat(11) } } }, { currentAddress: { province: { code: '1'.repeat(11) } } },
+      { lineId: 'l'.repeat(101) },
     ];
     for (const body of bad) {
       // eslint-disable-next-line no-await-in-loop
@@ -494,7 +488,6 @@ describe('PATCH /persons/{id}/contact', () => {
 
     const max = await patch(personId, version, {
       phoneAlt: '0812345678', lineId: 'l'.repeat(100),
-      currentAddress: { moo: 'm'.repeat(20), soi: 's'.repeat(100), road: 'r'.repeat(100), postcode: '1'.repeat(10), subdistrict: { code: '1'.repeat(10) } },
     });
     expect(max.status).toBe(200);
   });

@@ -20,17 +20,13 @@ const { pageOpts, requireMasterDataAdmin, noStore, errorList, csrfField, reasonF
 const NAME_MAX = 200;
 const MIN_BIRTH_DATE = '1900-01-01';
 
-// ไม่เก็บ "บ้านเลขที่" / "ที่อยู่ปัจจุบัน (ข้อความเต็ม)" แล้ว (API ไม่รับ; ข้อมูลเดิมคงอยู่ในฐานข้อมูล) ป้าย emailPersonal ที่ผู้ใช้เห็นคือ "อีเมล"
+// ไม่เก็บที่อยู่ปัจจุบันทุกช่อง (บ้านเลขที่, ข้อความเต็ม, หมู่, ซอย, ถนน, รหัสไปรษณีย์, รหัสพื้นที่, sameAsRegistered) แล้ว (API ไม่รับ; ข้อมูลเดิมคงอยู่ในฐานข้อมูล) ป้าย emailPersonal ที่ผู้ใช้เห็นคือ "อีเมล"
 // rule = กติกาตรวจรูปแบบ (contactValidation.js) ใช้ทั้งฝั่ง browser, เซิร์ฟเวอร์นี้ และ API (ตัวตัดสิน)
 const CONTACT_FIELDS = [
   { key: 'mobilePhone', label: 'เบอร์โทรศัพท์มือถือ', max: 30, hint: 'ตัวเลข 10 หลักขึ้นต้น 06, 08 หรือ 09 เช่น 0812345678', group: 'contact', rule: 'mobile', validate: rules.validateMobile },
   { key: 'phoneAlt', label: 'เบอร์โทรสำรอง', max: 30, hint: 'มือถือ หรือโทรศัพท์บ้าน/สำนักงาน 9 หลักขึ้นต้น 02, 03, 04, 05 หรือ 07', group: 'contact', rule: 'phoneAlt', validate: rules.validatePhoneAlt },
   { key: 'emailPersonal', label: 'อีเมล', max: 300, group: 'contact', rule: 'email', validate: rules.validateEmail },
   { key: 'lineId', label: 'LINE ID', max: 100, group: 'contact' },
-  { key: 'moo', label: 'หมู่ที่', max: 20, group: 'address' },
-  { key: 'soi', label: 'ซอย', max: 100, group: 'address' },
-  { key: 'road', label: 'ถนน', max: 100, group: 'address' },
-  { key: 'postcode', label: 'รหัสไปรษณีย์', max: 10, group: 'address' },
 ];
 const EMERGENCY_SLOTS = [1, 2, 3];
 const EMERGENCY_FIELDS = [
@@ -163,20 +159,15 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
 
   const contactValuesFrom = (profile) => {
     const c = profile.contact || {};
-    const a = c.currentAddress || {};
     return {
       mobilePhone: c.mobilePhone,
       phoneAlt: c.phoneAlt,
       emailPersonal: c.emailPersonal,
       lineId: c.lineId,
-      moo: a.moo,
-      soi: a.soi,
-      road: a.road,
-      postcode: a.postcode,
     };
   };
 
-  function renderContactForm(req, { personId, version, values, original = values, reason = '', errors = [], areaNote = '' }) {
+  function renderContactForm(req, { personId, version, values, original = values, reason = '', errors = [] }) {
     const field = (f) => {
       const value = escapeHtml(values[f.key] ?? '');
       const attrs = f.rule ? `${ruleAttrs(f.rule, original[f.key] ?? '')} inputmode="${f.rule === 'email' ? 'email' : 'tel'}"` : '';
@@ -184,8 +175,7 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
       const widget = f.rule === 'email' ? emailCheckWidgetHtml() : '';
       return `<label for="${f.key}">${escapeHtml(f.label)}${f.hint ? ` <span class="hint">(${escapeHtml(f.hint)})</span>` : ''}</label>${input}${widget}`;
     };
-    const fields = `<h2>ช่องทางติดต่อ</h2>${CONTACT_FIELDS.filter((f) => f.group === 'contact').map(field).join('')}
-      <h2>ที่อยู่ปัจจุบัน</h2>${CONTACT_FIELDS.filter((f) => f.group === 'address').map(field).join('')}${areaNote}`;
+    const fields = `<h2>ช่องทางติดต่อ</h2>${CONTACT_FIELDS.filter((f) => f.group === 'contact').map(field).join('')}`;
     return formShell(req, personId, {
       heading: 'แก้ข้อมูลติดต่อ',
       intro: '<p>ส่งเฉพาะช่องที่คุณเปลี่ยน <strong>ช่องที่เว้นว่างหมายถึงล้างค่าเดิมทิ้ง</strong> ช่องที่ไม่แตะจะคงเดิม บันทึกการเปลี่ยนแปลงพร้อมชื่อผู้แก้และเหตุผลไว้ในประวัติ</p>',
@@ -200,17 +190,11 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
     });
   }
 
-  const areaNoteOf = (profile) => {
-    const a = profile.contact?.currentAddress || {};
-    const parts = [a.subdistrict?.nameTh, a.district?.nameTh, a.province?.nameTh].filter(Boolean);
-    return parts.length > 0 ? `<p class="hint">ตำบล/อำเภอ/จังหวัด: ${escapeHtml(parts.join(' / '))} (แก้ในหน้านี้ไม่ได้ คงเดิม)</p>` : '';
-  };
-
   router.get('/hr/persons/:personId/contact/edit', ...guard, (req, res, next) =>
     showForm(req, res, next, {
       title: 'แก้ข้อมูลติดต่อ',
       render: (profile) =>
-        renderContactForm(req, { personId: profile.personId, version: profile.version, values: contactValuesFrom(profile), original: contactValuesFrom(profile), areaNote: areaNoteOf(profile) }),
+        renderContactForm(req, { personId: profile.personId, version: profile.version, values: contactValuesFrom(profile), original: contactValuesFrom(profile) }),
     })
   );
 
@@ -229,7 +213,6 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
   const computeContact = (profile, { values }) => {
     const current = contactValuesFrom(profile);
     const body = {};
-    const address = {};
     const errors = [];
     for (const f of CONTACT_FIELDS) {
       if ((current[f.key] ?? '') === values[f.key]) continue;
@@ -243,11 +226,9 @@ function createPersonProfileRoutes({ mdmClient, emailCheck = {} }) {
         next = result.value;
         if ((current[f.key] ?? null) === next) continue; // normalize แล้วเท่าค่าเดิม
       }
-      if (f.group === 'address') address[f.key] = next;
-      else body[f.key] = next;
+      body[f.key] = next;
     }
     if (errors.length > 0) throw new FormErrors(errors, current);
-    if (Object.keys(address).length > 0) body.currentAddress = address;
     return Object.keys(body).length > 0 ? { ...body } : null;
   };
 

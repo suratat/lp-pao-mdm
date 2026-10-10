@@ -163,28 +163,19 @@ const CONTACT_COLUMN_OF = {
   phoneAlt: 'phone_alt',
   emailPersonal: 'email_personal',
   lineId: 'line_id',
-  sameAsRegistered: 'same_as_registered',
 };
-const ADDRESS_COLUMN_OF = {
-  moo: 'cur_moo',
-  soi: 'cur_soi',
-  road: 'cur_road',
-  postcode: 'cur_postcode',
-};
-const AREA_COLUMN_OF = { subdistrict: 'cur_subdistrict_code', district: 'cur_district_code', province: 'cur_province_code' };
-const CONTACT_COLUMNS = [...Object.values(CONTACT_COLUMN_OF), ...Object.values(ADDRESS_COLUMN_OF), ...Object.values(AREA_COLUMN_OF)];
+// คอลัมน์ที่อยู่ปัจจุบัน/same_as_registered เลิกรับจาก request แล้ว แต่ต้องอยู่ในรายการเพื่อคงค่าเดิมไว้ตอน upsert (ไม่ถูกล้าง)
+const KEPT_ADDRESS_COLUMNS = [
+  'same_as_registered', 'cur_house_no', 'cur_moo', 'cur_soi', 'cur_road', 'cur_subdistrict_code', 'cur_district_code',
+  'cur_province_code', 'cur_postcode', 'cur_address_text',
+];
+const CONTACT_COLUMNS = [...Object.values(CONTACT_COLUMN_OF), ...KEPT_ADDRESS_COLUMNS];
 
 // คืน { column: ค่าใหม่ } เฉพาะ key ที่ "ส่งมา" (null = ล้างค่า, ไม่ส่ง = ไม่แตะ); สตริงว่าง/ช่องว่างล้วน = ล้างค่า
 function contactPatchFrom(body) {
   const patch = {};
   const clean = (v) => (typeof v === 'string' ? v.trim() || null : v);
   for (const [key, column] of Object.entries(CONTACT_COLUMN_OF)) if (key in body) patch[column] = clean(body[key]);
-  if ('currentAddress' in body && body.currentAddress !== null) {
-    const addr = body.currentAddress;
-    for (const [key, column] of Object.entries(ADDRESS_COLUMN_OF)) if (key in addr) patch[column] = clean(addr[key]);
-    for (const [key, column] of Object.entries(AREA_COLUMN_OF)) if (key in addr) patch[column] = addr[key] === null ? null : clean(addr[key].code) ?? null;
-  }
-  if (patch.same_as_registered === null) delete patch.same_as_registered; // boolean ห้ามเป็น null (NOT NULL)
   return patch;
 }
 
@@ -192,7 +183,7 @@ async function patchContact(pool, personId, body, auth) {
   const actor = actorFromAuth(auth);
   const reason = assertReason(body.reason);
   const patch = contactPatchFrom(body);
-  if (Object.keys(patch).length === 0 && !('sameAsRegistered' in body)) {
+  if (Object.keys(patch).length === 0) {
     throw new HttpProblem(422, 'no-changes-requested', 'ไม่ได้ระบุฟิลด์ที่จะแก้', 'ต้องส่งฟิลด์ข้อมูลติดต่ออย่างน้อยหนึ่งฟิลด์');
   }
 

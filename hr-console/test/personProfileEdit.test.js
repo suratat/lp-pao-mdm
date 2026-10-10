@@ -190,12 +190,15 @@ describe('แก้ข้อมูลติดต่อ', () => {
     expect(csrfFrom(form.text)).toBeTruthy();
     expect(versionFrom(form.text)).toBe('1');
     expect(form.text).toMatch(/<textarea name="reason"[^>]*required>/);
+    // ไม่มีช่องที่อยู่ปัจจุบันแล้ว
+    for (const name of ['moo', 'soi', 'road', 'postcode', 'houseNo', 'fullText', 'sameAsRegistered']) expect(form.text).not.toContain(`name="${name}"`);
+    expect(form.text).not.toContain('ที่อยู่ปัจจุบัน');
 
-    const first = await postContact(admin, personId, { mobilePhone: PHONE, phoneAlt: '', emailPersonal: EMAIL, lineId: LINE, moo: '3', soi: '', road: 'ถนนสมมติ', postcode: '52000' });
+    const first = await postContact(admin, personId, { mobilePhone: PHONE, phoneAlt: '', emailPersonal: EMAIL, lineId: LINE });
     expect(first.status).toBe(303);
     expect(first.headers.location).toBe(`/hr/persons/${personId}?saved=contact`);
     expectNotIn([PHONE, EMAIL, LINE], first.headers.location, first.text);
-    expect(await contactRow(personId)).toMatchObject({ mobile_phone: PHONE, email_personal: EMAIL, line_id: LINE, cur_moo: '3', cur_road: 'ถนนสมมติ', cur_postcode: '52000', phone_alt: null, updated_by: 'HR' });
+    expect(await contactRow(personId)).toMatchObject({ mobile_phone: PHONE, email_personal: EMAIL, line_id: LINE, phone_alt: null, updated_by: 'HR' });
     expect((await personRow(personId)).version).toBe(2);
 
     const detail = await admin.get(first.headers.location);
@@ -204,11 +207,11 @@ describe('แก้ข้อมูลติดต่อ', () => {
 
     // รอบสอง: เปลี่ยนมือถือ + ล้าง LINE (ช่องว่าง = ล้าง) ช่องอื่นคงเดิม -> log เฉพาะสองฟิลด์
     const logsBefore = (await logsFor(personId, 'person_contact')).length;
-    const second = await postContact(admin, personId, { mobilePhone: PHONE_NEW, phoneAlt: '', emailPersonal: EMAIL, lineId: '', moo: '3', soi: '', road: 'ถนนสมมติ', postcode: '52000' }, { reason: 'เจ้าตัวแจ้งเปลี่ยนเบอร์และเลิกใช้ LINE' });
+    const second = await postContact(admin, personId, { mobilePhone: PHONE_NEW, phoneAlt: '', emailPersonal: EMAIL, lineId: '' }, { reason: 'เจ้าตัวแจ้งเปลี่ยนเบอร์และเลิกใช้ LINE' });
     expect(second.status).toBe(303);
     expect(second.headers.location).toBe(`/hr/persons/${personId}?saved=contact`);
     const row = await contactRow(personId);
-    expect(row).toMatchObject({ mobile_phone: PHONE_NEW, line_id: null, email_personal: EMAIL, cur_road: 'ถนนสมมติ' });
+    expect(row).toMatchObject({ mobile_phone: PHONE_NEW, line_id: null, email_personal: EMAIL });
     const newLogs = (await logsFor(personId, 'person_contact')).slice(logsBefore);
     expect(newLogs).toHaveLength(2);
     for (const log of newLogs) {
@@ -288,14 +291,10 @@ describe('แก้ข้อมูลติดต่อ', () => {
     const res = await postContact(admin, personId, {
       phoneAlt: '1'.repeat(31),
       lineId: 'ก'.repeat(101),
-      moo: '1'.repeat(21),
-      soi: 'ก'.repeat(101),
-      road: 'ก'.repeat(101),
-      postcode: '1'.repeat(11),
       emailPersonal: `${'a'.repeat(301)}`,
     });
     expect(res.status).toBe(422);
-    for (const label of ['เบอร์โทรสำรอง', 'LINE ID', 'หมู่ที่', 'ซอย', 'ถนน', 'รหัสไปรษณีย์', 'อีเมล']) {
+    for (const label of ['เบอร์โทรสำรอง', 'LINE ID', 'อีเมล']) {
       expect(res.text).toContain(`${label}ยาวเกิน`);
     }
     expect(await contactRow(personId)).toBeUndefined();
