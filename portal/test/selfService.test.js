@@ -6,6 +6,7 @@ let harness;
 
 // ส่วน consent ถูกซ่อนไว้ตาม default (PORTAL_CONSENTS_ENABLED ไม่ตั้ง) - รันเมื่อเปิดด้วย env เท่านั้น:
 //   PORTAL_CONSENTS_ENABLED=true npm test
+const emergencyTest = process.env.PORTAL_EMERGENCY_CONTACTS_ENABLED === 'true' ? test : test.skip; // ผู้ติดต่อฉุกเฉิน ปิดตาม default เช่นกัน
 const consentsTest = process.env.PORTAL_CONSENTS_ENABLED === 'true' ? test : test.skip;
 
 beforeAll(async () => {
@@ -52,7 +53,7 @@ describe('MDM Portal self-service (T9 รอบแรก)', () => {
     expect(contactFormAfter.text).not.toContain('0812345678');
   });
 
-  test('emergency contacts: แทนที่ทั้งชุดแล้วอ่านกลับตรง', async () => {
+  emergencyTest('emergency contacts: แทนที่ทั้งชุดแล้วอ่านกลับตรง', async () => {
     const agent = request.agent(harness.portalApp);
     await agent.post('/auth/dev-login').type('form').send({ personId: FIXTURE_PERSON_ID });
 

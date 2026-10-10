@@ -8,10 +8,12 @@ const SESSION_SECRET = 'portal-test-session-secret';
 // รัน instance จริงของ MDM API (api/src/app.js) บน loopback port จริง แล้วให้ Portal คุยผ่าน HTTP เหมือน
 // โปรดักชันทุกประการ (ไม่ mock MDM API) - ข้ามเฉพาะการขอ token จาก Keycloak จริง (ใช้ token ที่เซ็นด้วย
 // local JWKS ของ api/test/testJwks.js แทน เหมือนที่เทสของ api/ ทำอยู่แล้ว)
-// consentsEnabled: ไม่ระบุ = ตาม env PORTAL_CONSENTS_ENABLED (default ปิด เหมือน server.js)
+// consentsEnabled / emergencyContactsEnabled: ไม่ระบุ = ตาม env PORTAL_CONSENTS_ENABLED / PORTAL_EMERGENCY_CONTACTS_ENABLED
+// (default ปิด เหมือน server.js)
 async function buildIntegrationHarness({
   checkAuthClient,
   consentsEnabled = process.env.PORTAL_CONSENTS_ENABLED === 'true',
+  emergencyContactsEnabled = process.env.PORTAL_EMERGENCY_CONTACTS_ENABLED === 'true',
 } = {}) {
   const apiCtx = await buildTestApp({ actingAssertion: { secret: ACTING_SECRET, allowedAzp: ['mdm-portal'] } });
   const apiServer = await new Promise((resolve) => {
@@ -36,6 +38,7 @@ async function buildIntegrationHarness({
     isProduction: false,
     checkAuthClient: checkAuthClient || null,
     consentsEnabled,
+    emergencyContactsEnabled,
   });
 
   return {

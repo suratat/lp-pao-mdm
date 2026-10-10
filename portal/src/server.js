@@ -63,6 +63,7 @@ async function main() {
     isProduction,
     checkAuthClient,
     consentsEnabled: String(process.env.PORTAL_CONSENTS_ENABLED || '').trim().toLowerCase() === 'true',
+    emergencyContactsEnabled: String(process.env.PORTAL_EMERGENCY_CONTACTS_ENABLED || '').trim().toLowerCase() === 'true',
   });
 
   app.listen(PORT, () => {

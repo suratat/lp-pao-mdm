@@ -7,13 +7,9 @@ const { buildIntegrationHarness } = require('./testHarness');
 
 let harness;
 
-beforeAll(async () => {
-  harness = await buildIntegrationHarness();
-});
-
-afterAll(async () => {
-  await harness.close();
-});
+// หน้านี้ปิดตาม default (ดู consentsHidden/emergencyContactsHidden.test.js) - รันเฉพาะเมื่อเปิดด้วย env:
+//   PORTAL_EMERGENCY_CONTACTS_ENABLED=true npm test
+const describeEnabled = process.env.PORTAL_EMERGENCY_CONTACTS_ENABLED === 'true' ? describe : describe.skip;
 
 // บุคคลใหม่ต่อเทสต์ (ไม่มีผู้ติดต่อฉุกเฉินเลย เหมือนผู้ใช้ในเหตุการณ์ที่ GET /me ไม่เปลี่ยนขนาด)
 async function makePerson() {
@@ -41,7 +37,15 @@ const versionOf = async (personId) => (await db(`SELECT version FROM mdm.person 
 
 const post = (agent, fields) => agent.post('/portal/me/emergency-contacts').type('form').send(fields);
 
-describe('ฟอร์มผู้ติดต่อฉุกเฉินของ portal', () => {
+describeEnabled('ฟอร์มผู้ติดต่อฉุกเฉินของ portal', () => {
+  beforeAll(async () => {
+    harness = await buildIntegrationHarness();
+  });
+
+  afterAll(async () => {
+    await harness.close();
+  });
+
   test('เหตุการณ์ prod: กรอกชื่อ+เบอร์แต่ไม่กรอกความสัมพันธ์ -> ต้องไม่ "สำเร็จเงียบๆ" แต่แจ้งข้อผิดพลาด คงค่าที่พิมพ์ไว้ และไม่ส่งรายการว่างไปแทนที่ของเดิม', async () => {
     const personId = await makePerson();
     const agent = await login(personId);
